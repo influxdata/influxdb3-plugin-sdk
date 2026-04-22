@@ -1,0 +1,24 @@
+---
+source: influxdb3-plugin-schemas/src/error.rs
+assertion_line: 240
+expression: tags
+---
+- InvalidPluginName
+- InvalidVersion
+- DescriptionTooLong
+- DescriptionEmpty
+- InvalidUrlScheme
+- InvalidUrl
+- UnknownTriggerType
+- EmptyTriggers
+- InvalidDatabaseVersion
+- InvalidPythonRequirement
+- UnsupportedArtifactScheme
+- InvalidHash
+- DuplicateIndexEntry
+- UnsupportedManifestMajor
+- UnsupportedIndexMajor
+- MalformedSchemaVersion
+- TomlParse
+- JsonParse
+- JsonSerialize

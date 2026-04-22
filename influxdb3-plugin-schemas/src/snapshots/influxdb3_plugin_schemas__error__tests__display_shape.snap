@@ -1,0 +1,24 @@
+---
+source: influxdb3-plugin-schemas/src/error.rs
+assertion_line: 228
+expression: rendered
+---
+- "plugin name \"Bad-Name\" does not match regex [a-z0-9][a-z0-9-]{0,63} (1–64 chars, lowercase alphanumeric + hyphen, starting with alphanumeric)"
+- "version \"1.2\" is not SemVer 2.0.0 compliant: unexpected end of input while parsing minor version number"
+- description exceeds 200 characters (was 201)
+- description must not be empty
+- "URL \"ftp://bad\" must use http or https scheme (was \"ftp\")"
+- "URL \"not a url\" is malformed: relative URL without a base"
+- "trigger \"on_startup\" is not in the closed set {process_writes, process_scheduled_call, process_request}"
+- triggers array must not be empty
+- "database_version \">=bad\" is not a valid SemVer range: unexpected character 'b' while parsing major version number"
+- "python requirement \"requests>>=2.0\" is not PEP 508-parseable: no such comparison operator \">>=\", must be one of ~= == != <= >= < > ===\nrequests>>=2.0\n        ^^^^^^"
+- "artifacts_url \"s3://bucket/foo\" uses unsupported scheme \"s3\"; allowed: http, https, file"
+- "hash \"notahash\" must be formatted as sha256:<64 lowercase hex chars>"
+- "duplicate plugin entry (dup, 1.0.0) in index"
+- "manifest_schema_version \"2.0\" has unsupported major; this library supports major 1"
+- "index_schema_version \"2.0\" has unsupported major; this library supports major 1"
+- "schema version \"abc\" must be formatted as <major>.<minor>"
+- "TOML parse error: TOML parse error at line 1, column 1\n  |\n1 | = \n  | ^\ninvalid key\n"
+- "JSON parse error: EOF while parsing an object at line 1 column 1"
+- "JSON serialization error: forced"

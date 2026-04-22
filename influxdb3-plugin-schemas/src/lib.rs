@@ -27,7 +27,7 @@ use pep508_rs as _;            // used by manifest.rs (PythonRequirement validat
 use semver as _;               // used by manifest.rs, index.rs, error.rs
 use serde as _;                // used by every module with a #[derive(Serialize|Deserialize)]
 use serde_json as _;           // used by index.rs (parse_json + to_canonical_json)
-use thiserror as _;            // used by error.rs (SchemaError)
+// thiserror is used directly via #[derive(thiserror::Error)] in error.rs (SchemaError)
 use toml as _;                 // used by manifest.rs (parse_toml)
 use unicode_normalization as _; // used by index.rs (NFC normalization in to_canonical_json)
 use url as _;                   // used by manifest.rs, index.rs, error.rs
@@ -51,7 +51,7 @@ mod manifest;
 
 // Types are added in subsequent tasks; re-exports will be uncommented as each
 // arrives.
-// pub use error::SchemaError;
+pub use error::SchemaError;
 // pub use identity::{PluginId, PluginName};
 // pub use index::{ArtifactHash, ArtifactsUrl, Index, IndexEntry, IndexSchemaVersion};
 // pub use manifest::{Dependencies, Description, Manifest, ManifestSchemaVersion, PluginMetadata, PythonRequirement, TriggerType};
