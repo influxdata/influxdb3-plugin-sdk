@@ -5,6 +5,10 @@
 /// This enum is part of the `influxdb3-plugin-schemas` crate's semver-stable
 /// public API. Adding variants is a minor-version change; renaming, removing,
 /// or reshaping existing variants is a major-version change.
+///
+/// Marked `#[non_exhaustive]` — downstream consumers must include a wildcard
+/// (`_ =>`) arm when matching on this enum, so future variant additions do not
+/// break their code.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum SchemaError {
@@ -104,8 +108,13 @@ pub enum SchemaError {
 }
 
 impl SchemaError {
-    /// Utility for `Display` helpers that need the variant's tag without
-    /// formatting the full message (useful for programmatic categorization).
+    /// Returns the variant's name as a stable string tag, useful for
+    /// programmatic categorization.
+    ///
+    /// Also load-bearing for the `variant_tags_are_stable` snapshot test: the
+    /// exhaustive match here is what forces any new enum variant to be
+    /// registered with `every_variant()` in the test module — adding a
+    /// variant without updating this match fails to compile.
     pub fn variant_name(&self) -> &'static str {
         match self {
             Self::InvalidPluginName { .. } => "InvalidPluginName",
@@ -134,6 +143,21 @@ impl SchemaError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Minimal writer that fails every call. Used to force a
+    /// `serde_json::Error` of category `Io` for the `JsonSerialize` variant —
+    /// serde_json's other common "failure" paths (like `to_string(&f64::NAN)`)
+    /// don't actually error in v1; this is the reliable path.
+    struct AlwaysFail;
+
+    impl std::io::Write for AlwaysFail {
+        fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::other("forced"))
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
 
     /// Returns one instance of every `SchemaError` variant for stability testing.
     ///
@@ -200,21 +224,7 @@ mod tests {
                 source: serde_json::from_str::<serde_json::Value>("{").unwrap_err(),
             },
             SchemaError::JsonSerialize {
-                // Force a serde_json serialization error by writing to a failing
-                // writer. serde_json::to_writer propagates IO errors as
-                // serde_json::Error (category Io).
-                source: {
-                    struct AlwaysFail;
-                    impl std::io::Write for AlwaysFail {
-                        fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
-                            Err(std::io::Error::new(std::io::ErrorKind::Other, "forced"))
-                        }
-                        fn flush(&mut self) -> std::io::Result<()> {
-                            Ok(())
-                        }
-                    }
-                    serde_json::to_writer(AlwaysFail, &0u8).unwrap_err()
-                },
+                source: serde_json::to_writer(AlwaysFail, &0u8).unwrap_err(),
             },
         ]
     }
