@@ -212,8 +212,24 @@ fn is_false(b: &bool) -> bool {
 }
 
 impl Index {
-    /// Parses an index from a JSON string. Enforces `(name, version)`
-    /// uniqueness after structural parsing succeeds.
+    /// Parses an index from a JSON string.
+    ///
+    /// Enforces `(name, version)` uniqueness after structural parsing succeeds.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use influxdb3_plugin_schemas::Index;
+    ///
+    /// let source = r#"{
+    ///   "index_schema_version": "1.0",
+    ///   "artifacts_url": "https://plugins.example.com/artifacts",
+    ///   "plugins": []
+    /// }"#;
+    ///
+    /// let index = Index::parse_json(source).unwrap();
+    /// assert!(index.plugins.is_empty());
+    /// ```
     pub fn parse_json(input: &str) -> Result<Self, SchemaError> {
         let parsed: Self =
             serde_json::from_str(input).map_err(|source| SchemaError::JsonParse { source })?;

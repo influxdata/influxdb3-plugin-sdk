@@ -236,10 +236,33 @@ pub struct Manifest {
 }
 
 impl Manifest {
-    /// Parses a manifest from a TOML string. Structural parsing via serde +
-    /// newtype `Deserialize` impls runs first; post-parse validation for rules
-    /// serde can't express (non-empty triggers, URL scheme allowlist) runs
-    /// after.
+    /// Parses a manifest from a TOML string.
+    ///
+    /// Structural parsing via serde + newtype `Deserialize` impls runs first;
+    /// post-parse validation for rules serde can't express (non-empty triggers,
+    /// URL scheme allowlist) runs after.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use influxdb3_plugin_schemas::Manifest;
+    ///
+    /// let source = r#"
+    /// manifest_schema_version = "1.0"
+    ///
+    /// [plugin]
+    /// name = "example"
+    /// version = "0.1.0"
+    /// description = "Example plugin."
+    /// triggers = ["process_writes"]
+    ///
+    /// [dependencies]
+    /// database_version = ">=3.0.0"
+    /// "#;
+    ///
+    /// let manifest = Manifest::parse_toml(source).unwrap();
+    /// assert_eq!(manifest.plugin.name.as_str(), "example");
+    /// ```
     pub fn parse_toml(input: &str) -> Result<Self, SchemaError> {
         let parsed: Self =
             toml::from_str(input).map_err(|source| SchemaError::TomlParse { source })?;
