@@ -1,0 +1,7 @@
+---
+source: influxdb3-plugin-schemas/src/identity.rs
+assertion_line: 332
+expression: "vec![registry.to_string(), local.to_string()]"
+---
+- "downsampler@1.2.0 (https://r.example/index.json)"
+- "my-plugin@0.3.1 (local: /srv/plugins/my-plugin)"

@@ -30,18 +30,11 @@
 // dispatch.
 //
 // Runtime deps not yet used by real code:
-use serde as _;                 // used once a type derives Serialize/Deserialize (D7+)
 use unicode_normalization as _; // used once index.rs calls .nfc() in to_canonical_json (D12)
 
 // Dev deps not yet used by tests:
 #[cfg(test)]
-use assert_matches as _;
-#[cfg(test)]
-use pretty_assertions as _;
-#[cfg(test)]
 use proptest as _;
-#[cfg(test)]
-use rstest as _;
 
 mod error;
 mod identity;
@@ -51,6 +44,6 @@ mod manifest;
 // Types are added in subsequent tasks; re-exports will be uncommented as each
 // arrives.
 pub use error::SchemaError;
-// pub use identity::{PluginId, PluginName};
+pub use identity::{PluginId, PluginName};
 // pub use index::{ArtifactHash, ArtifactsUrl, Index, IndexEntry, IndexSchemaVersion};
 // pub use manifest::{Dependencies, Description, Manifest, ManifestSchemaVersion, PluginMetadata, PythonRequirement, TriggerType};
