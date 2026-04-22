@@ -227,6 +227,50 @@ impl serde::Serialize for PythonRequirement {
     }
 }
 
+/// A parsed plugin manifest.
+#[derive(Debug, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
+pub struct Manifest {
+    pub manifest_schema_version: ManifestSchemaVersion,
+    pub plugin: PluginMetadata,
+    pub dependencies: Dependencies,
+}
+
+impl Manifest {
+    /// Parses a manifest from a TOML string.
+    pub fn parse_toml(input: &str) -> Result<Self, SchemaError> {
+        toml::from_str(input).map_err(|source| SchemaError::TomlParse { source })
+    }
+}
+
+// Note: no `to_toml_string` method in Plan 1. Manifests are author-written TOML
+// files; the SDK parses them, never emits them. If a future plan needs TOML
+// serialization (e.g., scaffolding commands in the CLI), add it then with a
+// dedicated `SchemaError::TomlSerialize { source: toml::ser::Error }` variant
+// — do not cast serialize errors through `toml::de::Error::custom`.
+
+/// `[plugin]` section of the manifest.
+#[derive(Debug, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
+pub struct PluginMetadata {
+    pub name: crate::PluginName,
+    pub version: semver::Version,
+    pub description: Description,
+    pub triggers: Vec<TriggerType>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub homepage: Option<url::Url>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repository: Option<url::Url>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub documentation: Option<url::Url>,
+}
+
+/// `[dependencies]` section of the manifest.
+#[derive(Debug, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
+pub struct Dependencies {
+    pub database_version: semver::VersionReq,
+    #[serde(default)]
+    pub python: Vec<PythonRequirement>,
+}
+
 #[cfg(test)]
 mod schema_version_tests {
     use super::*;
@@ -376,5 +420,126 @@ mod python_requirement_tests {
     fn preserves_original_string() {
         let r = PythonRequirement::try_new("requests>=2.31,<3").unwrap();
         assert_eq!(r.as_str(), "requests>=2.31,<3");
+    }
+}
+
+#[cfg(test)]
+mod manifest_parse_tests {
+    use super::*;
+    use assert_matches::assert_matches;
+    use pretty_assertions::assert_eq;
+
+    const MINIMAL: &str = r#"
+manifest_schema_version = "1.0"
+
+[plugin]
+name = "downsampler"
+version = "1.2.0"
+description = "Test plugin"
+triggers = ["process_writes"]
+
+[dependencies]
+database_version = ">=3.2.0,<4.0.0"
+"#;
+
+    const FULL: &str = r#"
+manifest_schema_version = "1.0"
+
+[plugin]
+name = "downsampler"
+version = "1.2.0"
+description = "Notify an HTTP endpoint on every WAL commit."
+triggers = ["process_writes", "process_scheduled_call"]
+homepage = "https://influxdata.com"
+repository = "https://github.com/influxdata/plugin-downsampler"
+documentation = "https://github.com/influxdata/plugin-downsampler/readme.md"
+
+[dependencies]
+database_version = ">=3.2.0,<4.0.0"
+python = ["requests>=2.31,<3", "pydantic~=2.0"]
+"#;
+
+    #[test]
+    fn parses_minimal_manifest() {
+        let m = Manifest::parse_toml(MINIMAL).expect("minimal manifest should parse");
+        assert_eq!(m.plugin.name.as_str(), "downsampler");
+        assert_eq!(m.plugin.version, semver::Version::new(1, 2, 0));
+        assert_eq!(m.plugin.triggers.len(), 1);
+    }
+
+    #[test]
+    fn parses_full_manifest() {
+        let m = Manifest::parse_toml(FULL).expect("full manifest should parse");
+        assert_eq!(m.plugin.triggers.len(), 2);
+        assert_eq!(m.dependencies.python.len(), 2);
+        assert!(m.plugin.homepage.is_some());
+    }
+
+    #[test]
+    fn parses_snapshot_matches() {
+        let m = Manifest::parse_toml(FULL).unwrap();
+        insta::assert_debug_snapshot!("full_manifest_parsed", m);
+    }
+
+    #[test]
+    fn rejects_missing_plugin_section() {
+        let missing = r#"
+manifest_schema_version = "1.0"
+
+[dependencies]
+database_version = ">=3.2.0"
+"#;
+        let err = Manifest::parse_toml(missing).unwrap_err();
+        assert_matches!(err, SchemaError::TomlParse { .. });
+    }
+
+    #[test]
+    fn rejects_missing_schema_version() {
+        let missing = r#"
+[plugin]
+name = "x"
+version = "1.0.0"
+description = "x"
+triggers = ["process_writes"]
+
+[dependencies]
+database_version = ">=3.2.0"
+"#;
+        let err = Manifest::parse_toml(missing).unwrap_err();
+        assert_matches!(err, SchemaError::TomlParse { .. });
+    }
+
+    #[test]
+    fn ignores_unknown_top_level_field() {
+        // Appending to MINIMAL would place the field inside `[dependencies]`
+        // (TOML treats subsequent key-value pairs as belonging to the most
+        // recently opened table). Build a fresh document with the unknown
+        // field above any table header so it's unambiguously top-level.
+        let with_unknown = r#"
+manifest_schema_version = "1.0"
+experimental_feature = true
+
+[plugin]
+name = "downsampler"
+version = "1.2.0"
+description = "Test plugin"
+triggers = ["process_writes"]
+
+[dependencies]
+database_version = ">=3.2.0,<4.0.0"
+"#;
+        assert!(Manifest::parse_toml(with_unknown).is_ok());
+    }
+
+    #[test]
+    fn parses_one_one_schema_version() {
+        // Spec 1's manifest example uses "1.1" — verify it parses under the
+        // current supported major (1).
+        let src = MINIMAL.replace(
+            r#"manifest_schema_version = "1.0""#,
+            r#"manifest_schema_version = "1.1""#,
+        );
+        let m = Manifest::parse_toml(&src).unwrap();
+        assert_eq!(m.manifest_schema_version.minor(), 1);
     }
 }
