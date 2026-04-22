@@ -1,0 +1,32 @@
+# Enforces Spec 2 requirements S2-7 (no direct process exit) and S2-8 (no
+# global-state installation) at the SDK library surface. The standalone CLI
+# binary (influxdb3-plugin-cli/src/main.rs) is exempt and will opt out via
+# #[allow(clippy::disallowed_methods)] or module-local attribute when needed.
+#
+# The entry list below is the MINIMUM required by testing spec Section 1 gate
+# #1. A unit test (added in Plan 3's CLI work) will parse clippy.toml and
+# assert these entries are present. Adding more entries is fine; removing any
+# listed below is a contract regression.
+disallowed-methods = [
+    # S2-7: no direct process exit
+    { path = "std::process::exit", reason = "violates S2-7", replacement = "return an error through Result" },
+
+    # S2-8: no global-state installation — logging / tracing
+    { path = "tracing::subscriber::set_global_default", reason = "violates S2-8", replacement = "let the embedding host install the subscriber" },
+    { path = "tracing_subscriber::fmt::init", reason = "violates S2-8" },
+    { path = "env_logger::init", reason = "violates S2-8" },
+    { path = "log::set_boxed_logger", reason = "violates S2-8" },
+    { path = "console_subscriber::init", reason = "violates S2-8" },
+
+    # S2-8: no global-state installation — OpenTelemetry providers
+    { path = "opentelemetry::global::set_tracer_provider", reason = "violates S2-8" },
+    { path = "opentelemetry::global::set_meter_provider", reason = "violates S2-8" },
+    { path = "opentelemetry::global::set_logger_provider", reason = "violates S2-8" },
+
+    # S2-8: no global-state installation — panic hooks and signal handlers
+    { path = "std::panic::set_hook", reason = "violates S2-8" },
+    { path = "ctrlc::set_handler", reason = "violates S2-8" },
+    { path = "signal_hook::iterator::Signals::new", reason = "violates S2-8" },
+    { path = "signal_hook::flag::register", reason = "violates S2-8" },
+    { path = "signal_hook_registry::register", reason = "violates S2-8" },
+]
