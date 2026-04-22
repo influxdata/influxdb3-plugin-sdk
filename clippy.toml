@@ -14,6 +14,8 @@ disallowed-methods = [
     # S2-8: no global-state installation — logging / tracing
     { path = "tracing::subscriber::set_global_default", reason = "violates S2-8", replacement = "let the embedding host install the subscriber" },
     { path = "tracing_subscriber::fmt::init", reason = "violates S2-8" },
+    { path = "tracing_subscriber::util::SubscriberInitExt::init", reason = "violates S2-8" },
+    { path = "tracing_subscriber::util::SubscriberInitExt::try_init", reason = "violates S2-8" },
     { path = "env_logger::init", reason = "violates S2-8" },
     { path = "log::set_boxed_logger", reason = "violates S2-8" },
     { path = "console_subscriber::init", reason = "violates S2-8" },
