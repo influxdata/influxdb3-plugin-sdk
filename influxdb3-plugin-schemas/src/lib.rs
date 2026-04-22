@@ -18,25 +18,17 @@
 // Dependency-usage guards.
 //
 // The workspace lint `unused_crate_dependencies = "deny"` fires on declared
-// deps that are not referenced from this crate's source. Plan 1 adds code
-// incrementally; each dep below is used once a later dispatch introduces the
-// relevant module. Remove a guard as soon as real usage lands.
+// deps that are not referenced from this crate's source. Each guard below is
+// removed as soon as the corresponding dep lands real usage in a later
+// dispatch.
 //
-// Runtime deps:
-use pep508_rs as _;            // used by manifest.rs (PythonRequirement validation)
-use semver as _;               // used by manifest.rs, index.rs, error.rs
-use serde as _;                // used by every module with a #[derive(Serialize|Deserialize)]
-use serde_json as _;           // used by index.rs (parse_json + to_canonical_json)
-// thiserror is used directly via #[derive(thiserror::Error)] in error.rs (SchemaError)
-use toml as _;                 // used by manifest.rs (parse_toml)
-use unicode_normalization as _; // used by index.rs (NFC normalization in to_canonical_json)
-use url as _;                   // used by manifest.rs, index.rs, error.rs
+// Runtime deps not yet used by real code:
+use serde as _;                 // used once a type derives Serialize/Deserialize (D7+)
+use unicode_normalization as _; // used once index.rs calls .nfc() in to_canonical_json (D12)
 
-// Dev deps used in integration tests and proptest harness:
+// Dev deps not yet used by tests:
 #[cfg(test)]
 use assert_matches as _;
-#[cfg(test)]
-use insta as _;
 #[cfg(test)]
 use pretty_assertions as _;
 #[cfg(test)]

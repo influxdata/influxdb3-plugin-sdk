@@ -32,7 +32,7 @@ url = { version = "2", features = ["serde"] }
 # dev-dependencies
 assert_matches = "1.5"
 insta = { version = "1.46", features = ["json", "toml", "yaml"] }
-pretty_assertions = { version = "1.4", features = ["unstable"] }
+pretty_assertions = "1.4"
 proptest = { version = "1", default-features = false, features = ["std"] }
 rstest = "0.26"
 

@@ -143,21 +143,7 @@ impl SchemaError {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// Minimal writer that fails every call. Used to force a
-    /// `serde_json::Error` of category `Io` for the `JsonSerialize` variant —
-    /// serde_json's other common "failure" paths (like `to_string(&f64::NAN)`)
-    /// don't actually error in v1; this is the reliable path.
-    struct AlwaysFail;
-
-    impl std::io::Write for AlwaysFail {
-        fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
-            Err(std::io::Error::other("forced"))
-        }
-        fn flush(&mut self) -> std::io::Result<()> {
-            Ok(())
-        }
-    }
+    use serde::ser::Error as _;
 
     /// Returns one instance of every `SchemaError` variant for stability testing.
     ///
@@ -224,7 +210,7 @@ mod tests {
                 source: serde_json::from_str::<serde_json::Value>("{").unwrap_err(),
             },
             SchemaError::JsonSerialize {
-                source: serde_json::to_writer(AlwaysFail, &0u8).unwrap_err(),
+                source: serde_json::Error::custom("forced"),
             },
         ]
     }
