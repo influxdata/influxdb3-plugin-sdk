@@ -4,7 +4,10 @@
 ///
 /// This enum is part of the `influxdb3-plugin-schemas` crate's semver-stable
 /// public API. Adding variants is a minor-version change; renaming, removing,
-/// or reshaping existing variants is a major-version change.
+/// or reshaping existing variants is a major-version change. Field additions
+/// to existing variants are also breaking changes — if a variant's payload
+/// must evolve, introduce a new variant and deprecate the old one rather
+/// than mutating the existing one.
 ///
 /// Marked `#[non_exhaustive]` — downstream consumers must include a wildcard
 /// (`_ =>`) arm when matching on this enum, so future variant additions do not
@@ -12,7 +15,7 @@
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum SchemaError {
-    #[error("plugin name {name:?} does not match regex [a-z0-9][a-z0-9-]{{0,63}} (1–64 chars, lowercase alphanumeric + hyphen, starting with alphanumeric)")]
+    #[error("plugin name {name:?} must be 1-64 characters: lowercase letters, digits, or hyphens, starting with a lowercase letter or digit")]
     InvalidPluginName { name: String },
 
     #[error("version {version:?} is not SemVer 2.0.0 compliant: {source}")]
@@ -54,6 +57,18 @@ pub enum SchemaError {
         source: semver::Error,
     },
 
+    /// A `dependencies.python` entry failed PEP 508 parsing.
+    ///
+    /// # Semver note
+    ///
+    /// The `source` field's concrete type depends on `pep508_rs`, which is
+    /// pre-1.0 (v0.9 at time of writing). A minor bump of `pep508_rs` may
+    /// reshape `Pep508Error`, which would be a breaking change to this
+    /// variant's public field type. Consumers should prefer [`.source()`]
+    /// for type-erased access; pattern-matching the typed `source` field
+    /// couples your code to `pep508_rs`'s semver.
+    ///
+    /// [`.source()`]: std::error::Error::source
     #[error("python requirement {requirement:?} is not PEP 508-parseable: {source}")]
     InvalidPythonRequirement {
         requirement: String,
@@ -70,7 +85,7 @@ pub enum SchemaError {
     #[error("hash {value:?} must be formatted as sha256:<64 lowercase hex chars>")]
     InvalidHash { value: String },
 
-    #[error("duplicate plugin entry ({name}, {version}) in index")]
+    #[error("duplicate plugin entry ({name:?}, {version:?}) in index")]
     DuplicateIndexEntry { name: String, version: String },
 
     #[error(
@@ -108,13 +123,19 @@ pub enum SchemaError {
 }
 
 impl SchemaError {
-    /// Returns the variant's name as a stable string tag, useful for
-    /// programmatic categorization.
+    /// Returns the variant's name as a stable string tag. Use for metrics
+    /// keys, log categorization, and error-category routing that should
+    /// survive field-level changes to variants.
     ///
-    /// Also load-bearing for the `variant_tags_are_stable` snapshot test: the
-    /// exhaustive match here is what forces any new enum variant to be
-    /// registered with `every_variant()` in the test module — adding a
-    /// variant without updating this match fails to compile.
+    /// Also anchors the `variant_tags_are_stable` snapshot test. The testing
+    /// design spec suggests `Debug` output for this check; we use
+    /// `variant_name()` instead because `Debug` would also capture field
+    /// values, which Rust's type system already catches via exhaustive
+    /// match — so `variant_name()` provides identical semver-tag coverage
+    /// with cleaner snapshot output. The exhaustive match below forces any
+    /// new enum variant to be registered with `every_variant()` in the test
+    /// module (adding a variant without updating this match fails to
+    /// compile).
     pub fn variant_name(&self) -> &'static str {
         match self {
             Self::InvalidPluginName { .. } => "InvalidPluginName",

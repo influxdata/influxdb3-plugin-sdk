@@ -11,9 +11,16 @@
 //! - the future database runtime — for install-time manifest parsing and
 //!   resolve-time index reads
 //!
-//! All three consumers depend on this crate through the published crates.io
-//! version; schema evolution follows the rules in Spec 1's Schema Versioning
-//! Strategy.
+//! # Stability
+//!
+//! This crate targets a semver-stable public API. Schema evolution follows
+//! the rules in Spec 1's Schema Versioning Strategy: additive fields within
+//! a schema major are minor bumps; breaking schema changes bump the crate's
+//! major.
+//!
+//! The crate is currently unpublished pending the project's license
+//! decision. The stability commitment above applies to the types defined
+//! here and will be anchored at first publish.
 
 // Dependency-usage guards.
 //
