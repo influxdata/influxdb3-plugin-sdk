@@ -125,9 +125,7 @@ impl serde::Serialize for Description {
 ///
 /// Serde goes through `TryFrom<String>` / `Into<String>` (which delegate to
 /// `FromStr` / `as_str`), so a `rename_all` attribute would be a no-op.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[serde(try_from = "String", into = "String")]
 pub enum TriggerType {
     ProcessWrites,
@@ -395,10 +393,7 @@ mod description_tests {
 
     #[test]
     fn rejects_empty() {
-        assert_matches!(
-            Description::try_new(""),
-            Err(SchemaError::DescriptionEmpty)
-        );
+        assert_matches!(Description::try_new(""), Err(SchemaError::DescriptionEmpty));
     }
 
     #[test]

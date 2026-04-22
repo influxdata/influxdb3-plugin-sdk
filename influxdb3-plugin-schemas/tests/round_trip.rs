@@ -36,7 +36,8 @@ fn canonical_form_is_idempotent() {
             .to_canonical_json()
             .unwrap();
         assert_eq!(
-            once, twice,
+            once,
+            twice,
             "canonical form changed on second pass for {}",
             path.display()
         );

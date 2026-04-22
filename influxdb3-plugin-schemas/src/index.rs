@@ -475,10 +475,7 @@ mod index_tests {
 
     #[test]
     fn ignores_unknown_per_entry_field() {
-        let with_unknown = MINIMAL.replace(
-            r#""hash":"#,
-            r#""experimental_tag": "beta", "hash":"#,
-        );
+        let with_unknown = MINIMAL.replace(r#""hash":"#, r#""experimental_tag": "beta", "hash":"#);
         assert!(Index::parse_json(&with_unknown).is_ok());
     }
 }
@@ -522,8 +519,7 @@ mod canonical_serialization_tests {
         };
         let out = idx.to_canonical_json().unwrap();
         let alpha_1_pos = out.find("\"alpha\"").unwrap();
-        let alpha_2_pos =
-            out[alpha_1_pos + 1..].find("\"alpha\"").unwrap() + alpha_1_pos + 1;
+        let alpha_2_pos = out[alpha_1_pos + 1..].find("\"alpha\"").unwrap() + alpha_1_pos + 1;
         let zebra_pos = out.find("\"zebra\"").unwrap();
         assert!(alpha_1_pos < alpha_2_pos, "alpha 1.0 before alpha 2.0");
         assert!(alpha_2_pos < zebra_pos, "alpha before zebra");
@@ -571,14 +567,11 @@ mod canonical_serialization_tests {
         let idx = Index {
             index_schema_version: IndexSchemaVersion::new(1, 0),
             artifacts_url: ArtifactsUrl::try_new("https://example.com/artifacts").unwrap(),
-            plugins: vec![
-                make_entry("alpha", semver::Version::new(1, 0, 0)),
-                {
-                    let mut e = make_entry("beta", semver::Version::new(2, 1, 0));
-                    e.yanked = true;
-                    e
-                },
-            ],
+            plugins: vec![make_entry("alpha", semver::Version::new(1, 0, 0)), {
+                let mut e = make_entry("beta", semver::Version::new(2, 1, 0));
+                e.yanked = true;
+                e
+            }],
         };
         insta::assert_snapshot!("canonical_full_shape", idx.to_canonical_json().unwrap());
     }

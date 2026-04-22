@@ -26,8 +26,8 @@
 #![allow(unused_crate_dependencies)]
 
 use influxdb3_plugin_schemas::{
-    ArtifactHash, ArtifactsUrl, Dependencies, Description, Index, IndexEntry,
-    IndexSchemaVersion, PluginName, TriggerType,
+    ArtifactHash, ArtifactsUrl, Dependencies, Description, Index, IndexEntry, IndexSchemaVersion,
+    PluginName, TriggerType,
 };
 use proptest::prelude::*;
 use proptest::test_runner::{Config as ProptestConfig, RngAlgorithm};
@@ -46,25 +46,23 @@ fn arb_entry() -> impl Strategy<Value = IndexEntry> {
     // Note: `arb_index` may emit duplicate (name, version) tuples. Because the
     // determinism test never re-parses the canonical output, the
     // `Index::validate` duplicate-rejection path is not exercised here — safe.
-    (arb_name(), arb_version(), any::<bool>()).prop_map(|(name, version, yanked)| {
-        IndexEntry {
-            name,
-            version,
-            description: Description::try_new("desc").unwrap(),
-            triggers: vec![TriggerType::ProcessWrites],
-            homepage: None,
-            repository: None,
-            documentation: None,
-            dependencies: Dependencies {
-                database_version: ">=3.0.0".parse().unwrap(),
-                python: vec![],
-            },
-            hash: ArtifactHash::try_new(
-                "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-            )
-            .unwrap(),
-            yanked,
-        }
+    (arb_name(), arb_version(), any::<bool>()).prop_map(|(name, version, yanked)| IndexEntry {
+        name,
+        version,
+        description: Description::try_new("desc").unwrap(),
+        triggers: vec![TriggerType::ProcessWrites],
+        homepage: None,
+        repository: None,
+        documentation: None,
+        dependencies: Dependencies {
+            database_version: ">=3.0.0".parse().unwrap(),
+            python: vec![],
+        },
+        hash: ArtifactHash::try_new(
+            "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        )
+        .unwrap(),
+        yanked,
     })
 }
 

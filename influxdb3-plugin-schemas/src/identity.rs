@@ -118,11 +118,7 @@ pub enum PluginId {
 
 impl PluginId {
     /// Constructs a registry-sourced `PluginId`.
-    pub fn registry(
-        index_url: url::Url,
-        name: PluginName,
-        version: semver::Version,
-    ) -> Self {
+    pub fn registry(index_url: url::Url, name: PluginName, version: semver::Version) -> Self {
         Self::Registry {
             index_url,
             name,
@@ -131,11 +127,7 @@ impl PluginId {
     }
 
     /// Constructs a locally-sourced `PluginId`.
-    pub fn local(
-        path: std::path::PathBuf,
-        name: PluginName,
-        version: semver::Version,
-    ) -> Self {
+    pub fn local(path: std::path::PathBuf, name: PluginName, version: semver::Version) -> Self {
         Self::Local {
             path,
             name,
@@ -195,9 +187,9 @@ mod tests {
     }
 
     #[rstest]
-    #[case("")]        // empty
-    #[case("-foo")]    // leading hyphen
-    #[case("Foo")]     // uppercase
+    #[case("")] // empty
+    #[case("-foo")] // leading hyphen
+    #[case("Foo")] // uppercase
     #[case("foo_bar")] // underscore
     #[case("foo bar")] // space
     fn invalid_names_rejected(#[case] input: &str) {

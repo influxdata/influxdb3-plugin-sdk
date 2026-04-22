@@ -25,8 +25,7 @@ fn all_valid_manifests_parse() {
             continue;
         }
         let contents = fs::read_to_string(&path).unwrap();
-        Manifest::parse_toml(&contents)
-            .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        Manifest::parse_toml(&contents).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     }
 }
 
@@ -39,8 +38,7 @@ fn all_valid_indexes_parse() {
             continue;
         }
         let contents = fs::read_to_string(&path).unwrap();
-        Index::parse_json(&contents)
-            .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        Index::parse_json(&contents).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     }
 }
 
@@ -70,8 +68,7 @@ fn all_invalid_indexes_fail_to_parse() {
     for entry in fs::read_dir(&dir).unwrap() {
         let path = entry.unwrap().path();
         let name = path.file_name().unwrap().to_string_lossy();
-        if !name.starts_with("index_")
-            || path.extension().and_then(|e| e.to_str()) != Some("json")
+        if !name.starts_with("index_") || path.extension().and_then(|e| e.to_str()) != Some("json")
         {
             continue;
         }

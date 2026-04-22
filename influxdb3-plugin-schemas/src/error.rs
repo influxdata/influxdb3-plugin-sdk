@@ -15,7 +15,9 @@
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum SchemaError {
-    #[error("plugin name {name:?} must be 1-64 characters: lowercase letters, digits, or hyphens, starting with a lowercase letter or digit")]
+    #[error(
+        "plugin name {name:?} must be 1-64 characters: lowercase letters, digits, or hyphens, starting with a lowercase letter or digit"
+    )]
     InvalidPluginName { name: String },
 
     #[error("version {version:?} is not SemVer 2.0.0 compliant: {source}")]
@@ -173,7 +175,9 @@ mod tests {
     /// tests below lock both `Display` text and `Debug` variant tags.
     fn every_variant() -> Vec<SchemaError> {
         vec![
-            SchemaError::InvalidPluginName { name: "Bad-Name".into() },
+            SchemaError::InvalidPluginName {
+                name: "Bad-Name".into(),
+            },
             SchemaError::InvalidVersion {
                 version: "1.2".into(),
                 source: semver::Version::parse("1.2").unwrap_err(),
@@ -188,7 +192,9 @@ mod tests {
                 url: "not a url".into(),
                 source: url::Url::parse("not a url").unwrap_err(),
             },
-            SchemaError::UnknownTriggerType { trigger: "on_startup".into() },
+            SchemaError::UnknownTriggerType {
+                trigger: "on_startup".into(),
+            },
             SchemaError::EmptyTriggers,
             SchemaError::InvalidDatabaseVersion {
                 range: ">=bad".into(),
@@ -210,7 +216,9 @@ mod tests {
                 url: "s3://bucket/foo".into(),
                 scheme: "s3".into(),
             },
-            SchemaError::InvalidHash { value: "notahash".into() },
+            SchemaError::InvalidHash {
+                value: "notahash".into(),
+            },
             SchemaError::DuplicateIndexEntry {
                 name: "dup".into(),
                 version: "1.0.0".into(),
@@ -223,7 +231,9 @@ mod tests {
                 found: "2.0".into(),
                 supported: 1,
             },
-            SchemaError::MalformedSchemaVersion { value: "abc".into() },
+            SchemaError::MalformedSchemaVersion {
+                value: "abc".into(),
+            },
             SchemaError::TomlParse {
                 source: toml::from_str::<toml::Value>("= ").unwrap_err(),
             },
@@ -252,8 +262,7 @@ mod tests {
     /// fails here.
     #[test]
     fn variant_tags_are_stable() {
-        let tags: Vec<&'static str> =
-            every_variant().iter().map(|e| e.variant_name()).collect();
+        let tags: Vec<&'static str> = every_variant().iter().map(|e| e.variant_name()).collect();
         insta::assert_yaml_snapshot!("variant_tags", tags);
     }
 }
