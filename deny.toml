@@ -1,0 +1,43 @@
+# Configuration documentation:
+#   https://embarkstudios.github.io/cargo-deny/index.html
+
+[advisories]
+version = 2
+yanked = "deny"
+# Empty ignore list — add entries only when a real transitive dep requires it,
+# with a justification comment.
+ignore = []
+
+[licenses]
+version = 2
+unused-allowed-license = "warn"
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "MIT",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "Zlib",
+]
+
+[bans]
+multiple-versions = "allow"
+deny = [
+    # S2-1: the SDK is network-unaware. Ban every HTTP client crate at the
+    # dependency graph so transitive additions fail the audit step.
+    { name = "reqwest" },
+    { name = "hyper" },
+    { name = "hyper-util" },
+    { name = "ureq" },
+    { name = "isahc" },
+    { name = "curl" },
+    { name = "awc" },
+    { name = "surf" },
+    # Team baseline bans from influxdb_pro:
+    { name = "openssl-sys", reason = "we use rustls when TLS is needed" },
+    { name = "atty", reason = "use std::io::IsTerminal from stdlib" },
+    { name = "chrono-english", reason = "use humantime instead" },
+]
