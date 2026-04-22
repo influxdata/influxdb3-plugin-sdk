@@ -43,3 +43,15 @@ use pretty_assertions as _;
 use proptest as _;
 #[cfg(test)]
 use rstest as _;
+
+mod error;
+mod identity;
+mod index;
+mod manifest;
+
+// Types are added in subsequent tasks; re-exports will be uncommented as each
+// arrives.
+// pub use error::SchemaError;
+// pub use identity::{PluginId, PluginName};
+// pub use index::{ArtifactHash, ArtifactsUrl, Index, IndexEntry, IndexSchemaVersion};
+// pub use manifest::{Dependencies, Description, Manifest, ManifestSchemaVersion, PluginMetadata, PythonRequirement, TriggerType};
