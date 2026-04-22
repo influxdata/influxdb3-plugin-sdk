@@ -22,14 +22,10 @@
 //! decision. The stability commitment above applies to the types defined
 //! here and will be anchored at first publish.
 
-// Dependency-usage guards.
-//
-// The workspace lint `unused_crate_dependencies = "deny"` fires on declared
-// deps that are not referenced from this crate's source. Each guard below is
-// removed as soon as the corresponding dep lands real usage in a later
-// dispatch.
-//
-// Dev deps not yet used by tests:
+// `proptest` is used only in the `tests/determinism.rs` integration test, not
+// in any inline `#[cfg(test)]` module. The lib crate's test target still sees
+// it as a declared dev-dep, so this guard keeps `unused_crate_dependencies`
+// satisfied on the lib test build.
 #[cfg(test)]
 use proptest as _;
 
