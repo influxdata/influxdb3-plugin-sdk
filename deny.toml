@@ -10,6 +10,12 @@ ignore = []
 
 [licenses]
 version = 2
+# Skip license checks on our own workspace crates. We intentionally omit
+# `license = "..."` from `[workspace.package]` because the project is
+# private-repo-first and the final license is not yet decided (see plan's
+# "Design decisions" section). When we go public, we'll pick a license, add
+# LICENSE file(s), and remove this block.
+private = { ignore = true }
 unused-allowed-license = "warn"
 allow = [
     "Apache-2.0",
@@ -21,6 +27,12 @@ allow = [
     "Unicode-3.0",
     "Unicode-DFS-2016",
     "Zlib",
+]
+exceptions = [
+    # pep508_rs → pep440_rs → version-ranges is MPL-2.0 (weak file-level
+    # copyleft). Acceptable: we depend on it unmodified. Matches influxdb_pro's
+    # pattern of per-crate exceptions for MPL-2.0 transitives.
+    { name = "version-ranges", allow = ["MPL-2.0"] },
 ]
 
 [bans]

@@ -5,6 +5,9 @@ authors.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 description = "Schema types for InfluxDB 3 plugin manifests and indexes."
+# Unpublished until the license is decided (see plan's "Design decisions").
+# Pairs with `private = { ignore = true }` in deny.toml.
+publish = false
 
 [dependencies]
 pep508_rs.workspace = true

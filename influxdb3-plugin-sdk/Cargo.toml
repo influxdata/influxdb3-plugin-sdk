@@ -5,6 +5,7 @@ authors.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 description = "InfluxDB 3 plugin SDK library — placeholder; to be implemented in Plan 2."
+publish = false
 
 [lints]
 workspace = true
