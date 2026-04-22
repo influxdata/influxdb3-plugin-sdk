@@ -46,4 +46,5 @@ mod manifest;
 pub use error::SchemaError;
 pub use identity::{PluginId, PluginName};
 // pub use index::{ArtifactHash, ArtifactsUrl, Index, IndexEntry, IndexSchemaVersion};
-// pub use manifest::{Dependencies, Description, Manifest, ManifestSchemaVersion, PluginMetadata, PythonRequirement, TriggerType};
+// Partial manifest re-export — D9 adds Dependencies, Manifest, PluginMetadata.
+pub use manifest::{Description, ManifestSchemaVersion, PythonRequirement, TriggerType};
