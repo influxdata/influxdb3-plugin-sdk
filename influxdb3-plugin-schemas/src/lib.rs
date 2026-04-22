@@ -29,9 +29,6 @@
 // removed as soon as the corresponding dep lands real usage in a later
 // dispatch.
 //
-// Runtime deps not yet used by real code:
-use unicode_normalization as _; // used once index.rs calls .nfc() in to_canonical_json (D12)
-
 // Dev deps not yet used by tests:
 #[cfg(test)]
 use proptest as _;

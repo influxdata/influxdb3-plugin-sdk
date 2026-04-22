@@ -1,8 +1,11 @@
 //! Plugin registry index (`index.json`) types and canonical serialization.
 
 use crate::{Dependencies, Description, PluginName, SchemaError, TriggerType};
+use serde::Serialize as _;
+use serde::ser::Error as _;
 use std::fmt;
 use std::str::FromStr;
+use unicode_normalization::UnicodeNormalization;
 
 /// Supported major version of the index schema.
 pub(crate) const SUPPORTED_INDEX_MAJOR: u32 = 1;
@@ -232,6 +235,52 @@ impl Index {
         }
         Ok(())
     }
+
+    /// Serializes this index to the canonical JSON form defined by Spec 2
+    /// Reproducibility (derived index canonicalization):
+    ///
+    /// - Field ordering matches struct declaration order.
+    /// - `plugins[]` sorted by `name` ascending, then `version` ascending
+    ///   (SemVer precedence). Yank status does not affect ordering.
+    /// - 2-space indent, pretty-printed.
+    /// - Trailing newline.
+    /// - NFC Unicode normalization applied to free-text `description` fields.
+    ///   `PluginName`, `ArtifactHash`, schema versions, and trigger identifiers
+    ///   are constrained to NFC-safe subsets (ASCII) by their validators. URL
+    ///   fields are validated via `url::Url` parse which produces a
+    ///   deterministic serialized form independent of input normalization.
+    pub fn to_canonical_json(&self) -> Result<String, SchemaError> {
+        // Clone so we can sort without mutating `self`.
+        let mut normalized = self.clone();
+        normalized.plugins.sort_by(|a, b| {
+            a.name
+                .as_str()
+                .cmp(b.name.as_str())
+                .then_with(|| a.version.cmp(&b.version))
+        });
+        // Apply NFC to description fields. Returns a structured error if NFC
+        // pushes the string past the length bound (rare but possible — NFC can
+        // add combining-mark sequences that cross 200 chars).
+        for entry in &mut normalized.plugins {
+            let nfc = normalize_nfc(entry.description.as_str());
+            entry.description = Description::try_new(&nfc)?;
+        }
+
+        let mut buf = Vec::with_capacity(256);
+        let formatter = serde_json::ser::PrettyFormatter::with_indent(b"  ");
+        let mut ser = serde_json::Serializer::with_formatter(&mut buf, formatter);
+        normalized
+            .serialize(&mut ser)
+            .map_err(|source| SchemaError::JsonSerialize { source })?;
+        buf.push(b'\n');
+        String::from_utf8(buf).map_err(|e| SchemaError::JsonSerialize {
+            source: serde_json::Error::custom(e.to_string()),
+        })
+    }
+}
+
+fn normalize_nfc(s: &str) -> String {
+    s.nfc().collect()
 }
 
 #[cfg(test)]
@@ -415,5 +464,182 @@ mod index_tests {
             r#""experimental_tag": "beta", "hash":"#,
         );
         assert!(Index::parse_json(&with_unknown).is_ok());
+    }
+}
+
+#[cfg(test)]
+mod canonical_serialization_tests {
+    use super::*;
+    use pretty_assertions::assert_eq;
+
+    fn make_entry(name: &str, version: semver::Version) -> IndexEntry {
+        IndexEntry {
+            name: name.parse().unwrap(),
+            version,
+            description: Description::try_new("desc").unwrap(),
+            triggers: vec![TriggerType::ProcessWrites],
+            homepage: None,
+            repository: None,
+            documentation: None,
+            dependencies: Dependencies {
+                database_version: ">=3.0.0".parse().unwrap(),
+                python: vec![],
+            },
+            hash: ArtifactHash::try_new(
+                "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+            )
+            .unwrap(),
+            yanked: false,
+        }
+    }
+
+    #[test]
+    fn plugins_sorted_by_name_then_version() {
+        let idx = Index {
+            index_schema_version: IndexSchemaVersion::new(1, 0),
+            artifacts_url: ArtifactsUrl::try_new("https://example.com/artifacts").unwrap(),
+            plugins: vec![
+                make_entry("zebra", semver::Version::new(1, 0, 0)),
+                make_entry("alpha", semver::Version::new(2, 0, 0)),
+                make_entry("alpha", semver::Version::new(1, 0, 0)),
+            ],
+        };
+        let out = idx.to_canonical_json().unwrap();
+        let alpha_1_pos = out.find("\"alpha\"").unwrap();
+        let alpha_2_pos =
+            out[alpha_1_pos + 1..].find("\"alpha\"").unwrap() + alpha_1_pos + 1;
+        let zebra_pos = out.find("\"zebra\"").unwrap();
+        assert!(alpha_1_pos < alpha_2_pos, "alpha 1.0 before alpha 2.0");
+        assert!(alpha_2_pos < zebra_pos, "alpha before zebra");
+    }
+
+    #[test]
+    fn two_serialize_calls_produce_byte_identical() {
+        let idx = Index {
+            index_schema_version: IndexSchemaVersion::new(1, 0),
+            artifacts_url: ArtifactsUrl::try_new("https://example.com/artifacts").unwrap(),
+            plugins: vec![make_entry("x", semver::Version::new(1, 0, 0))],
+        };
+        let a = idx.to_canonical_json().unwrap();
+        let b = idx.to_canonical_json().unwrap();
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn ends_with_newline() {
+        let idx = Index {
+            index_schema_version: IndexSchemaVersion::new(1, 0),
+            artifacts_url: ArtifactsUrl::try_new("https://example.com/artifacts").unwrap(),
+            plugins: vec![],
+        };
+        let out = idx.to_canonical_json().unwrap();
+        assert!(out.ends_with('\n'));
+    }
+
+    #[test]
+    fn two_space_indent() {
+        let idx = Index {
+            index_schema_version: IndexSchemaVersion::new(1, 0),
+            artifacts_url: ArtifactsUrl::try_new("https://example.com/artifacts").unwrap(),
+            plugins: vec![make_entry("x", semver::Version::new(1, 0, 0))],
+        };
+        let out = idx.to_canonical_json().unwrap();
+        assert!(
+            out.contains("\n  \"index_schema_version\""),
+            "expected 2-space indent at top level"
+        );
+    }
+
+    #[test]
+    fn snapshot_locks_full_shape() {
+        let idx = Index {
+            index_schema_version: IndexSchemaVersion::new(1, 0),
+            artifacts_url: ArtifactsUrl::try_new("https://example.com/artifacts").unwrap(),
+            plugins: vec![
+                make_entry("alpha", semver::Version::new(1, 0, 0)),
+                {
+                    let mut e = make_entry("beta", semver::Version::new(2, 1, 0));
+                    e.yanked = true;
+                    e
+                },
+            ],
+        };
+        insta::assert_snapshot!("canonical_full_shape", idx.to_canonical_json().unwrap());
+    }
+
+    #[test]
+    fn entry_field_order_is_canonical() {
+        let idx = Index {
+            index_schema_version: IndexSchemaVersion::new(1, 0),
+            artifacts_url: ArtifactsUrl::try_new("https://example.com/artifacts").unwrap(),
+            plugins: vec![make_entry("x", semver::Version::new(1, 0, 0))],
+        };
+        let out = idx.to_canonical_json().unwrap();
+        let name_pos = out.find("\"name\"").unwrap();
+        let version_pos = out.find("\"version\"").unwrap();
+        let description_pos = out.find("\"description\"").unwrap();
+        let triggers_pos = out.find("\"triggers\"").unwrap();
+        let dependencies_pos = out.find("\"dependencies\"").unwrap();
+        let hash_pos = out.find("\"hash\"").unwrap();
+        assert!(name_pos < version_pos);
+        assert!(version_pos < description_pos);
+        assert!(description_pos < triggers_pos);
+        assert!(triggers_pos < dependencies_pos);
+        assert!(dependencies_pos < hash_pos);
+    }
+
+    #[test]
+    fn nfc_normalization_makes_precomposed_equal_decomposed() {
+        // Testing-spec S2 #9: "NFC test uses a precomposed-vs-decomposed pair
+        // and asserts byte-identical output."
+        //
+        // Input A uses precomposed "é" (U+00E9). Input B uses "e" + combining
+        // acute "\u{0301}" (U+0065 U+0301). NFC collapses both to U+00E9.
+        let precomposed = Description::try_new("caf\u{00E9}").unwrap();
+        let decomposed = Description::try_new("cafe\u{0301}").unwrap();
+        let entry_a = IndexEntry {
+            description: precomposed,
+            ..make_entry("x", semver::Version::new(1, 0, 0))
+        };
+        let entry_b = IndexEntry {
+            description: decomposed,
+            ..make_entry("x", semver::Version::new(1, 0, 0))
+        };
+
+        let idx_a = Index {
+            index_schema_version: IndexSchemaVersion::new(1, 0),
+            artifacts_url: ArtifactsUrl::try_new("https://example.com/artifacts").unwrap(),
+            plugins: vec![entry_a],
+        };
+        let idx_b = Index {
+            index_schema_version: IndexSchemaVersion::new(1, 0),
+            artifacts_url: ArtifactsUrl::try_new("https://example.com/artifacts").unwrap(),
+            plugins: vec![entry_b],
+        };
+        assert_eq!(
+            idx_a.to_canonical_json().unwrap(),
+            idx_b.to_canonical_json().unwrap()
+        );
+    }
+
+    #[test]
+    fn yank_status_does_not_affect_sort() {
+        let mut yanked_alpha = make_entry("alpha", semver::Version::new(1, 0, 0));
+        yanked_alpha.yanked = true;
+        let idx = Index {
+            index_schema_version: IndexSchemaVersion::new(1, 0),
+            artifacts_url: ArtifactsUrl::try_new("https://example.com/artifacts").unwrap(),
+            plugins: vec![
+                make_entry("beta", semver::Version::new(1, 0, 0)),
+                yanked_alpha, // yanked but sorts first by name
+            ],
+        };
+        let out = idx.to_canonical_json().unwrap();
+        let alpha_pos = out.find("\"alpha\"").unwrap();
+        let beta_pos = out.find("\"beta\"").unwrap();
+        assert!(
+            alpha_pos < beta_pos,
+            "yanked alpha should still sort before beta"
+        );
     }
 }

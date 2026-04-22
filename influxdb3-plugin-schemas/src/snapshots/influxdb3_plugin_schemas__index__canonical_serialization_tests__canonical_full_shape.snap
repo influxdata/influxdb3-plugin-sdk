@@ -1,0 +1,38 @@
+---
+source: influxdb3-plugin-schemas/src/index.rs
+assertion_line: 567
+expression: idx.to_canonical_json().unwrap()
+---
+{
+  "index_schema_version": "1.0",
+  "artifacts_url": "https://example.com/artifacts",
+  "plugins": [
+    {
+      "name": "alpha",
+      "version": "1.0.0",
+      "description": "desc",
+      "triggers": [
+        "process_writes"
+      ],
+      "dependencies": {
+        "database_version": ">=3.0.0",
+        "python": []
+      },
+      "hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "name": "beta",
+      "version": "2.1.0",
+      "description": "desc",
+      "triggers": [
+        "process_writes"
+      ],
+      "dependencies": {
+        "database_version": ">=3.0.0",
+        "python": []
+      },
+      "hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "yanked": true
+    }
+  ]
+}

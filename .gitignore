@@ -16,6 +16,7 @@ target/
 .idea/
 .vscode/
 .helix/
+.claude/
 
 # macOS
 .DS_Store
