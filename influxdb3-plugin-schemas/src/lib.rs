@@ -45,7 +45,7 @@ mod manifest;
 // arrives.
 pub use error::SchemaError;
 pub use identity::{PluginId, PluginName};
-// pub use index::{ArtifactHash, ArtifactsUrl, Index, IndexEntry, IndexSchemaVersion};
+pub use index::{ArtifactHash, ArtifactsUrl, Index, IndexEntry, IndexSchemaVersion};
 pub use manifest::{
     Dependencies, Description, Manifest, ManifestSchemaVersion, PluginMetadata,
     PythonRequirement, TriggerType,
