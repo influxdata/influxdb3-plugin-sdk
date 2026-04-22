@@ -236,9 +236,38 @@ pub struct Manifest {
 }
 
 impl Manifest {
-    /// Parses a manifest from a TOML string.
+    /// Parses a manifest from a TOML string. Structural parsing via serde +
+    /// newtype `Deserialize` impls runs first; post-parse validation for rules
+    /// serde can't express (non-empty triggers, URL scheme allowlist) runs
+    /// after.
     pub fn parse_toml(input: &str) -> Result<Self, SchemaError> {
-        toml::from_str(input).map_err(|source| SchemaError::TomlParse { source })
+        let parsed: Self =
+            toml::from_str(input).map_err(|source| SchemaError::TomlParse { source })?;
+        parsed.validate()?;
+        Ok(parsed)
+    }
+
+    fn validate(&self) -> Result<(), SchemaError> {
+        if self.plugin.triggers.is_empty() {
+            return Err(SchemaError::EmptyTriggers);
+        }
+        for url in [
+            &self.plugin.homepage,
+            &self.plugin.repository,
+            &self.plugin.documentation,
+        ]
+        .into_iter()
+        .flatten()
+        {
+            let scheme = url.scheme();
+            if !matches!(scheme, "http" | "https") {
+                return Err(SchemaError::InvalidUrlScheme {
+                    url: url.to_string(),
+                    scheme: scheme.to_owned(),
+                });
+            }
+        }
+        Ok(())
     }
 }
 
@@ -541,5 +570,70 @@ database_version = ">=3.2.0,<4.0.0"
         );
         let m = Manifest::parse_toml(&src).unwrap();
         assert_eq!(m.manifest_schema_version.minor(), 1);
+    }
+}
+
+#[cfg(test)]
+mod validation_tests {
+    use super::*;
+    use assert_matches::assert_matches;
+    use rstest::rstest;
+
+    fn with_fragment(key: &str, value: &str) -> String {
+        format!(
+            r#"
+manifest_schema_version = "1.0"
+
+[plugin]
+name = "x"
+version = "1.0.0"
+description = "x"
+triggers = ["process_writes"]
+{key} = {value}
+
+[dependencies]
+database_version = ">=3.0.0"
+"#
+        )
+    }
+
+    #[rstest]
+    #[case("homepage", r#""ftp://bad/""#)]
+    #[case("homepage", r#""file:///local""#)]
+    #[case("repository", r#""git://bad""#)]
+    #[case("documentation", r#""s3://bucket""#)]
+    fn rejects_non_http_urls(#[case] field: &str, #[case] value: &str) {
+        let manifest = with_fragment(field, value);
+        let err = Manifest::parse_toml(&manifest).unwrap_err();
+        assert_matches!(err, SchemaError::InvalidUrlScheme { .. });
+    }
+
+    #[rstest]
+    #[case("homepage", r#""http://example.com""#)]
+    #[case("homepage", r#""https://example.com""#)]
+    #[case("repository", r#""https://github.com/foo/bar""#)]
+    #[case("documentation", r#""http://docs.example.com/plugin""#)]
+    fn accepts_http_and_https_urls(#[case] field: &str, #[case] value: &str) {
+        let manifest = with_fragment(field, value);
+        Manifest::parse_toml(&manifest)
+            .unwrap_or_else(|e| panic!("expected {field}={value} to parse, got {e}"));
+    }
+
+    #[test]
+    fn rejects_empty_triggers() {
+        let input = r#"
+manifest_schema_version = "1.0"
+
+[plugin]
+name = "x"
+version = "1.0.0"
+description = "x"
+triggers = []
+
+[dependencies]
+database_version = ">=3.0.0"
+"#;
+        let err = Manifest::parse_toml(input).unwrap_err();
+        assert_matches!(err, SchemaError::EmptyTriggers);
     }
 }
