@@ -1,0 +1,11 @@
+manifest_schema_version = "1.0"
+
+[plugin]
+name = "bad-url"
+version = "0.1.0"
+description = "Homepage uses rejected scheme."
+triggers = ["process_writes"]
+homepage = "ftp://bad"
+
+[dependencies]
+database_version = ">=3.0.0"

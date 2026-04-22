@@ -1,0 +1,10 @@
+manifest_schema_version = "1.0"
+
+[plugin]
+name = "too-long-desc"
+version = "1.0.0"
+description = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+triggers = ["process_writes"]
+
+[dependencies]
+database_version = ">=3.0.0"

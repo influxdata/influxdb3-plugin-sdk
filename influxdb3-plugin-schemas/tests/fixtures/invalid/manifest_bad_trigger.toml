@@ -1,0 +1,10 @@
+manifest_schema_version = "1.0"
+
+[plugin]
+name = "bad-trigger"
+version = "0.1.0"
+description = "Trigger is not in the closed set."
+triggers = ["on_startup"]
+
+[dependencies]
+database_version = ">=3.0.0"

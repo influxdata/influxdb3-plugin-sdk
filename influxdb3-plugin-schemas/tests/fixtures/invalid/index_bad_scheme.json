@@ -1,0 +1,5 @@
+{
+  "index_schema_version": "1.0",
+  "artifacts_url": "s3://bucket/plugins",
+  "plugins": []
+}

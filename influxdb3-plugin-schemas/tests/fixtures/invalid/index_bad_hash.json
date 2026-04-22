@@ -1,0 +1,17 @@
+{
+  "index_schema_version": "1.0",
+  "artifacts_url": "https://plugins.example.com/artifacts",
+  "plugins": [
+    {
+      "name": "x",
+      "version": "1.0.0",
+      "description": "Hash is too short.",
+      "triggers": ["process_writes"],
+      "dependencies": {
+        "database_version": ">=3.0.0",
+        "python": []
+      },
+      "hash": "sha256:abc"
+    }
+  ]
+}
