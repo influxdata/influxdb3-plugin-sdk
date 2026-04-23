@@ -1,0 +1,18 @@
+{
+  "index_schema_version": "1.0",
+  "artifacts_url": "https://plugins.example.com/artifacts",
+  "plugins": [
+    {
+      "name": "bad-url",
+      "version": "0.1.0",
+      "description": "Per-entry homepage uses ftp:// — rejected by Index::validate.",
+      "triggers": ["process_writes"],
+      "homepage": "ftp://bad.example.com/",
+      "dependencies": {
+        "database_version": ">=3.0.0",
+        "python": []
+      },
+      "hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  ]
+}

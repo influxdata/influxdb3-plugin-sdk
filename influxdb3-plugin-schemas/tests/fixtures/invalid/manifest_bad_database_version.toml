@@ -1,0 +1,10 @@
+manifest_schema_version = "1.0"
+
+[plugin]
+name = "bad-db-range"
+version = "0.1.0"
+description = "Manifest's database_version is not a parseable SemVer range."
+triggers = ["process_writes"]
+
+[dependencies]
+database_version = ">=not-a-real-version"

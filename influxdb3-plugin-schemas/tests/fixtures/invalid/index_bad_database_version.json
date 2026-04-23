@@ -1,0 +1,17 @@
+{
+  "index_schema_version": "1.0",
+  "artifacts_url": "https://plugins.example.com/artifacts",
+  "plugins": [
+    {
+      "name": "bad-db-range",
+      "version": "0.1.0",
+      "description": "Index entry's database_version is not a parseable SemVer range.",
+      "triggers": ["process_writes"],
+      "dependencies": {
+        "database_version": ">=not-a-real-version",
+        "python": []
+      },
+      "hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  ]
+}

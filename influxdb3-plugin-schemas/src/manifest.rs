@@ -654,4 +654,28 @@ database_version = ">=3.0.0"
         let err = Manifest::parse_toml(input).unwrap_err();
         assert_matches!(err, SchemaError::EmptyTriggers);
     }
+
+    /// Invalid `dependencies.database_version` (not a parseable SemVer
+    /// range) propagates from `semver::VersionReq::deserialize` through
+    /// serde — it surfaces as `SchemaError::TomlParse`. (See the schemas
+    /// crate's "Error policy for invalid parsed fields" Spec Coverage note
+    /// in README.md for why this isn't `InvalidDatabaseVersion` directly:
+    /// serde's `Error::custom` wraps the inner error.)
+    #[test]
+    fn rejects_invalid_database_version() {
+        let input = r#"
+manifest_schema_version = "1.0"
+
+[plugin]
+name = "x"
+version = "1.0.0"
+description = "x"
+triggers = ["process_writes"]
+
+[dependencies]
+database_version = ">=not-a-version"
+"#;
+        let err = Manifest::parse_toml(input).unwrap_err();
+        assert_matches!(err, SchemaError::TomlParse { .. });
+    }
 }

@@ -9,15 +9,9 @@ use std::str::FromStr;
 /// lowercase alphanumerics and hyphens).
 ///
 /// Spec 1 defines this as the plugin identity's second element within a
-/// registry.
-///
-/// # Regex divergence note
-///
-/// Spec 1 writes the regex as `[a-z0-9][a-z0-9-]{1,63}` (first char + 1..=63
-/// more, total 2..=64). This implementation uses `{0,63}` (total 1..=64) so
-/// length-1 names ("a") are accepted. The divergence is intentional and
-/// matches the testing spec's S2 #2 boundary cases. Tracked in the plan's
-/// "Design decisions locked here" section.
+/// registry. The 1-to-64 character bound (length-1 names accepted) matches
+/// the core design doc's `[a-z0-9][a-z0-9-]{0,63}` rule and the testing
+/// spec's S2 #2 boundary cases.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PluginName(String);
 
@@ -200,7 +194,8 @@ mod tests {
     /// Length boundaries cannot be expressed as `#[rstest::case]` arguments
     /// (those require const-evaluable expressions), so they live in a
     /// dedicated test. Covers length 1 (valid), 64 (valid), 65 (rejected) —
-    /// the "1-64 chars" contract from the plan's regex-divergence note.
+    /// the approved 1-64-character rule per the core design doc's
+    /// `[a-z0-9][a-z0-9-]{0,63}` regex.
     #[test]
     fn length_boundaries() {
         assert!(PluginName::from_str("a").is_ok()); // length 1

@@ -1,0 +1,17 @@
+{
+  "index_schema_version": "1.0",
+  "artifacts_url": "https://plugins.example.com/artifacts",
+  "plugins": [
+    {
+      "name": "no-triggers",
+      "version": "0.1.0",
+      "description": "Per-entry triggers array is empty; rejected by Index::validate.",
+      "triggers": [],
+      "dependencies": {
+        "database_version": ">=3.0.0",
+        "python": []
+      },
+      "hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  ]
+}

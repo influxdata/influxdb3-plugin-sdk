@@ -241,6 +241,26 @@ impl Index {
         use std::collections::HashSet;
         let mut seen: HashSet<(&str, &semver::Version)> = HashSet::new();
         for entry in &self.plugins {
+            // Per-entry rules mirror the manifest's validate() rules per the
+            // core design doc's "Index-entry validation mirrors manifest
+            // validation" subsection.
+            if entry.triggers.is_empty() {
+                return Err(SchemaError::EmptyTriggers);
+            }
+            for url in [&entry.homepage, &entry.repository, &entry.documentation]
+                .into_iter()
+                .flatten()
+            {
+                let scheme = url.scheme();
+                if !matches!(scheme, "http" | "https") {
+                    return Err(SchemaError::InvalidUrlScheme {
+                        url: url.to_string(),
+                        scheme: scheme.to_owned(),
+                    });
+                }
+            }
+
+            // Existing duplicate-(name, version) check.
             let key = (entry.name.as_str(), &entry.version);
             if !seen.insert(key) {
                 return Err(SchemaError::DuplicateIndexEntry {
@@ -268,11 +288,16 @@ impl Index {
     pub fn to_canonical_json(&self) -> Result<String, SchemaError> {
         // Clone so we can sort without mutating `self`.
         let mut normalized = self.clone();
+        // Per Spec 1 Reproducibility: "sorted by `name` ascending, then
+        // `version` ascending per SemVer 2.0.0 precedence."
+        // `Version::cmp_precedence` implements the SemVer 2.0.0 precedence
+        // rule (build metadata is ignored). The plain `Version::cmp` would
+        // include build metadata and violate that contract.
         normalized.plugins.sort_by(|a, b| {
             a.name
                 .as_str()
                 .cmp(b.name.as_str())
-                .then_with(|| a.version.cmp(&b.version))
+                .then_with(|| a.version.cmp_precedence(&b.version))
         });
         // Apply NFC to description fields. Returns a structured error if NFC
         // pushes the string past the length bound (rare but possible — NFC can
@@ -478,6 +503,63 @@ mod index_tests {
         let with_unknown = MINIMAL.replace(r#""hash":"#, r#""experimental_tag": "beta", "hash":"#);
         assert!(Index::parse_json(&with_unknown).is_ok());
     }
+
+    /// Per the core design doc's "Index-entry validation mirrors manifest
+    /// validation" subsection, every IndexEntry must satisfy the same
+    /// trigger / URL-scheme rules as the manifest.
+    #[test]
+    fn empty_triggers_rejected_per_entry() {
+        let src = MINIMAL.replace(r#""triggers": ["process_writes"]"#, r#""triggers": []"#);
+        assert_matches!(Index::parse_json(&src), Err(SchemaError::EmptyTriggers));
+    }
+
+    #[test]
+    fn invalid_homepage_scheme_rejected_per_entry() {
+        let src = MINIMAL.replace(r#""hash":"#, r#""homepage": "ftp://bad/", "hash":"#);
+        assert_matches!(
+            Index::parse_json(&src),
+            Err(SchemaError::InvalidUrlScheme { .. })
+        );
+    }
+
+    #[test]
+    fn invalid_repository_scheme_rejected_per_entry() {
+        let src = MINIMAL.replace(r#""hash":"#, r#""repository": "git://bad/", "hash":"#);
+        assert_matches!(
+            Index::parse_json(&src),
+            Err(SchemaError::InvalidUrlScheme { .. })
+        );
+    }
+
+    #[test]
+    fn invalid_documentation_scheme_rejected_per_entry() {
+        let src = MINIMAL.replace(
+            r#""hash":"#,
+            r#""documentation": "s3://bucket/docs", "hash":"#,
+        );
+        assert_matches!(
+            Index::parse_json(&src),
+            Err(SchemaError::InvalidUrlScheme { .. })
+        );
+    }
+
+    #[test]
+    fn http_and_https_optional_urls_accepted() {
+        let src = MINIMAL.replace(
+            r#""hash":"#,
+            r#""homepage": "http://example.com", "repository": "https://github.com/x/y", "hash":"#,
+        );
+        assert!(Index::parse_json(&src).is_ok());
+    }
+
+    #[test]
+    fn ignores_unknown_top_level_field() {
+        let src = MINIMAL.replace(
+            r#""artifacts_url":"#,
+            r#""experimental_top_level": true, "artifacts_url":"#,
+        );
+        assert!(Index::parse_json(&src).is_ok());
+    }
 }
 
 #[cfg(test)]
@@ -649,6 +731,64 @@ mod canonical_serialization_tests {
         assert!(
             alpha_pos < beta_pos,
             "yanked alpha should still sort before beta"
+        );
+    }
+
+    /// SemVer 2.0.0 precedence rule: a prerelease has lower precedence than
+    /// the corresponding normal version (`1.0.0-alpha < 1.0.0`). Canonical
+    /// ordering must respect this; otherwise yank-history queries and
+    /// "latest version" selection would surface wrong results.
+    #[test]
+    fn prerelease_sorts_before_release_at_same_major_minor_patch() {
+        let prerelease = make_entry("p", "1.0.0-alpha".parse().unwrap());
+        let release = make_entry("p", semver::Version::new(1, 0, 0));
+        let idx = Index {
+            index_schema_version: IndexSchemaVersion::new(1, 0),
+            artifacts_url: ArtifactsUrl::try_new("https://example.com/artifacts").unwrap(),
+            // Provide in reverse-of-expected order to force the sort.
+            plugins: vec![release, prerelease],
+        };
+        let out = idx.to_canonical_json().unwrap();
+        let alpha_pos = out.find(r#""1.0.0-alpha""#).unwrap();
+        let release_pos = out.find(r#""1.0.0""#).unwrap();
+        // Both substrings exist; `1.0.0-alpha` appears in the prerelease's
+        // `version` field. The release's `1.0.0` appears later because
+        // SemVer puts prereleases before the release.
+        assert!(
+            alpha_pos < release_pos,
+            "prerelease 1.0.0-alpha must sort before release 1.0.0"
+        );
+    }
+
+    /// SemVer 2.0.0 precedence rule: build metadata is ignored when
+    /// determining version precedence. Two entries differing only by build
+    /// metadata have equal precedence per `Version::cmp_precedence` (which
+    /// is what `to_canonical_json` uses). The plain `Version::cmp` would
+    /// produce a lexical ordering of the build string — wrong per spec.
+    #[test]
+    fn build_metadata_does_not_affect_precedence() {
+        let v_a: semver::Version = "1.0.0+build.1".parse().unwrap();
+        let v_b: semver::Version = "1.0.0+build.2".parse().unwrap();
+
+        // SemVer 2.0.0: build metadata ignored for precedence.
+        assert_eq!(v_a.cmp_precedence(&v_b), std::cmp::Ordering::Equal);
+        // Sanity: plain Version::cmp DOES distinguish them, which is why
+        // to_canonical_json must use cmp_precedence (not cmp) per Spec 1.
+        assert_ne!(v_a.cmp(&v_b), std::cmp::Ordering::Equal);
+
+        let idx = Index {
+            index_schema_version: IndexSchemaVersion::new(1, 0),
+            artifacts_url: ArtifactsUrl::try_new("https://example.com/artifacts").unwrap(),
+            // Provide in deliberate order; equal-precedence entries should
+            // preserve insertion order via stable sort.
+            plugins: vec![make_entry("p", v_a.clone()), make_entry("p", v_b.clone())],
+        };
+        let out = idx.to_canonical_json().unwrap();
+        let pos_a = out.find("1.0.0+build.1").unwrap();
+        let pos_b = out.find("1.0.0+build.2").unwrap();
+        assert!(
+            pos_a < pos_b,
+            "stable sort preserves input order for equal-precedence entries"
         );
     }
 }
