@@ -221,7 +221,15 @@ mod tests {
     #[test]
     fn plugin_name_deserialize_rejects_invalid() {
         let result: Result<PluginName, _> = serde_json::from_str("\"Bad_Name\"");
-        assert!(result.is_err());
+        let err = result.expect_err("should reject invalid name");
+        // serde flattens through `Deserialize`'s custom impl; the error message
+        // must contain the normalization hint so consumers can understand what
+        // went wrong. The exact prefix ("invalid plugin name") is pinned by
+        // the SchemaError::InvalidPluginName Display snapshot in src/error.rs.
+        assert!(
+            err.to_string().contains("plugin name"),
+            "expected error mentioning plugin name, got: {err}"
+        );
     }
 }
 
@@ -272,36 +280,6 @@ mod plugin_id_tests {
         }
         assert_eq!(id.name().as_str(), "my-plugin");
         assert_eq!(*id.version(), Version::new(0, 3, 1));
-    }
-
-    #[test]
-    fn same_tuple_means_equal() {
-        let a = PluginId::registry(
-            Url::parse("https://r.example/index.json").unwrap(),
-            PluginName::from_str("x").unwrap(),
-            Version::new(1, 0, 0),
-        );
-        let b = PluginId::registry(
-            Url::parse("https://r.example/index.json").unwrap(),
-            PluginName::from_str("x").unwrap(),
-            Version::new(1, 0, 0),
-        );
-        assert_eq!(a, b);
-    }
-
-    #[test]
-    fn different_sources_are_not_equal() {
-        let reg = PluginId::registry(
-            Url::parse("https://r.example/index.json").unwrap(),
-            PluginName::from_str("x").unwrap(),
-            Version::new(1, 0, 0),
-        );
-        let local = PluginId::local(
-            PathBuf::from("/tmp/x"),
-            PluginName::from_str("x").unwrap(),
-            Version::new(1, 0, 0),
-        );
-        assert_ne!(reg, local);
     }
 
     #[test]

@@ -570,7 +570,11 @@ mod trigger_type_tests {
     #[case("process_Writes")] // case sensitive
     #[case("")]
     fn invalid_triggers_rejected(#[case] input: &str) {
-        assert!(input.parse::<TriggerType>().is_err());
+        use assert_matches::assert_matches;
+        assert_matches!(
+            input.parse::<TriggerType>(),
+            Err(SchemaError::UnknownTriggerType { .. })
+        );
     }
 
     #[test]
@@ -585,7 +589,11 @@ mod trigger_type_tests {
     #[test]
     fn serde_rejects_unknown() {
         let result: Result<TriggerType, _> = serde_json::from_str("\"on_startup\"");
-        assert!(result.is_err());
+        let err = result.expect_err("should reject unknown trigger");
+        assert!(
+            err.to_string().contains("on_startup"),
+            "error should name the rejected trigger, got: {err}"
+        );
     }
 }
 
