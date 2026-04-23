@@ -15,7 +15,7 @@ use semver::Version;
 use std::fs;
 
 mod common;
-use common::minimal_plugin_dir;
+use common::{VALID_INIT, VALID_MANIFEST, minimal_plugin_dir};
 
 // ─── Fixture helpers ─────────────────────────────────────────────────────────
 
@@ -119,7 +119,46 @@ fn rule5_non_exec_files_are_0644() {
     let mut archive = tar::Archive::new(std::io::Cursor::new(gunzip(&bytes)));
     for entry in archive.entries_with_seek().unwrap() {
         let entry = entry.unwrap();
+        if !entry.header().entry_type().is_file() {
+            continue;
+        }
         assert_eq!(entry.header().mode().unwrap(), 0o644);
+    }
+}
+
+/// Spec 2 §Reproducibility rule 5 lists `directories → 0755`, but the
+/// canonical archive is flat-files-only: no directory-entry records are
+/// emitted. This test locks that stance.
+///
+/// If this test ever starts failing, the implementation has begun emitting
+/// directory entries, and the reproducibility story must be reassessed
+/// (traversal order of empty directories is a reproducibility hazard the
+/// flat-files-only approach avoids).
+#[test]
+fn archive_contains_no_directory_entries() {
+    let td = tempfile::tempdir().unwrap();
+    let dir = td.path().join("plugin");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("manifest.toml"), VALID_MANIFEST).unwrap();
+    std::fs::write(dir.join("__init__.py"), VALID_INIT).unwrap();
+    std::fs::create_dir_all(dir.join("subdir")).unwrap();
+    std::fs::write(dir.join("subdir/child.py"), "# nested\n").unwrap();
+    // Empty subdirectory - the real reproducibility hazard a future
+    // "emit empty dirs" refactor would introduce. walkdir visits the
+    // directory even though it has no children.
+    std::fs::create_dir_all(dir.join("empty_subdir")).unwrap();
+
+    let bytes = canonical_tar_gz(&dir, &plugin_name(), &plugin_version()).unwrap();
+    let mut archive = tar::Archive::new(std::io::Cursor::new(gunzip(&bytes)));
+    for entry in archive.entries_with_seek().unwrap() {
+        let entry = entry.unwrap();
+        let kind = entry.header().entry_type();
+        assert!(
+            kind.is_file(),
+            "expected file-only entries, got {:?} for path {:?}",
+            kind,
+            entry.header().path().unwrap()
+        );
     }
 }
 
