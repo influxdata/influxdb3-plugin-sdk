@@ -36,6 +36,10 @@ pub(crate) trait Env {
     fn var(&self, name: &str) -> Option<String>;
     /// Returns whether stdout is attached to a terminal.
     fn stdout_is_terminal(&self) -> bool;
+    /// Returns whether stderr is attached to a terminal. Consulted by
+    /// [`crate::style::Palette::for_stream`] so stderr-side colorization
+    /// respects its own isatty status independently of stdout (S2-17).
+    fn stderr_is_terminal(&self) -> bool;
 }
 
 /// Stdlib-backed [`Env`] impl used by the binary.
@@ -49,6 +53,9 @@ impl Env for RealEnv {
     }
     fn stdout_is_terminal(&self) -> bool {
         std::io::stdout().is_terminal()
+    }
+    fn stderr_is_terminal(&self) -> bool {
+        std::io::stderr().is_terminal()
     }
 }
 
@@ -113,6 +120,9 @@ mod tests {
             self.vars.get(name).cloned()
         }
         fn stdout_is_terminal(&self) -> bool {
+            self.is_terminal
+        }
+        fn stderr_is_terminal(&self) -> bool {
             self.is_terminal
         }
     }

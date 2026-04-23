@@ -19,11 +19,13 @@ use influxdb3_plugin_schemas::Index;
 use influxdb3_plugin_sdk::{SdkError, validate};
 use std::path::PathBuf;
 
+use crate::color::Stream;
 use crate::output::{
     Env, OutputMode, RealEnv,
     json::ValidateOutput,
     resolve_output_mode,
 };
+use crate::style::Palette;
 
 /// Parsed `validate` arguments.
 #[derive(Debug, ClapArgs)]
@@ -56,9 +58,13 @@ impl Args {
 
 fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
     let mode = resolve_output_mode(args.output, env);
+    // Diagnostics render to stdout (Task 4.1 stream routing). The summary
+    // anyhow error goes to stderr via `main.rs`'s `eprintln!("{e:#}")`.
+    let stdout_palette =
+        Palette::for_stream(Stream::Stdout, mode, env, env.stdout_is_terminal());
     let outcome = run_validation(&args)?;
 
-    render(&outcome, mode)?;
+    render(&outcome, mode, stdout_palette)?;
 
     if outcome.diagnostics.is_empty() {
         return Ok(());
@@ -110,19 +116,31 @@ fn run_validation(args: &Args) -> anyhow::Result<ValidateOutput> {
     }
 }
 
-fn render(outcome: &ValidateOutput, mode: OutputMode) -> anyhow::Result<()> {
+fn render(
+    outcome: &ValidateOutput,
+    mode: OutputMode,
+    stdout_palette: Palette,
+) -> anyhow::Result<()> {
     match mode {
-        OutputMode::Human => render_human(outcome, &mut std::io::stdout())?,
+        OutputMode::Human => {
+            render_human(outcome, stdout_palette, &mut std::io::stdout())?;
+        }
         OutputMode::Json => render_json(outcome, &mut std::io::stdout())?,
     }
     Ok(())
 }
 
-fn render_human(outcome: &ValidateOutput, writer: &mut impl std::io::Write) -> std::io::Result<()> {
+fn render_human(
+    outcome: &ValidateOutput,
+    palette: Palette,
+    writer: &mut impl std::io::Write,
+) -> std::io::Result<()> {
     if outcome.diagnostics.is_empty() {
-        writeln!(writer, "validation passed: 0 diagnostics")?;
+        let ok = palette.success.render();
+        let ok_reset = palette.success.render_reset();
+        writeln!(writer, "{ok}validation passed: 0 diagnostics{ok_reset}")?;
     } else {
-        crate::diag_render::render_human(&outcome.diagnostics, writer)?;
+        crate::diag_render::render_human(&outcome.diagnostics, palette, writer)?;
     }
     Ok(())
 }

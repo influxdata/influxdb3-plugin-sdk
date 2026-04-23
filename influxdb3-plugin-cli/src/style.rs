@@ -16,7 +16,6 @@ use anstyle::{AnsiColor, Color, Effects, Style};
 
 /// Styles used by the human renderers.
 #[derive(Debug, Clone, Copy, Default)]
-#[allow(dead_code)] // wired into human renderers in Task 5.3
 pub(crate) struct Palette {
     /// Red + bold. Used for `"validation failed: ..."` header lines and
     /// data-tool failure summaries.
@@ -38,7 +37,6 @@ impl Palette {
     /// Builds a palette for `stream` given `mode`, `env`, and the stream's
     /// own `is_terminal` status. When `decide_color` says "no color,"
     /// returns the default (all-noop) palette.
-    #[allow(dead_code)] // wired into human renderers in Task 5.3
     pub(crate) fn for_stream(
         stream: Stream,
         mode: OutputMode,
@@ -82,6 +80,9 @@ mod tests {
             self.vars.get(name).cloned()
         }
         fn stdout_is_terminal(&self) -> bool {
+            true
+        }
+        fn stderr_is_terminal(&self) -> bool {
             true
         }
     }

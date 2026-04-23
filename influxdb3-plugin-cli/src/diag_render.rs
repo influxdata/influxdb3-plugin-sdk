@@ -8,6 +8,7 @@
 //! share one implementation.
 
 use crate::output::json::Diagnostic;
+use crate::style::Palette;
 use influxdb3_plugin_sdk::ValidationError;
 use std::io;
 
@@ -46,13 +47,20 @@ pub(crate) fn diagnostic_from(err: &ValidationError) -> Diagnostic {
 
 pub(crate) fn render_human(
     diagnostics: &[Diagnostic],
+    palette: Palette,
     writer: &mut dyn io::Write,
 ) -> io::Result<()> {
+    let header = palette.error.render();
+    let header_reset = palette.error.render_reset();
     writeln!(
         writer,
-        "validation failed: {} diagnostic(s)",
+        "{header}validation failed: {} diagnostic(s){header_reset}",
         diagnostics.len()
     )?;
+    let dim = palette.dim.render();
+    let dim_reset = palette.dim.render_reset();
+    let tag = palette.tag.render();
+    let tag_reset = palette.tag.render_reset();
     for (i, d) in diagnostics.iter().enumerate() {
         // For `SchemaReported` diagnostics, `message` already begins with
         // the field path (e.g. "plugin.name: plugin name ..."). For other
@@ -67,10 +75,22 @@ pub(crate) fn render_human(
             .unwrap_or(false);
         match (&d.field, already_prefixed) {
             (Some(field), false) => {
-                writeln!(writer, "  {}. [{}] {field}: {}", i + 1, d.variant, d.message)?;
+                writeln!(
+                    writer,
+                    "  {dim}{}.{dim_reset} {tag}[{}]{tag_reset} {field}: {}",
+                    i + 1,
+                    d.variant,
+                    d.message
+                )?;
             }
             _ => {
-                writeln!(writer, "  {}. [{}] {}", i + 1, d.variant, d.message)?;
+                writeln!(
+                    writer,
+                    "  {dim}{}.{dim_reset} {tag}[{}]{tag_reset} {}",
+                    i + 1,
+                    d.variant,
+                    d.message
+                )?;
             }
         }
     }
@@ -90,6 +110,13 @@ mod tests {
         }
     }
 
+    /// No-op palette — every style field collapses to an empty ANSI escape
+    /// so the byte-level assertions below remain identical to the
+    /// pre-colorization shape.
+    fn plain() -> Palette {
+        Palette::default()
+    }
+
     /// `SchemaReported`: message already embeds the field path; the
     /// renderer must NOT double-prefix.
     #[test]
@@ -100,7 +127,7 @@ mod tests {
             Some("plugin.name"),
         )];
         let mut buf = Vec::<u8>::new();
-        render_human(&diag, &mut buf).unwrap();
+        render_human(&diag, plain(), &mut buf).unwrap();
         let s = String::from_utf8(buf).unwrap();
         assert_eq!(
             s,
@@ -121,7 +148,7 @@ mod tests {
             Some("manifest.toml"),
         )];
         let mut buf = Vec::<u8>::new();
-        render_human(&diag, &mut buf).unwrap();
+        render_human(&diag, plain(), &mut buf).unwrap();
         let s = String::from_utf8(buf).unwrap();
         assert_eq!(
             s,
@@ -138,7 +165,7 @@ mod tests {
             d("SchemaReported", "plugin.version: bad", Some("plugin.version")),
         ];
         let mut buf = Vec::<u8>::new();
-        render_human(&diag, &mut buf).unwrap();
+        render_human(&diag, plain(), &mut buf).unwrap();
         let s = String::from_utf8(buf).unwrap();
         assert!(s.starts_with("validation failed: 2 diagnostic(s)\n"));
         assert!(s.contains("  1. [SchemaReported] plugin.name: bad\n"));
@@ -150,7 +177,7 @@ mod tests {
     fn no_field_no_prefix() {
         let diag = vec![d("Hash", "hash computation failed: …", None)];
         let mut buf = Vec::<u8>::new();
-        render_human(&diag, &mut buf).unwrap();
+        render_human(&diag, plain(), &mut buf).unwrap();
         let s = String::from_utf8(buf).unwrap();
         assert_eq!(
             s,

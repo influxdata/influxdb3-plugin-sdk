@@ -19,7 +19,9 @@ use influxdb3_plugin_schemas::Index;
 use influxdb3_plugin_sdk::{SdkError, ValidationError, package};
 use std::path::{Path, PathBuf};
 
+use crate::color::Stream;
 use crate::output::{Env, OutputMode, RealEnv, json::PackageOutput, resolve_output_mode};
+use crate::style::Palette;
 
 /// Parsed `package` arguments.
 #[derive(Debug, ClapArgs)]
@@ -54,6 +56,10 @@ impl Args {
 
 fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
     let mode = resolve_output_mode(args.output, env);
+    let stdout_palette =
+        Palette::for_stream(Stream::Stdout, mode, env, env.stdout_is_terminal());
+    let stderr_palette =
+        Palette::for_stream(Stream::Stderr, mode, env, env.stderr_is_terminal());
 
     // Read + parse the input index BEFORE creating --out so we don't
     // leave an empty scratch dir on parse failure.
@@ -83,7 +89,7 @@ fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
     let outcome = match package::package_plugin(&args.plugin_dir, input_index) {
         Ok(o) => o,
         Err(SdkError::ValidationErrors(errs)) => {
-            return Err(validation_errors_to_anyhow(errs, mode));
+            return Err(validation_errors_to_anyhow(errs, mode, stderr_palette));
         }
         Err(other) => return Err(other.into()),
     };
@@ -120,7 +126,7 @@ fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
         new_entry_version: outcome.new_entry.version.to_string(),
     };
 
-    render(&payload, mode)
+    render(&payload, mode, stdout_palette)
 }
 
 /// Returns `true` when `out_dir` (canonical) equals the directory
@@ -146,20 +152,32 @@ fn canonicalize_or_keep(p: &Path) -> PathBuf {
     std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf())
 }
 
-fn render(payload: &PackageOutput, mode: OutputMode) -> anyhow::Result<()> {
+fn render(
+    payload: &PackageOutput,
+    mode: OutputMode,
+    stdout_palette: Palette,
+) -> anyhow::Result<()> {
     match mode {
-        OutputMode::Human => render_human(payload, &mut std::io::stdout())?,
+        OutputMode::Human => render_human(payload, stdout_palette, &mut std::io::stdout())?,
         OutputMode::Json => render_json(payload, &mut std::io::stdout())?,
     }
     Ok(())
 }
 
-fn render_human(payload: &PackageOutput, writer: &mut impl std::io::Write) -> std::io::Result<()> {
+fn render_human(
+    payload: &PackageOutput,
+    palette: Palette,
+    writer: &mut impl std::io::Write,
+) -> std::io::Result<()> {
+    let ok = palette.success.render();
+    let ok_reset = palette.success.render_reset();
     writeln!(
         writer,
-        "Packaged {}@{}",
+        "{ok}Packaged {}@{}{ok_reset}",
         payload.new_entry_name, payload.new_entry_version
     )?;
+    // Info lines remain plain — conventional tool output emphasizes only
+    // the status header, so the paths/hash stay unstyled for readability.
     writeln!(writer, "  artifact: {}", payload.artifact_path.display())?;
     writeln!(writer, "  index:    {}", payload.index_path.display())?;
     writeln!(writer, "  hash:     {}", payload.hash)?;
@@ -175,18 +193,20 @@ fn render_json(payload: &PackageOutput, writer: &mut impl std::io::Write) -> any
 fn validation_errors_to_anyhow(
     errs: Vec<ValidationError>,
     mode: OutputMode,
+    stderr_palette: Palette,
 ) -> anyhow::Error {
     match mode {
         OutputMode::Human => {
             // Render the full list to stderr so authors see every error
             // in one pass (Spec 2 § Packaging). Use the same renderer as
-            // `validate` for visual consistency.
+            // `validate` for visual consistency; the stderr palette here
+            // lets S2-17 colorization flow through `main.rs`'s eprintln.
             let diagnostics: Vec<_> = errs
                 .iter()
                 .map(crate::diag_render::diagnostic_from)
                 .collect();
             let mut buf = Vec::<u8>::new();
-            let _ = crate::diag_render::render_human(&diagnostics, &mut buf);
+            let _ = crate::diag_render::render_human(&diagnostics, stderr_palette, &mut buf);
             let rendered = String::from_utf8(buf).unwrap_or_default();
             anyhow::anyhow!("{}", rendered.trim_end())
         }
