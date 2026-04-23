@@ -61,17 +61,19 @@ fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
     render(&outcome, mode)?;
 
     if outcome.diagnostics.is_empty() {
-        Ok(())
-    } else {
-        // Exit code 1 per S2-18 — but stdout has already carried the
-        // diagnostics document per the validator idiom. Use a sentinel
-        // error whose message stays short; main.rs renders it via
-        // `eprintln!("{e:#}")` so consumers parsing stdout see only the
-        // JSON document.
-        Err(anyhow::anyhow!(
-            "validation failed: {} diagnostic(s)",
-            outcome.diagnostics.len()
-        ))
+        return Ok(());
+    }
+
+    let inner = anyhow::anyhow!(
+        "validation failed: {} diagnostic(s)",
+        outcome.diagnostics.len()
+    );
+    match mode {
+        // JSON mode: stdout already carries the diagnostics document per
+        // S2-15 validator idiom. main.rs must keep stderr silent.
+        OutputMode::Json => Err(crate::cli_error::CliError::silent(inner)),
+        // Human mode: stderr carries the summary line, same as today.
+        OutputMode::Human => Err(inner),
     }
 }
 
