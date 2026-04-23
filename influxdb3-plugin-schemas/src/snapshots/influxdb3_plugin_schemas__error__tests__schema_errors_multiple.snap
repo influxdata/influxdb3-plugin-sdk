@@ -1,0 +1,8 @@
+---
+source: influxdb3-plugin-schemas/src/error.rs
+assertion_line: 445
+expression: se.to_string()
+---
+2 schema validation errors:
+  1. plugin.name: plugin name "Bad_Name" must be 1-64 characters: lowercase letters, digits, or hyphens, starting with a lowercase letter or digit
+  2. plugin.triggers[0]: trigger "on_startup" is not in the closed set {process_writes, process_scheduled_call, process_request}

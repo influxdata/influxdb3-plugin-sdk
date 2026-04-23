@@ -412,4 +412,49 @@ mod tests {
         let tags: Vec<&'static str> = every_variant().iter().map(|e| e.variant_name()).collect();
         insta::assert_yaml_snapshot!("variant_tags", tags);
     }
+
+    /// `SchemaErrors` Display rendering for the single-error case
+    /// (TomlParse / JsonParse / schema-version short-circuit shape).
+    #[test]
+    fn schema_errors_display_single_error() {
+        let se = SchemaErrors::single_at_root(SchemaError::EmptyTriggers);
+        insta::assert_snapshot!("schema_errors_single", se.to_string());
+    }
+
+    /// `SchemaErrors` Display rendering for the multi-error case (the
+    /// dominant Option B output shape — every defect with field path).
+    #[test]
+    fn schema_errors_display_multiple_errors() {
+        let se = SchemaErrors::new(vec![
+            ReportedError::new(
+                FieldPath::root().field("plugin").field("name"),
+                SchemaError::InvalidPluginName {
+                    name: "Bad_Name".into(),
+                },
+            ),
+            ReportedError::new(
+                FieldPath::root()
+                    .field("plugin")
+                    .field("triggers")
+                    .index(0),
+                SchemaError::UnknownTriggerType {
+                    trigger: "on_startup".into(),
+                },
+            ),
+        ]);
+        insta::assert_snapshot!("schema_errors_multiple", se.to_string());
+    }
+
+    /// `ReportedError::source()` walks back through the inner `SchemaError`,
+    /// preserving the structural payload for downstream introspection.
+    #[test]
+    fn reported_error_source_chain_reaches_schema_error() {
+        use std::error::Error as _;
+        let re = ReportedError::new(
+            FieldPath::root().field("plugin").field("name"),
+            SchemaError::InvalidPluginName { name: "Bad".into() },
+        );
+        let src = re.source().expect("source exists");
+        assert!(src.downcast_ref::<SchemaError>().is_some());
+    }
 }

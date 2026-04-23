@@ -1,0 +1,6 @@
+---
+source: influxdb3-plugin-schemas/src/error.rs
+assertion_line: 421
+expression: se.to_string()
+---
+triggers array must not be empty
