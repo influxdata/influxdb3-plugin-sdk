@@ -20,6 +20,7 @@ name = "influxdb3-plugin"
 path = "src/main.rs"
 
 [dependencies]
+anstyle.workspace = true
 anyhow.workspace = true
 clap.workspace = true
 influxdb3-plugin-schemas.workspace = true
@@ -27,6 +28,7 @@ influxdb3-plugin-sdk.workspace = true
 semver.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+thiserror.workspace = true
 tokio.workspace = true
 
 [dev-dependencies]

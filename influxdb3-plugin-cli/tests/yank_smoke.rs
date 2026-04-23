@@ -197,7 +197,7 @@ fn yank_missing_entry_exits_one() {
 
 /// Malformed `<name>@<version>` → exit 1 + stderr.
 #[test]
-fn yank_malformed_target_exits_one() {
+fn yank_malformed_target_exits_two() {
     let td = tempfile::tempdir().unwrap();
     let index_dir = td.path().join("reg");
     std::fs::create_dir_all(&index_dir).unwrap();
@@ -207,7 +207,7 @@ fn yank_malformed_target_exits_one() {
 
     spawn_yank("no-at-sign", &index_path, &out, &[])
         .failure()
-        .code(1);
+        .code(2);
 }
 
 /// S2-11: the input `--index` is byte-identical pre/post.
@@ -239,7 +239,7 @@ fn yank_rejects_out_overlapping_index_dir() {
 
     let assert = spawn_yank("downsampler@1.2.0", &index_path, &index_dir, &[])
         .failure()
-        .code(1);
+        .code(2);
     let stderr = String::from_utf8_lossy(&assert.get_output().stderr).into_owned();
     assert!(
         stderr.contains("S2-12") || stderr.contains("disjoint"),

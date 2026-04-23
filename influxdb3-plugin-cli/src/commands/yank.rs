@@ -20,7 +20,9 @@ use semver::Version;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
+use crate::color::Stream;
 use crate::output::{Env, OutputMode, RealEnv, json::YankOutput, resolve_output_mode};
+use crate::style::Palette;
 
 /// Parsed `yank` arguments.
 #[derive(Debug, ClapArgs)]
@@ -56,6 +58,8 @@ impl Args {
 
 fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
     let mode = resolve_output_mode(args.output, env);
+    let stdout_palette =
+        Palette::for_stream(Stream::Stdout, mode, env, env.stdout_is_terminal());
     let (name, version) = parse_target(&args.target)?;
 
     let index_raw = std::fs::read_to_string(&args.index)
@@ -70,12 +74,12 @@ fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
     std::fs::create_dir_all(&args.out)
         .map_err(|e| anyhow::anyhow!("failed to create --out {}: {e}", args.out.display()))?;
     if paths_overlap(&args.index, &args.out)? {
-        anyhow::bail!(
+        return Err(crate::cli_error::CliError::usage(anyhow::anyhow!(
             "--out {} resolves to the directory containing --index {}; \
              they must be disjoint (Spec 2 § S2-12)",
             args.out.display(),
             args.index.display(),
-        );
+        )));
     }
 
     let outcome = if args.undo {
@@ -102,7 +106,7 @@ fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
         index_path: canonicalize_or_keep(&derived_index_path),
     };
 
-    render(&payload, mode)
+    render(&payload, mode, stdout_palette)
 }
 
 fn outcome_label(outcome: mutate_index::YankOutcome) -> &'static str {
@@ -116,14 +120,20 @@ fn outcome_label(outcome: mutate_index::YankOutcome) -> &'static str {
 /// validated via [`PluginName`] and `version` via SemVer 2.0.0.
 fn parse_target(s: &str) -> anyhow::Result<(PluginName, Version)> {
     let (name_str, version_str) = s.split_once('@').ok_or_else(|| {
-        anyhow::anyhow!(
+        crate::cli_error::CliError::usage(anyhow::anyhow!(
             "target {s:?} must be in `<name>@<version>` form (e.g., `downsampler@1.2.0`)"
-        )
+        ))
     })?;
-    let name = PluginName::from_str(name_str)
-        .map_err(|e| anyhow::anyhow!("invalid plugin name {name_str:?}: {e}"))?;
-    let version = Version::parse(version_str)
-        .map_err(|e| anyhow::anyhow!("invalid SemVer version {version_str:?}: {e}"))?;
+    let name = PluginName::from_str(name_str).map_err(|e| {
+        crate::cli_error::CliError::usage(anyhow::anyhow!(
+            "invalid plugin name {name_str:?}: {e}"
+        ))
+    })?;
+    let version = Version::parse(version_str).map_err(|e| {
+        crate::cli_error::CliError::usage(anyhow::anyhow!(
+            "invalid SemVer version {version_str:?}: {e}"
+        ))
+    })?;
     Ok((name, version))
 }
 
@@ -145,31 +155,47 @@ fn canonicalize_or_keep(p: &Path) -> PathBuf {
     std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf())
 }
 
-fn render(payload: &YankOutput, mode: OutputMode) -> anyhow::Result<()> {
+fn render(
+    payload: &YankOutput,
+    mode: OutputMode,
+    stdout_palette: Palette,
+) -> anyhow::Result<()> {
     match mode {
-        OutputMode::Human => render_human(payload, &mut std::io::stdout())?,
+        OutputMode::Human => render_human(payload, stdout_palette, &mut std::io::stdout())?,
         OutputMode::Json => render_json(payload, &mut std::io::stdout())?,
     }
     Ok(())
 }
 
-fn render_human(payload: &YankOutput, writer: &mut impl std::io::Write) -> std::io::Result<()> {
+fn render_human(
+    payload: &YankOutput,
+    palette: Palette,
+    writer: &mut impl std::io::Write,
+) -> std::io::Result<()> {
     let action = if payload.target_state {
         "yank"
     } else {
         "unyank"
     };
     match payload.outcome {
-        "transitioned" => writeln!(
-            writer,
-            "{action}ed {}@{} (yanked={})",
-            payload.name, payload.version, payload.target_state
-        )?,
-        _ => writeln!(
-            writer,
-            "{}@{} already in desired state (yanked={}); no change",
-            payload.name, payload.version, payload.target_state
-        )?,
+        "transitioned" => {
+            let warn = palette.warn.render();
+            let warn_reset = palette.warn.render_reset();
+            writeln!(
+                writer,
+                "{warn}{action}ed {}@{} (yanked={}){warn_reset}",
+                payload.name, payload.version, payload.target_state
+            )?;
+        }
+        _ => {
+            let dim = palette.dim.render();
+            let dim_reset = palette.dim.render_reset();
+            writeln!(
+                writer,
+                "{dim}{}@{} already in desired state (yanked={}); no change{dim_reset}",
+                payload.name, payload.version, payload.target_state
+            )?;
+        }
     }
     writeln!(writer, "  index: {}", payload.index_path.display())?;
     Ok(())

@@ -14,7 +14,6 @@ use crate::output::{Env, OutputMode};
 
 /// One of the two output streams the SDK writes to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)] // consumed by per-stream renderers in D30-D33
 pub(crate) enum Stream {
     Stdout,
     Stderr,
@@ -35,7 +34,6 @@ pub(crate) enum Stream {
 ///
 /// `is_terminal` is the per-stream isatty result; the caller resolves it
 /// because [`Env`] only exposes `stdout_is_terminal`.
-#[allow(dead_code)] // wired into renderers in D30-D33
 pub(crate) fn decide_color(
     stream: Stream,
     mode: OutputMode,
@@ -87,6 +85,11 @@ mod tests {
             // `decide_color` does not consult `stdout_is_terminal` — it takes
             // `is_terminal` as a per-stream argument. Returning `false` here
             // documents the intent.
+            false
+        }
+        fn stderr_is_terminal(&self) -> bool {
+            // Same rationale as `stdout_is_terminal`: `decide_color` takes
+            // `is_terminal` as an argument, so the trait method isn't used.
             false
         }
     }

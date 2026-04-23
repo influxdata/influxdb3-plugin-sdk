@@ -21,6 +21,7 @@ influxdb3-plugin-schemas = { path = "influxdb3-plugin-schemas" }
 influxdb3-plugin-sdk = { path = "influxdb3-plugin-sdk" }
 
 # crates.io dependencies
+anstyle = "1"
 anyhow = "1"
 clap = { version = "4.5.47", features = ["derive", "env"] }
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }

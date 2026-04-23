@@ -16,14 +16,16 @@
 
 use clap::Args as ClapArgs;
 use influxdb3_plugin_schemas::Index;
-use influxdb3_plugin_sdk::{SdkError, ValidationError, validate};
+use influxdb3_plugin_sdk::{SdkError, validate};
 use std::path::PathBuf;
 
+use crate::color::Stream;
 use crate::output::{
     Env, OutputMode, RealEnv,
-    json::{Diagnostic, ValidateOutput},
+    json::ValidateOutput,
     resolve_output_mode,
 };
+use crate::style::Palette;
 
 /// Parsed `validate` arguments.
 #[derive(Debug, ClapArgs)]
@@ -56,22 +58,28 @@ impl Args {
 
 fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
     let mode = resolve_output_mode(args.output, env);
+    // Diagnostics render to stdout (Task 4.1 stream routing). The summary
+    // anyhow error goes to stderr via `main.rs`'s `eprintln!("{e:#}")`.
+    let stdout_palette =
+        Palette::for_stream(Stream::Stdout, mode, env, env.stdout_is_terminal());
     let outcome = run_validation(&args)?;
 
-    render(&outcome, mode)?;
+    render(&outcome, mode, stdout_palette)?;
 
     if outcome.diagnostics.is_empty() {
-        Ok(())
-    } else {
-        // Exit code 1 per S2-18 — but stdout has already carried the
-        // diagnostics document per the validator idiom. Use a sentinel
-        // error whose message stays short; main.rs renders it via
-        // `eprintln!("{e:#}")` so consumers parsing stdout see only the
-        // JSON document.
-        Err(anyhow::anyhow!(
-            "validation failed: {} diagnostic(s)",
-            outcome.diagnostics.len()
-        ))
+        return Ok(());
+    }
+
+    let inner = anyhow::anyhow!(
+        "validation failed: {} diagnostic(s)",
+        outcome.diagnostics.len()
+    );
+    match mode {
+        // JSON mode: stdout already carries the diagnostics document per
+        // S2-15 validator idiom. main.rs must keep stderr silent.
+        OutputMode::Json => Err(crate::cli_error::CliError::silent(inner)),
+        // Human mode: stderr carries the summary line, same as today.
+        OutputMode::Human => Err(inner),
     }
 }
 
@@ -102,75 +110,37 @@ fn run_validation(args: &Args) -> anyhow::Result<ValidateOutput> {
             diagnostics: Vec::new(),
         }),
         Err(SdkError::ValidationErrors(errs)) => Ok(ValidateOutput {
-            diagnostics: errs.iter().map(diagnostic_from).collect(),
+            diagnostics: errs.iter().map(crate::diag_render::diagnostic_from).collect(),
         }),
         Err(other) => Err(other.into()),
     }
 }
 
-fn diagnostic_from(err: &ValidationError) -> Diagnostic {
-    let variant = err.variant_name();
-    let message = err.to_string();
-    let field = match err {
-        ValidationError::SchemaReported(reported) => {
-            let p = reported.path.as_str();
-            if p.is_empty() {
-                None
-            } else {
-                Some(p.to_owned())
-            }
-        }
-        ValidationError::MissingRequiredFile { file } => Some(file.clone()),
-        ValidationError::PythonParse { .. }
-        | ValidationError::TriggerNotImplemented { .. }
-        | ValidationError::AsyncTriggerFn { .. } => Some("__init__.py".to_owned()),
-        ValidationError::NameVersionConflict { name, version } => Some(format!("{name}@{version}")),
-        // `ValidationError` is `#[non_exhaustive]`; future variants
-        // surface with `variant_name` + `Display` only until the CLI
-        // grows explicit handling for them.
-        _ => None,
-    };
-    Diagnostic {
-        variant,
-        message,
-        field,
-    }
-}
-
-fn render(outcome: &ValidateOutput, mode: OutputMode) -> anyhow::Result<()> {
+fn render(
+    outcome: &ValidateOutput,
+    mode: OutputMode,
+    stdout_palette: Palette,
+) -> anyhow::Result<()> {
     match mode {
-        OutputMode::Human => render_human(outcome, &mut std::io::stdout())?,
+        OutputMode::Human => {
+            render_human(outcome, stdout_palette, &mut std::io::stdout())?;
+        }
         OutputMode::Json => render_json(outcome, &mut std::io::stdout())?,
     }
     Ok(())
 }
 
-fn render_human(outcome: &ValidateOutput, writer: &mut impl std::io::Write) -> std::io::Result<()> {
+fn render_human(
+    outcome: &ValidateOutput,
+    palette: Palette,
+    writer: &mut impl std::io::Write,
+) -> std::io::Result<()> {
     if outcome.diagnostics.is_empty() {
-        writeln!(writer, "validation passed: 0 diagnostics")?;
+        let ok = palette.success.render();
+        let ok_reset = palette.success.render_reset();
+        writeln!(writer, "{ok}validation passed: 0 diagnostics{ok_reset}")?;
     } else {
-        writeln!(
-            writer,
-            "validation failed: {} diagnostic(s)",
-            outcome.diagnostics.len()
-        )?;
-        for (i, d) in outcome.diagnostics.iter().enumerate() {
-            match &d.field {
-                Some(field) => {
-                    writeln!(
-                        writer,
-                        "  {}. [{}] {}: {}",
-                        i + 1,
-                        d.variant,
-                        field,
-                        d.message
-                    )?;
-                }
-                None => {
-                    writeln!(writer, "  {}. [{}] {}", i + 1, d.variant, d.message)?;
-                }
-            }
-        }
+        crate::diag_render::render_human(&outcome.diagnostics, palette, writer)?;
     }
     Ok(())
 }

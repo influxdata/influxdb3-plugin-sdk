@@ -46,8 +46,23 @@ pub use influxdb3_plugin_schemas::{
     PythonRequirement, ReportedError, SchemaError, SchemaErrors, TriggerType,
 };
 
+/// Crate-internal types exposed for the bin target (`main.rs`) only.
+///
+/// `#[doc(hidden)]` signals to downstream consumers that nothing here is
+/// part of the semver-stable embedding surface (S2-4). `main.rs` reaches in
+/// to name [`crate::cli_error::CliErrorKind`] so it can classify errors for exit-code routing
+/// (S2-18); keeping this pathway out of the public surface preserves the
+/// freedom to evolve `CliError`'s internals.
+#[doc(hidden)]
+pub mod __private {
+    pub use crate::cli_error::{CliError, CliErrorKind};
+}
+
+mod cli_error;
 mod color;
 mod commands;
 mod config;
+mod diag_render;
 mod exit;
 mod output;
+mod style;

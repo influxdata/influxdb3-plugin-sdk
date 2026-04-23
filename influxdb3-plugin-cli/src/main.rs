@@ -2,12 +2,14 @@
 // lib uses anyhow/schemas/sdk; the bin does not name them directly. Same
 // `use _ as _;` workaround as `lib.rs` to satisfy `unused_crate_dependencies`
 // on the bin target.
+use anstyle as _;
 use anyhow as _;
 use influxdb3_plugin_schemas as _;
 use influxdb3_plugin_sdk as _;
 use semver as _;
 use serde as _;
 use serde_json as _;
+use thiserror as _;
 
 // Inline `#[cfg(test)]` modules in the lib use `rstest`; the bin's test
 // build sees it as a declared dev-dep but never names it. Same guard
@@ -37,8 +39,22 @@ async fn main() -> std::process::ExitCode {
     match config.run().await {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(e) => {
-            eprintln!("{e:#}");
-            std::process::ExitCode::from(1)
+            use influxdb3_plugin_cli::__private::CliErrorKind;
+            match CliErrorKind::of(&e) {
+                CliErrorKind::Silent => {
+                    // stdout already carried the signal (e.g. validate's
+                    // diagnostics doc in JSON mode). Do not pollute stderr.
+                    std::process::ExitCode::from(1)
+                }
+                CliErrorKind::Usage => {
+                    eprintln!("{e:#}");
+                    std::process::ExitCode::from(2)
+                }
+                CliErrorKind::Runtime => {
+                    eprintln!("{e:#}");
+                    std::process::ExitCode::from(1)
+                }
+            }
         }
     }
 }

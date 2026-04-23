@@ -18,7 +18,9 @@ use influxdb3_plugin_sdk::scaffold;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
+use crate::color::Stream;
 use crate::output::{Env, OutputMode, RealEnv, json::NewOutput, resolve_output_mode};
+use crate::style::Palette;
 
 /// Built-in template identifiers. Adding a variant is a minor bump of
 /// `influxdb3-plugin-cli`; renaming is a major bump per Spec 2 § Stability.
@@ -96,6 +98,8 @@ impl Args {
 
 fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
     let mode = resolve_output_mode(args.output, env);
+    let stdout_palette =
+        Palette::for_stream(Stream::Stdout, mode, env, env.stdout_is_terminal());
     reject_unsupported_flags(&args)?;
 
     let target_dir = args.path;
@@ -111,7 +115,7 @@ fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
         None => run_registry(&target_dir, args.template, args.artifacts_url)?,
     };
 
-    render(&summary, mode)
+    render(&summary, mode, stdout_palette)
 }
 
 /// Rejects template/flag combinations the spec doesn't permit.
@@ -123,16 +127,20 @@ fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
 fn reject_unsupported_flags(args: &Args) -> anyhow::Result<()> {
     if args.template == Template::Registry {
         if args.name.is_some() {
-            anyhow::bail!("--name is not supported with the `registry` template");
+            return Err(crate::cli_error::CliError::usage(anyhow::anyhow!(
+                "--name is not supported with the `registry` template"
+            )));
         }
         if args.database_version.is_some() {
-            anyhow::bail!("--database-version is not supported with the `registry` template");
+            return Err(crate::cli_error::CliError::usage(anyhow::anyhow!(
+                "--database-version is not supported with the `registry` template"
+            )));
         }
     } else if args.artifacts_url.is_some() {
-        anyhow::bail!(
+        return Err(crate::cli_error::CliError::usage(anyhow::anyhow!(
             "--artifacts-url is only supported with the `registry` template, not `{}`",
             args.template.as_str()
-        );
+        )));
     }
     Ok(())
 }
@@ -198,9 +206,11 @@ fn resolve_plugin_name(dir: &Path, name_arg: Option<String>) -> anyhow::Result<S
 
     match PluginName::from_str(&candidate) {
         Ok(_) => Ok(candidate),
-        Err(_) if source_was_explicit => Err(anyhow::anyhow!(
-            "--name {candidate:?} is not a valid plugin name; \
-             must match `[a-z0-9][a-z0-9-]{{0,63}}` (1-64 chars)"
+        Err(_) if source_was_explicit => Err(crate::cli_error::CliError::usage(
+            anyhow::anyhow!(
+                "--name {candidate:?} is not a valid plugin name; \
+                 must match `[a-z0-9][a-z0-9-]{{0,63}}` (1-64 chars)"
+            ),
         )),
         Err(_) => Err(anyhow::anyhow!(
             "derived plugin name {candidate:?} (from path basename) is not a valid \
@@ -234,10 +244,14 @@ impl SummaryKind {
     }
 }
 
-fn render(summary: &Summary, mode: OutputMode) -> anyhow::Result<()> {
+fn render(
+    summary: &Summary,
+    mode: OutputMode,
+    stdout_palette: Palette,
+) -> anyhow::Result<()> {
     match mode {
         OutputMode::Human => {
-            render_human(summary, &mut std::io::stdout())?;
+            render_human(summary, stdout_palette, &mut std::io::stdout())?;
         }
         OutputMode::Json => {
             render_json(summary, &mut std::io::stdout())?;
@@ -246,12 +260,18 @@ fn render(summary: &Summary, mode: OutputMode) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn render_human(summary: &Summary, writer: &mut impl std::io::Write) -> std::io::Result<()> {
+fn render_human(
+    summary: &Summary,
+    palette: Palette,
+    writer: &mut impl std::io::Write,
+) -> std::io::Result<()> {
     let kind = summary.kind.as_str();
     let template = summary.template.as_str();
+    let ok = palette.success.render();
+    let ok_reset = palette.success.render_reset();
     writeln!(
         writer,
-        "Scaffolded {kind} ({template} template) at {}",
+        "{ok}Scaffolded {kind} ({template} template) at {}{ok_reset}",
         summary.target_dir.display()
     )?;
     if let Some(name) = &summary.name {

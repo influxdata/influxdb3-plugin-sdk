@@ -15,7 +15,6 @@ use std::io::IsTerminal;
 /// the flag is omitted, by [`resolve_output_mode`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 #[clap(rename_all = "lowercase")]
-#[allow(dead_code)] // wired into command structs in D30-D33
 pub(crate) enum OutputMode {
     /// Colorized, human-readable rendering. Default on TTY.
     Human,
@@ -30,17 +29,19 @@ pub(crate) enum OutputMode {
 /// The binary uses [`RealEnv`]; unit tests pass fake implementations to
 /// exercise every row of the S2-14 / S2-17 tables without mutating the
 /// process env (parallel-test safe, per Spec 2 testing convention).
-#[allow(dead_code)] // wired into command dispatch in D30-D33
 pub(crate) trait Env {
     /// Returns the value of `name` in the environment, or `None` if unset.
     fn var(&self, name: &str) -> Option<String>;
     /// Returns whether stdout is attached to a terminal.
     fn stdout_is_terminal(&self) -> bool;
+    /// Returns whether stderr is attached to a terminal. Consulted by
+    /// [`crate::style::Palette::for_stream`] so stderr-side colorization
+    /// respects its own isatty status independently of stdout (S2-17).
+    fn stderr_is_terminal(&self) -> bool;
 }
 
 /// Stdlib-backed [`Env`] impl used by the binary.
 #[derive(Debug, Default, Clone, Copy)]
-#[allow(dead_code)] // constructed by command dispatch in D30-D33
 pub(crate) struct RealEnv;
 
 impl Env for RealEnv {
@@ -49,6 +50,9 @@ impl Env for RealEnv {
     }
     fn stdout_is_terminal(&self) -> bool {
         std::io::stdout().is_terminal()
+    }
+    fn stderr_is_terminal(&self) -> bool {
+        std::io::stderr().is_terminal()
     }
 }
 
@@ -64,7 +68,6 @@ impl Env for RealEnv {
 /// `JENKINS_URL`, `BUILDKITE`, `CIRCLECI`) are **never** read — per-platform
 /// allowlists rot, and `CI=true` is the documented modern convention every
 /// runner sets.
-#[allow(dead_code)] // called by command dispatch in D30-D33
 pub(crate) fn resolve_output_mode(explicit: Option<OutputMode>, env: &dyn Env) -> OutputMode {
     if let Some(m) = explicit {
         return m;
@@ -113,6 +116,9 @@ mod tests {
             self.vars.get(name).cloned()
         }
         fn stdout_is_terminal(&self) -> bool {
+            self.is_terminal
+        }
+        fn stderr_is_terminal(&self) -> bool {
             self.is_terminal
         }
     }

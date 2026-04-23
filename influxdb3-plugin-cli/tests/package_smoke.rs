@@ -213,7 +213,7 @@ fn package_rejects_out_overlapping_index_dir(#[case] mode: &str) {
 
     let assert = spawn_package(&plugin_dir, &index_path, &out_dir, &[])
         .failure()
-        .code(1);
+        .code(2);
     let stderr = String::from_utf8_lossy(&assert.get_output().stderr).into_owned();
     assert!(
         stderr.contains("S2-12") || stderr.contains("disjoint"),
@@ -245,7 +245,7 @@ fn package_rejects_out_via_symlink_to_index_dir() {
 
     spawn_package(&plugin_dir, &index_path, &out_link, &[])
         .failure()
-        .code(1);
+        .code(2);
 }
 
 /// JSON-mode failure path: stdout MUST be empty (data-tool idiom);

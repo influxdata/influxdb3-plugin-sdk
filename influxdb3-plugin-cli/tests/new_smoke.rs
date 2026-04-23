@@ -236,7 +236,7 @@ fn new_rejects_invalid_explicit_name() {
 
     let assert = spawn_new(&target, &["process_writes", "--name", "BAD_NAME"])
         .failure()
-        .code(1);
+        .code(2);
 
     let stderr = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
     assert!(
@@ -259,7 +259,7 @@ fn new_rejects_artifacts_url_on_plugin_template() {
         &["process_writes", "--artifacts-url", "https://example.com/a"],
     )
     .failure()
-    .code(1);
+    .code(2);
 }
 
 #[test]
@@ -269,7 +269,7 @@ fn new_rejects_name_on_registry_template() {
 
     spawn_new(&target, &["registry", "--name", "x"])
         .failure()
-        .code(1);
+        .code(2);
 }
 
 /// Unknown template → clap parse error → exit code 2 (S2-18 usage error).
@@ -312,5 +312,45 @@ fn new_failure_in_json_mode_keeps_stdout_empty() {
     assert!(
         !out.stderr.is_empty(),
         "stderr MUST carry the human-readable error (S2-15)"
+    );
+}
+
+#[test]
+fn new_conflict_error_mentions_path_once() {
+    use assert_cmd::Command;
+    use std::fs;
+    use tempfile::TempDir;
+
+    let tmp = TempDir::new().unwrap();
+    let dir = tmp.path().join("conflict");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join("manifest.toml"), "pre-existing").unwrap();
+
+    let output = Command::cargo_bin("influxdb3-plugin")
+        .unwrap()
+        .args([
+            "new",
+            "process_writes",
+            dir.to_str().unwrap(),
+            "--output",
+            "human",
+        ])
+        .output()
+        .unwrap();
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let occurrences = stderr.matches(dir.to_str().unwrap()).count();
+    assert_eq!(
+        occurrences, 1,
+        "stderr should mention the conflicting path exactly once; was:\n{stderr}"
+    );
+
+    // After the Chunk 6 polish, "already exists" should appear exactly
+    // once in the rendered error chain (anyhow's source-walk plus
+    // `#[source]` no longer duplicates the inner io::Error's message).
+    let phrase_occurrences = stderr.matches("already exists").count();
+    assert_eq!(
+        phrase_occurrences, 1,
+        "phrase 'already exists' should appear exactly once; was:\n{stderr}"
     );
 }
