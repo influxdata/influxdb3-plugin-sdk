@@ -40,16 +40,23 @@ pub enum YankOutcome {
 
 /// Appends `entry` to `idx.plugins[]`, rejecting duplicates per S2-2.
 ///
-/// Returns [`SdkError::AlreadyPublished`] if `(name, version)` already exists.
+/// Returns [`SdkError::AlreadyPublished`] if `(name, version)` already
+/// exists. The error carries every version of `entry.name` already in
+/// the index (in input order) so the CLI can surface the actionable
+/// "increment version or yank one of these" message Spec 2 S2-2 requires.
 pub fn add_entry(idx: &mut Index, entry: IndexEntry) -> Result<(), SdkError> {
-    let exists = idx
+    let new_version_str = entry.version.to_string();
+    let existing_versions: Vec<String> = idx
         .plugins
         .iter()
-        .any(|e| e.name.as_str() == entry.name.as_str() && e.version == entry.version);
-    if exists {
+        .filter(|e| e.name.as_str() == entry.name.as_str())
+        .map(|e| e.version.to_string())
+        .collect();
+    if existing_versions.iter().any(|v| v == &new_version_str) {
         return Err(SdkError::AlreadyPublished {
             name: entry.name.as_str().to_owned(),
-            version: entry.version.to_string(),
+            version: new_version_str,
+            existing_versions,
         });
     }
     idx.plugins.push(entry);
@@ -154,6 +161,36 @@ mod tests {
         let err = add_entry(&mut idx, make_entry("a", Version::new(1, 0, 0))).unwrap_err();
         assert!(matches!(err, SdkError::AlreadyPublished { .. }));
         assert_eq!(idx.plugins.len(), 1);
+    }
+
+    /// Spec 2 § S2-2: the duplicate-rejection error must carry every
+    /// version of the plugin in the input index so the CLI can render
+    /// the actionable "increment version or yank one of these" message.
+    #[test]
+    fn add_entry_duplicate_error_lists_every_existing_version() {
+        let mut idx = empty_index();
+        add_entry(&mut idx, make_entry("a", Version::new(1, 0, 0))).unwrap();
+        add_entry(&mut idx, make_entry("a", Version::new(1, 1, 0))).unwrap();
+        // Different name should not appear in the list.
+        add_entry(&mut idx, make_entry("b", Version::new(2, 0, 0))).unwrap();
+
+        let err = add_entry(&mut idx, make_entry("a", Version::new(1, 0, 0))).unwrap_err();
+        match err {
+            SdkError::AlreadyPublished {
+                name,
+                version,
+                existing_versions,
+            } => {
+                assert_eq!(name, "a");
+                assert_eq!(version, "1.0.0");
+                assert_eq!(
+                    existing_versions,
+                    vec!["1.0.0".to_owned(), "1.1.0".to_owned()],
+                    "must enumerate every version of `a` in input order, omit other names"
+                );
+            }
+            other => panic!("expected AlreadyPublished, got {other:?}"),
+        }
     }
 
     #[test]

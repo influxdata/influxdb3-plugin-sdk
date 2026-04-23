@@ -47,11 +47,23 @@ pub enum SdkError {
         source: std::io::Error,
     },
 
+    /// Surfaces from [`crate::mutate_index::add_entry`] when
+    /// `(name, version)` already exists in the input index. Per Spec 2
+    /// § S2-2, the error must list the existing versions of the plugin
+    /// in the input index so first-time authors can act on the conflict
+    /// (increment to a new version, or `yank` the existing one).
+    /// `existing_versions` enumerates every version of `name` already
+    /// in the index, in the order they appear there.
     #[error(
-        "plugin ({name:?}, {version:?}) already exists in the target index; \
-         increment version or run `yank` instead"
+        "plugin ({name:?}, {version:?}) already exists in the target index. \
+         Existing versions of {name:?} in this index: {existing_versions:?}. \
+         Increment version in manifest.toml or run `yank` instead."
     )]
-    AlreadyPublished { name: String, version: String },
+    AlreadyPublished {
+        name: String,
+        version: String,
+        existing_versions: Vec<String>,
+    },
 
     #[error("plugin ({name:?}, {version:?}) is not present in the target index")]
     EntryNotFound { name: String, version: String },
@@ -245,6 +257,7 @@ mod tests {
             SdkError::AlreadyPublished {
                 name: "downsampler".into(),
                 version: "1.2.0".into(),
+                existing_versions: vec!["1.0.0".into(), "1.1.0".into(), "1.2.0".into()],
             },
             SdkError::EntryNotFound {
                 name: "downsampler".into(),

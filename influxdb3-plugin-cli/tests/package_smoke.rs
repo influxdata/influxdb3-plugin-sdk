@@ -109,7 +109,10 @@ fn package_does_not_modify_input_index() {
 }
 
 /// S2-2: duplicate `(name, version)` in the input index → exit 1, no
-/// outputs created.
+/// outputs created. The error message must enumerate every existing
+/// version of the plugin and direct the author to either increment
+/// `plugin.version` or run `yank` (Spec 2 § S2-2 rejection-payload
+/// contract).
 #[test]
 fn package_rejects_duplicate_name_version() {
     let td = tempfile::tempdir().unwrap();
@@ -118,17 +121,31 @@ fn package_rejects_duplicate_name_version() {
     let index_dir = td.path().join("reg");
     std::fs::create_dir_all(&index_dir).unwrap();
     let index_path = index_dir.join("index.json");
+    // Seed two prior versions of `downsampler` plus an unrelated entry
+    // to confirm the payload only enumerates `downsampler`'s versions.
     let preexisting = serde_json::json!({
         "index_schema_version": "1.0",
         "artifacts_url": "https://plugins.example.com/artifacts",
-        "plugins": [{
-            "name": "downsampler",
-            "version": "1.2.0",
-            "description": "preexisting",
-            "triggers": ["process_writes"],
-            "dependencies": { "database_version": ">=3.0.0", "python": [] },
-            "hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
-        }]
+        "plugins": [
+            {
+                "name": "downsampler", "version": "1.0.0",
+                "description": "v1.0", "triggers": ["process_writes"],
+                "dependencies": { "database_version": ">=3.0.0", "python": [] },
+                "hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+            },
+            {
+                "name": "downsampler", "version": "1.2.0",
+                "description": "v1.2", "triggers": ["process_writes"],
+                "dependencies": { "database_version": ">=3.0.0", "python": [] },
+                "hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+            },
+            {
+                "name": "other", "version": "9.9.9",
+                "description": "unrelated", "triggers": ["process_writes"],
+                "dependencies": { "database_version": ">=3.0.0", "python": [] },
+                "hash": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+            }
+        ]
     });
     std::fs::write(
         &index_path,
@@ -137,9 +154,26 @@ fn package_rejects_duplicate_name_version() {
     .unwrap();
     let out_dir = td.path().join("build");
 
-    spawn_package(&plugin_dir, &index_path, &out_dir, &[])
+    let assert = spawn_package(&plugin_dir, &index_path, &out_dir, &[])
         .failure()
         .code(1);
+
+    // S2-2 payload contract: stderr must enumerate the existing
+    // versions of `downsampler` AND direct the author to the actionable
+    // remediation. The unrelated `other@9.9.9` must NOT appear.
+    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).into_owned();
+    assert!(
+        stderr.contains("\"1.0.0\"") && stderr.contains("\"1.2.0\""),
+        "stderr must list every existing version of `downsampler` (S2-2), got: {stderr}"
+    );
+    assert!(
+        !stderr.contains("9.9.9"),
+        "stderr must NOT list versions of unrelated plugins, got: {stderr}"
+    );
+    assert!(
+        stderr.contains("yank"),
+        "stderr must direct the author to `yank` per S2-2, got: {stderr}"
+    );
 
     // No artifact / derived index written.
     assert!(!out_dir.join("downsampler-1.2.0.tar.gz").exists());
