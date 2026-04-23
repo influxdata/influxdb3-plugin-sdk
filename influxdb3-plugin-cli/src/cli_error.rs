@@ -37,6 +37,7 @@ impl CliError {
     /// Converts a plain `anyhow!`-style message into `CliError::Usage`.
     /// Call sites: usage-class `bail!`/`anyhow!` points in the command
     /// modules. Shortens noise at each call site.
+    #[allow(dead_code)] // consumed by command modules in Chunk 2 (Tasks 2.1-2.4)
     pub(crate) fn usage(e: impl Into<anyhow::Error>) -> anyhow::Error {
         CliError::Usage(e.into()).into()
     }
@@ -44,6 +45,7 @@ impl CliError {
     /// Wraps an already-constructed `anyhow::Error` as a silent failure.
     /// Used by `validate --output json` when the diagnostics document
     /// has been written and no stderr summary should follow.
+    #[allow(dead_code)] // consumed by validate.rs in Task 3.1
     pub(crate) fn silent(e: impl Into<anyhow::Error>) -> anyhow::Error {
         CliError::Silent(e.into()).into()
     }

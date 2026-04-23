@@ -50,7 +50,7 @@ pub use influxdb3_plugin_schemas::{
 ///
 /// `#[doc(hidden)]` signals to downstream consumers that nothing here is
 /// part of the semver-stable embedding surface (S2-4). `main.rs` reaches in
-/// to name [`CliErrorKind`] so it can classify errors for exit-code routing
+/// to name [`crate::cli_error::CliErrorKind`] so it can classify errors for exit-code routing
 /// (S2-18); keeping this pathway out of the public surface preserves the
 /// freedom to evolve `CliError`'s internals.
 #[doc(hidden)]
