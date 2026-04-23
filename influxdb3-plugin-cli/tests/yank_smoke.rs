@@ -191,9 +191,18 @@ fn yank_malformed_target_exits_two() {
     write_index(&index_path, SEEDED_INDEX);
     let out = td.path().join("build");
 
-    spawn_yank("no-at-sign", &index_path, &out, &[])
+    let assert = spawn_yank("no-at-sign", &index_path, &out, &[])
         .failure()
         .code(2);
+    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).into_owned();
+    assert!(
+        stderr.contains("no-at-sign"),
+        "stderr should echo the malformed argument value, got: {stderr}"
+    );
+    assert!(
+        stderr.contains("@") || stderr.contains("name@version"),
+        "stderr should hint at the expected <name>@<version> shape, got: {stderr}"
+    );
 }
 
 /// S2-11: the input `--index` is byte-identical pre/post.
@@ -228,8 +237,8 @@ fn yank_rejects_out_overlapping_index_dir() {
         .code(2);
     let stderr = String::from_utf8_lossy(&assert.get_output().stderr).into_owned();
     assert!(
-        stderr.contains("S2-12") || stderr.contains("disjoint"),
-        "stderr should reference S2-12, got: {stderr}"
+        stderr.contains("S2-12"),
+        "stderr should reference S2-12 by identifier, got: {stderr}"
     );
     // Input index untouched.
     assert_eq!(std::fs::read_to_string(&index_path).unwrap(), SEEDED_INDEX);

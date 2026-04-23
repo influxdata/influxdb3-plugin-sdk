@@ -191,8 +191,8 @@ fn package_rejects_out_overlapping_index_dir(#[case] mode: &str) {
         .code(2);
     let stderr = String::from_utf8_lossy(&assert.get_output().stderr).into_owned();
     assert!(
-        stderr.contains("S2-12") || stderr.contains("disjoint"),
-        "stderr should reference the S2-12 contract, got: {stderr}"
+        stderr.contains("S2-12"),
+        "stderr should reference the S2-12 contract by identifier, got: {stderr}"
     );
 
     // Critical S2-11 corollary: the input index file is unchanged.
@@ -218,9 +218,19 @@ fn package_rejects_out_via_symlink_to_index_dir() {
     let out_link = td.path().join("link-to-reg");
     std::os::unix::fs::symlink(&index_dir, &out_link).unwrap();
 
-    spawn_package(&plugin_dir, &index_path, &out_link, &[])
+    let assert = spawn_package(&plugin_dir, &index_path, &out_link, &[])
         .failure()
         .code(2);
+    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).into_owned();
+    assert!(
+        stderr.contains("S2-12"),
+        "symlink rejection should reference S2-12, got: {stderr}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&index_path).unwrap(),
+        EMPTY_INDEX,
+        "input --index must be byte-identical even on symlink rejection"
+    );
 }
 
 /// JSON-mode failure path: stdout MUST be empty (data-tool idiom);
