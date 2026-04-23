@@ -365,6 +365,12 @@ dependencies = [
 [[package]]
 name = "influxdb3-plugin-sdk"
 version = "0.1.0"
+dependencies = [
+ "influxdb3-plugin-schemas",
+ "insta",
+ "pretty_assertions",
+ "thiserror 2.0.18",
+]
 
 [[package]]
 name = "insta"

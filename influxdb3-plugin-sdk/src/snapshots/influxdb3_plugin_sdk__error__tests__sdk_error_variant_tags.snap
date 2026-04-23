@@ -1,0 +1,12 @@
+---
+source: influxdb3-plugin-sdk/src/error.rs
+assertion_line: 243
+expression: tags
+---
+- Io
+- Schema
+- ValidationErrors
+- Archive
+- Hash
+- AlreadyPublished
+- PathOverlap

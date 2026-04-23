@@ -4,8 +4,21 @@ version.workspace = true
 authors.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-description = "InfluxDB 3 plugin SDK library — placeholder; to be implemented in Plan 2."
+description = "Author-side packaging library for InfluxDB 3 plugins."
+# Unpublished until the license is decided. Pairs with
+# `private = { ignore = true }` in deny.toml.
 publish = false
+
+[dependencies]
+# Local deps
+influxdb3-plugin-schemas.workspace = true
+
+# crates.io dependencies
+thiserror.workspace = true
+
+[dev-dependencies]
+insta.workspace = true
+pretty_assertions.workspace = true
 
 [lints]
 workspace = true
