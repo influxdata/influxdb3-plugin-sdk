@@ -8,24 +8,10 @@
 
 #![allow(unused_crate_dependencies)]
 
-use assert_cmd::Command;
 use std::path::Path;
 
-const SEEDED_INDEX: &str = r#"{
-  "index_schema_version": "1.0",
-  "artifacts_url": "https://plugins.example.com/artifacts",
-  "plugins": [
-    {
-      "name": "downsampler",
-      "version": "1.2.0",
-      "description": "seed entry",
-      "triggers": ["process_writes"],
-      "dependencies": { "database_version": ">=3.0.0", "python": [] },
-      "hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
-    }
-  ]
-}
-"#;
+mod common;
+use common::{cli_cmd, SEEDED_INDEX};
 
 fn write_index(path: &Path, body: &str) {
     std::fs::write(path, body).unwrap();
@@ -37,7 +23,7 @@ fn spawn_yank(
     out_dir: &Path,
     extra: &[&str],
 ) -> assert_cmd::assert::Assert {
-    let mut cmd = Command::cargo_bin("influxdb3-plugin").expect("binary builds");
+    let mut cmd = cli_cmd();
     cmd.arg("yank").arg(target);
     cmd.arg("--index").arg(index_path);
     cmd.arg("--out").arg(out_dir);

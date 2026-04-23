@@ -8,13 +8,15 @@
 
 #![allow(unused_crate_dependencies)]
 
-use assert_cmd::Command;
 use std::path::Path;
+
+mod common;
+use common::cli_cmd;
 
 /// Spawns `influxdb3-plugin` with `args` and an empty CWD-relative
 /// environment so per-test invocations remain isolated.
 fn spawn_new<P: AsRef<Path>>(target: P, extra_args: &[&str]) -> assert_cmd::assert::Assert {
-    let mut cmd = Command::cargo_bin("influxdb3-plugin").expect("binary builds");
+    let mut cmd = cli_cmd();
     cmd.arg("new");
     for a in extra_args {
         cmd.arg(a);
@@ -278,8 +280,7 @@ fn new_unknown_template_exits_two() {
     let td = tempfile::tempdir().unwrap();
     let target = td.path().join("p");
 
-    let assert = Command::cargo_bin("influxdb3-plugin")
-        .unwrap()
+    let assert = cli_cmd()
         .args(["new", "garbage_template", target.to_str().unwrap()])
         .assert()
         .failure();

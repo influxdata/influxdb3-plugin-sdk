@@ -12,31 +12,13 @@
 
 #![allow(unused_crate_dependencies)]
 
-use assert_cmd::Command;
 use std::path::Path;
 
-const VALID_MANIFEST: &str = r#"manifest_schema_version = "1.0"
-
-[plugin]
-name = "downsampler"
-version = "1.2.0"
-description = "Test plugin."
-triggers = ["process_writes"]
-
-[dependencies]
-database_version = ">=3.0.0"
-"#;
-
-const VALID_INIT: &str = "def process_writes(a, b, c):\n    pass\n";
-
-fn write_valid_plugin(dir: &Path) {
-    std::fs::create_dir_all(dir).unwrap();
-    std::fs::write(dir.join("manifest.toml"), VALID_MANIFEST).unwrap();
-    std::fs::write(dir.join("__init__.py"), VALID_INIT).unwrap();
-}
+mod common;
+use common::{cli_cmd, write_valid_plugin, VALID_INIT, VALID_MANIFEST};
 
 fn spawn_validate<P: AsRef<Path>>(target: P, extra: &[&str]) -> assert_cmd::assert::Assert {
-    let mut cmd = Command::cargo_bin("influxdb3-plugin").expect("binary builds");
+    let mut cmd = cli_cmd();
     cmd.arg("validate");
     for a in extra {
         cmd.arg(a);

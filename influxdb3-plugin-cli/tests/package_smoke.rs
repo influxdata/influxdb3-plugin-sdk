@@ -9,36 +9,11 @@
 
 #![allow(unused_crate_dependencies)]
 
-use assert_cmd::Command;
 use rstest::rstest;
 use std::path::{Path, PathBuf};
 
-const VALID_MANIFEST: &str = r#"manifest_schema_version = "1.0"
-
-[plugin]
-name = "downsampler"
-version = "1.2.0"
-description = "Test plugin."
-triggers = ["process_writes"]
-
-[dependencies]
-database_version = ">=3.0.0"
-"#;
-
-const VALID_INIT: &str = "def process_writes(a, b, c):\n    pass\n";
-
-const EMPTY_INDEX: &str = r#"{
-  "index_schema_version": "1.0",
-  "artifacts_url": "https://plugins.example.com/artifacts",
-  "plugins": []
-}
-"#;
-
-fn write_valid_plugin(dir: &Path) {
-    std::fs::create_dir_all(dir).unwrap();
-    std::fs::write(dir.join("manifest.toml"), VALID_MANIFEST).unwrap();
-    std::fs::write(dir.join("__init__.py"), VALID_INIT).unwrap();
-}
+mod common;
+use common::{cli_cmd, write_valid_plugin, EMPTY_INDEX};
 
 fn write_empty_index(path: &Path) {
     std::fs::write(path, EMPTY_INDEX).unwrap();
@@ -50,7 +25,7 @@ fn spawn_package(
     out_dir: &Path,
     extra: &[&str],
 ) -> assert_cmd::assert::Assert {
-    let mut cmd = Command::cargo_bin("influxdb3-plugin").expect("binary builds");
+    let mut cmd = cli_cmd();
     cmd.arg("package");
     for a in extra {
         cmd.arg(a);
