@@ -26,6 +26,9 @@ use semver::Version;
 use std::fs;
 use std::path::Path;
 
+mod common;
+use common::{VALID_INIT, VALID_MANIFEST};
+
 /// A plugin-directory spec: a list of (flat filename, contents) pairs.
 ///
 /// Flat-path shape avoids the class of fs::write panics that occur when a
@@ -71,22 +74,8 @@ fn arb_plugin_spec() -> impl Strategy<Value = PluginSpec> {
 fn materialize(spec: &PluginSpec, root: &Path) {
     // Every fixture must carry a valid manifest + __init__.py so it's a
     // realistic plugin-dir shape.
-    fs::write(
-        root.join("manifest.toml"),
-        "manifest_schema_version = \"1.0\"\n\n\
-         [plugin]\n\
-         name = \"p\"\nversion = \"0.1.0\"\n\
-         description = \"x\"\n\
-         triggers = [\"process_writes\"]\n\n\
-         [dependencies]\n\
-         database_version = \">=3.0.0\"\n",
-    )
-    .unwrap();
-    fs::write(
-        root.join("__init__.py"),
-        "def process_writes(a, b, c):\n    pass\n",
-    )
-    .unwrap();
+    fs::write(root.join("manifest.toml"), VALID_MANIFEST).unwrap();
+    fs::write(root.join("__init__.py"), VALID_INIT).unwrap();
     for (name, contents) in &spec.files {
         fs::write(root.join(name), contents).unwrap();
     }

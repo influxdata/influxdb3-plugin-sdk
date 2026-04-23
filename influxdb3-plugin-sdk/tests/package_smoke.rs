@@ -10,22 +10,17 @@
 
 #![allow(unused_crate_dependencies)]
 
-use influxdb3_plugin_schemas::{ArtifactsUrl, Index, IndexSchemaVersion, TriggerType};
+use influxdb3_plugin_schemas::{Index, TriggerType};
 use influxdb3_plugin_sdk::package::package_plugin;
 use influxdb3_plugin_sdk::scaffold;
 use std::fs;
 use std::path::PathBuf;
 
+mod common;
+use common::empty_index;
+
 fn fixtures() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures")
-}
-
-fn empty_index() -> Index {
-    Index {
-        index_schema_version: IndexSchemaVersion::new(1, 0),
-        artifacts_url: ArtifactsUrl::try_new("https://example.com/artifacts").unwrap(),
-        plugins: vec![],
-    }
 }
 
 #[test]

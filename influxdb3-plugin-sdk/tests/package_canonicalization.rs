@@ -13,32 +13,11 @@
 use influxdb3_plugin_sdk::archive::canonical_tar_gz;
 use semver::Version;
 use std::fs;
-use std::path::PathBuf;
+
+mod common;
+use common::minimal_plugin_dir;
 
 // ─── Fixture helpers ─────────────────────────────────────────────────────────
-
-fn minimal_plugin_dir(td: &tempfile::TempDir) -> PathBuf {
-    let dir = td.path().join("plugin");
-    fs::create_dir_all(&dir).unwrap();
-    fs::write(
-        dir.join("manifest.toml"),
-        "manifest_schema_version = \"1.0\"\n\n\
-         [plugin]\n\
-         name = \"p\"\n\
-         version = \"0.1.0\"\n\
-         description = \"x\"\n\
-         triggers = [\"process_writes\"]\n\n\
-         [dependencies]\n\
-         database_version = \">=3.0.0\"\n",
-    )
-    .unwrap();
-    fs::write(
-        dir.join("__init__.py"),
-        "def process_writes(a, b, c):\n    pass\n",
-    )
-    .unwrap();
-    dir
-}
 
 fn plugin_name() -> influxdb3_plugin_schemas::PluginName {
     "p".parse().unwrap()
@@ -61,7 +40,7 @@ fn gunzip(bytes: &[u8]) -> Vec<u8> {
 #[test]
 fn rule1_tar_format_is_ustar() {
     let td = tempfile::tempdir().unwrap();
-    let dir = minimal_plugin_dir(&td);
+    let dir = minimal_plugin_dir(td.path(), "plugin");
     let bytes = canonical_tar_gz(&dir, &plugin_name(), &plugin_version()).unwrap();
     let tar_bytes = gunzip(&bytes);
     // ustar magic at offset 257, version at offset 263.
@@ -103,7 +82,7 @@ fn rule2_entries_sorted_by_path() {
 #[test]
 fn rule3_every_entry_mtime_zero() {
     let td = tempfile::tempdir().unwrap();
-    let dir = minimal_plugin_dir(&td);
+    let dir = minimal_plugin_dir(td.path(), "plugin");
     let bytes = canonical_tar_gz(&dir, &plugin_name(), &plugin_version()).unwrap();
     let mut archive = tar::Archive::new(std::io::Cursor::new(gunzip(&bytes)));
     for entry in archive.entries_with_seek().unwrap() {
@@ -117,7 +96,7 @@ fn rule3_every_entry_mtime_zero() {
 #[test]
 fn rule4_uid_gid_and_names_canonical() {
     let td = tempfile::tempdir().unwrap();
-    let dir = minimal_plugin_dir(&td);
+    let dir = minimal_plugin_dir(td.path(), "plugin");
     let bytes = canonical_tar_gz(&dir, &plugin_name(), &plugin_version()).unwrap();
     let mut archive = tar::Archive::new(std::io::Cursor::new(gunzip(&bytes)));
     for entry in archive.entries_with_seek().unwrap() {
@@ -135,7 +114,7 @@ fn rule4_uid_gid_and_names_canonical() {
 #[test]
 fn rule5_non_exec_files_are_0644() {
     let td = tempfile::tempdir().unwrap();
-    let dir = minimal_plugin_dir(&td);
+    let dir = minimal_plugin_dir(td.path(), "plugin");
     let bytes = canonical_tar_gz(&dir, &plugin_name(), &plugin_version()).unwrap();
     let mut archive = tar::Archive::new(std::io::Cursor::new(gunzip(&bytes)));
     for entry in archive.entries_with_seek().unwrap() {
@@ -149,7 +128,7 @@ fn rule5_non_exec_files_are_0644() {
 fn rule5_exec_files_are_0755() {
     use std::os::unix::fs::PermissionsExt;
     let td = tempfile::tempdir().unwrap();
-    let dir = minimal_plugin_dir(&td);
+    let dir = minimal_plugin_dir(td.path(), "plugin");
     let script = dir.join("run.sh");
     fs::write(&script, "#!/bin/sh\necho hi\n").unwrap();
     fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
@@ -206,7 +185,7 @@ fn rule6_rejects_archive_path_over_ustar_limit() {
 #[test]
 fn rule7_gzip_mtime_zero() {
     let td = tempfile::tempdir().unwrap();
-    let dir = minimal_plugin_dir(&td);
+    let dir = minimal_plugin_dir(td.path(), "plugin");
     let bytes = canonical_tar_gz(&dir, &plugin_name(), &plugin_version()).unwrap();
     // Bytes 4..8, little-endian, per RFC 1952.
     let mtime = u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
@@ -218,7 +197,7 @@ fn rule7_gzip_mtime_zero() {
 #[test]
 fn rule8_gzip_fname_flag_clear() {
     let td = tempfile::tempdir().unwrap();
-    let dir = minimal_plugin_dir(&td);
+    let dir = minimal_plugin_dir(td.path(), "plugin");
     let bytes = canonical_tar_gz(&dir, &plugin_name(), &plugin_version()).unwrap();
     // FLG byte at offset 3; FNAME is bit 3 (0x08). MUST be clear.
     let flg = bytes[3];

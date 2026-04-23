@@ -14,6 +14,9 @@ use influxdb3_plugin_schemas::TriggerType;
 use influxdb3_plugin_sdk::{SdkError, ValidationError, validate};
 use std::path::PathBuf;
 
+mod common;
+use common::empty_index;
+
 fn fixtures() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures")
 }
@@ -165,16 +168,10 @@ fn validate_with_index_reports_name_version_conflict() {
 
 #[test]
 fn validate_with_index_returns_manifest_when_no_collision() {
-    use influxdb3_plugin_schemas::{ArtifactsUrl, Index, IndexSchemaVersion};
-
     let plugin_dir = fixtures().join("valid_plugin");
-    let empty_index = Index {
-        index_schema_version: IndexSchemaVersion::new(1, 0),
-        artifacts_url: ArtifactsUrl::try_new("https://example.com/artifacts").unwrap(),
-        plugins: vec![],
-    };
+    let index = empty_index();
 
-    let manifest = validate::plugin_dir_with_index(&plugin_dir, &empty_index)
+    let manifest = validate::plugin_dir_with_index(&plugin_dir, &index)
         .expect("no collision; should pass");
     assert_eq!(manifest.plugin.name.as_str(), "valid-plugin");
 }
