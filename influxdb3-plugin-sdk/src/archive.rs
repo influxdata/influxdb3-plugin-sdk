@@ -149,11 +149,8 @@ pub fn canonical_tar_gz(
             message: e.to_string(),
         })?;
         header.set_entry_type(tar::EntryType::Regular);
-        // set_cksum must be called after all other fields are set. The
-        // Builder::append signature below calls set_cksum on our behalf, but
-        // we call it explicitly for clarity and to surface any invariant
-        // violation during testing.
-        header.set_cksum();
+        // `append_data` calls `set_path` (which invalidates any prior
+        // checksum) then `set_cksum` itself, so we don't precompute here.
 
         tarball
             .append_data(&mut header, &archive_path, std::io::Cursor::new(data))

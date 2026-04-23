@@ -24,6 +24,20 @@ use semver::Version;
 
 use crate::SdkError;
 
+/// Outcome of a [`yank`] or [`unyank`] call.
+///
+/// The CLI uses this signal to distinguish "I toggled a flag" from "I did
+/// nothing because the target was already in the desired state" — the
+/// latter gets an informational message per Spec 2's `yank` / `yank --undo`
+/// idempotency contract.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum YankOutcome {
+    /// The entry's `yanked` flag changed as a result of the call.
+    Transitioned,
+    /// The entry was already in the desired state; no change was made.
+    AlreadyInDesiredState,
+}
+
 /// Appends `entry` to `idx.plugins[]`, rejecting duplicates per S2-2.
 ///
 /// Returns [`SdkError::AlreadyPublished`] if `(name, version)` already exists.
@@ -45,21 +59,34 @@ pub fn add_entry(idx: &mut Index, entry: IndexEntry) -> Result<(), SdkError> {
 /// Sets `yanked = true` on the entry identified by `(name, version)`.
 ///
 /// Returns [`SdkError::EntryNotFound`] if no such entry exists. Idempotent:
-/// calling on an already-yanked entry succeeds without modification.
-pub fn yank(idx: &mut Index, name: &str, version: &Version) -> Result<(), SdkError> {
-    let entry = find_mut(idx, name, version)?;
-    entry.yanked = true;
-    Ok(())
+/// calling on an already-yanked entry returns
+/// [`YankOutcome::AlreadyInDesiredState`] without modification.
+pub fn yank(idx: &mut Index, name: &str, version: &Version) -> Result<YankOutcome, SdkError> {
+    set_yanked(idx, name, version, true)
 }
 
 /// Sets `yanked = false` on the entry identified by `(name, version)`.
 ///
 /// Returns [`SdkError::EntryNotFound`] if no such entry exists. Idempotent:
-/// calling on an already-unyanked entry succeeds without modification.
-pub fn unyank(idx: &mut Index, name: &str, version: &Version) -> Result<(), SdkError> {
+/// calling on an already-unyanked entry returns
+/// [`YankOutcome::AlreadyInDesiredState`] without modification.
+pub fn unyank(idx: &mut Index, name: &str, version: &Version) -> Result<YankOutcome, SdkError> {
+    set_yanked(idx, name, version, false)
+}
+
+fn set_yanked(
+    idx: &mut Index,
+    name: &str,
+    version: &Version,
+    target: bool,
+) -> Result<YankOutcome, SdkError> {
     let entry = find_mut(idx, name, version)?;
-    entry.yanked = false;
-    Ok(())
+    if entry.yanked == target {
+        Ok(YankOutcome::AlreadyInDesiredState)
+    } else {
+        entry.yanked = target;
+        Ok(YankOutcome::Transitioned)
+    }
 }
 
 fn find_mut<'a>(
@@ -152,6 +179,36 @@ mod tests {
         yank(&mut idx, "a", &Version::new(1, 0, 0)).unwrap();
         yank(&mut idx, "a", &Version::new(1, 0, 0)).unwrap();
         assert!(idx.plugins[0].yanked);
+    }
+
+    /// Yank signals whether the call transitioned state or was a no-op.
+    /// Spec 2's `yank` / `yank --undo` requires emitting an "informational
+    /// message" on the idempotent no-op case; the CLI needs this signal
+    /// to render that message correctly.
+    #[test]
+    fn yank_signals_transitioned_vs_already_in_desired_state() {
+        let mut idx = empty_index();
+        add_entry(&mut idx, make_entry("a", Version::new(1, 0, 0))).unwrap();
+
+        let first = yank(&mut idx, "a", &Version::new(1, 0, 0)).unwrap();
+        assert_eq!(first, YankOutcome::Transitioned);
+
+        let second = yank(&mut idx, "a", &Version::new(1, 0, 0)).unwrap();
+        assert_eq!(second, YankOutcome::AlreadyInDesiredState);
+    }
+
+    #[test]
+    fn unyank_signals_transitioned_vs_already_in_desired_state() {
+        let mut idx = empty_index();
+        add_entry(&mut idx, make_entry("a", Version::new(1, 0, 0))).unwrap();
+
+        // Entry starts not-yanked.
+        let already = unyank(&mut idx, "a", &Version::new(1, 0, 0)).unwrap();
+        assert_eq!(already, YankOutcome::AlreadyInDesiredState);
+
+        yank(&mut idx, "a", &Version::new(1, 0, 0)).unwrap();
+        let transitioned = unyank(&mut idx, "a", &Version::new(1, 0, 0)).unwrap();
+        assert_eq!(transitioned, YankOutcome::Transitioned);
     }
 
     #[test]

@@ -96,8 +96,16 @@ fn path_suffix(path: Option<&PathBuf>) -> String {
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum ValidationError {
+    /// Wraps a structural [`SchemaError`] for inclusion in a multi-error
+    /// report. Currently reserved: the SDK's [`crate::validate::plugin_dir`]
+    /// is fail-fast on structural parse errors (see the "Multi-error
+    /// collection" section of its rustdoc), so no library code currently
+    /// emits this variant. Kept because Plan 3's `validate --index` flow
+    /// may want to collect structural errors alongside cross-file errors
+    /// when the manifest is partially parseable. `#[from]` keeps future
+    /// `?`-conversions ergonomic.
     #[error(transparent)]
-    Schema(SchemaError),
+    Schema(#[from] SchemaError),
 
     #[error("required file {file:?} is missing from the plugin directory")]
     MissingRequiredFile { file: String },
