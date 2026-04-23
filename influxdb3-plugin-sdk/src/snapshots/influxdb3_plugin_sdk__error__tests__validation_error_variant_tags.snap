@@ -1,6 +1,6 @@
 ---
 source: influxdb3-plugin-sdk/src/error.rs
-assertion_line: 299
+assertion_line: 316
 expression: tags
 ---
 - SchemaReported
@@ -8,3 +8,4 @@ expression: tags
 - PythonParse
 - TriggerNotImplemented
 - AsyncTriggerFn
+- NameVersionConflict

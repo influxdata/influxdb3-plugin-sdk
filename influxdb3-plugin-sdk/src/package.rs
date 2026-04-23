@@ -60,9 +60,9 @@ pub struct PackageOutput {
 /// # Errors
 ///
 /// - [`SdkError::Io`] — failed to read `manifest.toml` or any source file.
-/// - [`SdkError::Schema`] — manifest did not parse structurally.
-/// - [`SdkError::ValidationErrors`] — one or more cross-file validation
-///   failures (see [`validate::plugin_dir`]).
+/// - [`SdkError::ValidationErrors`] — manifest did not parse structurally or
+///   one or more cross-file validation failures were collected (see
+///   [`validate::plugin_dir`]).
 /// - [`SdkError::Archive`] — archive construction failed (e.g.,
 ///   path-overflow rejection).
 /// - [`SdkError::AlreadyPublished`] — `(name, version)` already present in

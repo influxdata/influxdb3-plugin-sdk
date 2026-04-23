@@ -107,3 +107,74 @@ fn bad_python_syntax_reports_python_parse() {
         other => panic!("expected PythonParse, got {other:?}"),
     }
 }
+
+/// `validate::plugin_dir_with_index` runs the same checks as `plugin_dir`
+/// plus a uniqueness check against the supplied index. Collisions surface
+/// as `ValidationError::NameVersionConflict` — the collectible variant the
+/// CLI's `validate --index` flag uses to render uniqueness failures in the
+/// same diagnostics array as other validation errors per Spec 2 S2-15's
+/// validator-idiom contract.
+#[test]
+fn validate_with_index_reports_name_version_conflict() {
+    use influxdb3_plugin_schemas::{
+        ArtifactHash, ArtifactsUrl, Dependencies, Description, Index, IndexEntry,
+        IndexSchemaVersion, TriggerType,
+    };
+
+    let plugin_dir = fixtures().join("valid_plugin");
+    // valid_plugin's manifest declares name="valid-plugin", version="0.1.0".
+    // Construct an index that already contains that (name, version).
+    let index = Index {
+        index_schema_version: IndexSchemaVersion::new(1, 0),
+        artifacts_url: ArtifactsUrl::try_new("https://example.com/artifacts").unwrap(),
+        plugins: vec![IndexEntry {
+            name: "valid-plugin".parse().unwrap(),
+            version: semver::Version::new(0, 1, 0),
+            description: Description::try_new("preexisting").unwrap(),
+            triggers: vec![TriggerType::ProcessWrites],
+            homepage: None,
+            repository: None,
+            documentation: None,
+            dependencies: Dependencies {
+                database_version: ">=3.0.0".parse().unwrap(),
+                python: vec![],
+            },
+            hash: ArtifactHash::try_new(
+                "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+            )
+            .unwrap(),
+            yanked: false,
+        }],
+    };
+
+    let err = validate::plugin_dir_with_index(&plugin_dir, &index).unwrap_err();
+    match err {
+        SdkError::ValidationErrors(errs) => {
+            assert_eq!(errs.len(), 1);
+            match &errs[0] {
+                ValidationError::NameVersionConflict { name, version } => {
+                    assert_eq!(name, "valid-plugin");
+                    assert_eq!(version, "0.1.0");
+                }
+                other => panic!("expected NameVersionConflict, got {other:?}"),
+            }
+        }
+        other => panic!("expected ValidationErrors, got {other:?}"),
+    }
+}
+
+#[test]
+fn validate_with_index_returns_manifest_when_no_collision() {
+    use influxdb3_plugin_schemas::{ArtifactsUrl, Index, IndexSchemaVersion};
+
+    let plugin_dir = fixtures().join("valid_plugin");
+    let empty_index = Index {
+        index_schema_version: IndexSchemaVersion::new(1, 0),
+        artifacts_url: ArtifactsUrl::try_new("https://example.com/artifacts").unwrap(),
+        plugins: vec![],
+    };
+
+    let manifest = validate::plugin_dir_with_index(&plugin_dir, &empty_index)
+        .expect("no collision; should pass");
+    assert_eq!(manifest.plugin.name.as_str(), "valid-plugin");
+}

@@ -144,6 +144,18 @@ pub enum ValidationError {
          the runtime invokes trigger functions synchronously"
     )]
     AsyncTriggerFn { trigger: TriggerType },
+
+    /// Plugin identified by `(name, version)` already exists in the target
+    /// index. Surfaces from [`crate::validate::plugin_dir_with_index`] so the
+    /// CLI's `validate --index` flag can collect uniqueness conflicts
+    /// alongside other validation errors per Spec 2 S2-15's validator-idiom
+    /// contract. `crate::mutate_index::add_entry` continues to enforce S2-2
+    /// at the mutation boundary by returning `SdkError::AlreadyPublished`.
+    #[error(
+        "plugin ({name:?}, {version:?}) already exists in the target index; \
+         increment version or run `yank` instead"
+    )]
+    NameVersionConflict { name: String, version: String },
 }
 
 impl ValidationError {
@@ -156,6 +168,7 @@ impl ValidationError {
             Self::PythonParse { .. } => "PythonParse",
             Self::TriggerNotImplemented { .. } => "TriggerNotImplemented",
             Self::AsyncTriggerFn { .. } => "AsyncTriggerFn",
+            Self::NameVersionConflict { .. } => "NameVersionConflict",
         }
     }
 }
@@ -262,6 +275,10 @@ mod tests {
             },
             ValidationError::AsyncTriggerFn {
                 trigger: TriggerType::ProcessScheduledCall,
+            },
+            ValidationError::NameVersionConflict {
+                name: "downsampler".into(),
+                version: "1.2.0".into(),
             },
         ]
     }

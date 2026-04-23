@@ -37,10 +37,8 @@ use crate::{SdkError, ValidationError, ValidationReport};
 /// [`crate::package::package_plugin`]) don't need to re-read and re-parse
 /// the file. On failure returns one of:
 /// - `SdkError::Io` — an I/O error other than `NotFound` on required files.
-/// - `SdkError::Schema` — manifest failed structural parsing (fail-fast;
-///   see "Multi-error collection" below).
-/// - `SdkError::ValidationErrors` — one or more cross-file validation
-///   failures collected into a single report.
+/// - `SdkError::ValidationErrors` — manifest failed structural parsing or
+///   one or more cross-file validation checks failed.
 ///
 /// # Multi-error collection
 ///
@@ -101,6 +99,43 @@ pub fn plugin_dir(dir: &Path) -> Result<Manifest, SdkError> {
 
     check_python_source(&init_raw, &manifest.plugin.triggers, &mut report);
     report.into_result()?;
+    Ok(manifest)
+}
+
+/// Same as [`plugin_dir`] plus an index-relative uniqueness check.
+///
+/// Runs the full [`plugin_dir`] validation pass first (short-circuits on
+/// structural or cross-file failure). On success, compares the manifest's
+/// `(name, version)` against every entry in `index.plugins[]`; a collision
+/// surfaces as `SdkError::ValidationErrors` carrying a single
+/// [`ValidationError::NameVersionConflict`]. Returns the parsed [`Manifest`]
+/// on full success.
+///
+/// This is the entry point the CLI's `validate --index` flag uses — Spec 2
+/// S2-15 (validator idiom) requires uniqueness conflicts to appear in the
+/// same diagnostics array as other validation errors, which routing through
+/// `mutate_index::add_entry`'s `SdkError::AlreadyPublished` wouldn't allow.
+/// `add_entry` continues to enforce S2-2 at the mutation boundary for the
+/// `package` / `yank` pipelines.
+pub fn plugin_dir_with_index(
+    dir: &std::path::Path,
+    index: &influxdb3_plugin_schemas::Index,
+) -> Result<Manifest, SdkError> {
+    let manifest = plugin_dir(dir)?;
+
+    let collision = index.plugins.iter().any(|e| {
+        e.name.as_str() == manifest.plugin.name.as_str() && e.version == manifest.plugin.version
+    });
+    if collision {
+        let mut report = ValidationReport::new();
+        report.push(ValidationError::NameVersionConflict {
+            name: manifest.plugin.name.as_str().to_owned(),
+            version: manifest.plugin.version.to_string(),
+        });
+        report.into_result()?;
+        unreachable!("non-empty report always returns Err");
+    }
+
     Ok(manifest)
 }
 
