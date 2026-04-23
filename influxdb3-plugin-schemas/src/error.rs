@@ -163,6 +163,153 @@ impl SchemaError {
     }
 }
 
+use crate::FieldPath;
+
+/// A `SchemaError` paired with the field path at which it was detected.
+///
+/// Part of the `SchemaErrors` collection returned by `Manifest::parse_toml` and
+/// `Index::parse_json`. The `path` is empty for errors that apply to the whole
+/// document (e.g., TOML/JSON syntax errors); populated for field-level
+/// validation errors.
+#[derive(Debug)]
+pub struct ReportedError {
+    pub path: FieldPath,
+    pub error: SchemaError,
+}
+
+impl ReportedError {
+    /// Constructs a new `ReportedError`.
+    pub fn new(path: FieldPath, error: SchemaError) -> Self {
+        Self { path, error }
+    }
+
+    /// Constructs a `ReportedError` at the root path (for whole-document
+    /// errors like `TomlParse` and `JsonParse`).
+    pub fn at_root(error: SchemaError) -> Self {
+        Self::new(FieldPath::root(), error)
+    }
+}
+
+impl std::fmt::Display for ReportedError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.path.as_str().is_empty() {
+            write!(f, "{}", self.error)
+        } else {
+            write!(f, "{}: {}", self.path, self.error)
+        }
+    }
+}
+
+impl std::error::Error for ReportedError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.error)
+    }
+}
+
+/// Collection of `ReportedError`s returned by `Manifest::parse_toml` and
+/// `Index::parse_json`.
+///
+/// The collection is always non-empty when returned as `Err(SchemaErrors)` —
+/// parse functions return `Ok(_)` if and only if no validation errors were
+/// found. Construction from an empty `Vec` is permitted but not produced by
+/// the crate's own code.
+#[derive(Debug)]
+pub struct SchemaErrors(Vec<ReportedError>);
+
+impl SchemaErrors {
+    /// Constructs a `SchemaErrors` from a non-empty list of `ReportedError`s.
+    /// Panics in debug mode if `errors` is empty; passes through silently in
+    /// release mode because constructing an empty `SchemaErrors` is a
+    /// programming error rather than a data-driven case.
+    pub fn new(errors: Vec<ReportedError>) -> Self {
+        debug_assert!(
+            !errors.is_empty(),
+            "SchemaErrors must contain at least one error; use Ok(_) for the no-error case"
+        );
+        Self(errors)
+    }
+
+    /// Constructs a `SchemaErrors` containing exactly one error at the root
+    /// path. Convenience for syntax-level errors (TomlParse / JsonParse) and
+    /// schema-version short-circuit errors.
+    pub fn single_at_root(error: SchemaError) -> Self {
+        Self(vec![ReportedError::at_root(error)])
+    }
+
+    /// Returns the contained `ReportedError`s as a slice.
+    pub fn errors(&self) -> &[ReportedError] {
+        &self.0
+    }
+
+    /// Consumes `self` and returns the inner `Vec`.
+    pub fn into_vec(self) -> Vec<ReportedError> {
+        self.0
+    }
+
+    /// Number of errors collected.
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// Never empty by construction; equivalent to `self.len() == 0` which
+    /// always returns false on well-formed instances. Provided for clippy
+    /// convenience.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+impl std::fmt::Display for SchemaErrors {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.0.len() {
+            0 => f.write_str("(no errors)"),
+            1 => self.0[0].fmt(f),
+            n => {
+                writeln!(f, "{n} schema validation errors:")?;
+                for (i, err) in self.0.iter().enumerate() {
+                    writeln!(f, "  {}. {err}", i + 1)?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+impl std::error::Error for SchemaErrors {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        // Return the first error's source; callers who want the full list
+        // use `.errors()`. Matches how other multi-error types expose their
+        // first error via source().
+        self.0
+            .first()
+            .map(|r| &r.error as &(dyn std::error::Error + 'static))
+    }
+}
+
+impl From<SchemaErrors> for Vec<ReportedError> {
+    fn from(errors: SchemaErrors) -> Self {
+        errors.into_vec()
+    }
+}
+
+impl IntoIterator for SchemaErrors {
+    type Item = ReportedError;
+    type IntoIter = std::vec::IntoIter<ReportedError>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a SchemaErrors {
+    type Item = &'a ReportedError;
+    type IntoIter = std::slice::Iter<'a, ReportedError>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

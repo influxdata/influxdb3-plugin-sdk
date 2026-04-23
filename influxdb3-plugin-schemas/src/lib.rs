@@ -33,13 +33,14 @@ mod error;
 mod identity;
 mod index;
 mod manifest;
+mod path;
+mod raw;
 
-// Types are added in subsequent tasks; re-exports will be uncommented as each
-// arrives.
-pub use error::SchemaError;
+pub use error::{ReportedError, SchemaError, SchemaErrors};
 pub use identity::{PluginId, PluginName};
 pub use index::{ArtifactHash, ArtifactsUrl, Index, IndexEntry, IndexSchemaVersion};
 pub use manifest::{
     Dependencies, Description, Manifest, ManifestSchemaVersion, PluginMetadata, PythonRequirement,
     TriggerType,
 };
+pub use path::FieldPath;
