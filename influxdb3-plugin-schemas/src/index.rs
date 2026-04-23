@@ -769,15 +769,17 @@ mod index_tests {
 
         let paths: Vec<&str> = e.iter().map(|r| r.path.as_str()).collect();
         assert!(
-            paths.iter().any(|p| *p == "plugins[1].hash"),
+            paths.contains(&"plugins[1].hash"),
             "missing hash path: {paths:?}"
         );
+        // `starts_with` predicate doesn't have a `contains` equivalent, so
+        // `iter().any` stays here.
         assert!(
             paths.iter().any(|p| p.starts_with("plugins[2]")),
             "missing duplicate path: {paths:?}"
         );
         assert!(
-            paths.iter().any(|p| *p == "plugins[3].description"),
+            paths.contains(&"plugins[3].description"),
             "missing description path: {paths:?}"
         );
     }

@@ -10,7 +10,7 @@
 //!   [`SdkError::ValidationErrors`] per Spec 2 Validation's "all errors
 //!   reported together" contract.
 
-use influxdb3_plugin_schemas::{SchemaError, TriggerType};
+use influxdb3_plugin_schemas::{ReportedError, SchemaError, SchemaErrors, TriggerType};
 use std::path::PathBuf;
 
 /// Crate-level error type.
@@ -88,6 +88,24 @@ fn path_suffix(path: Option<&PathBuf>) -> String {
     }
 }
 
+/// Adapts a schemas-layer `SchemaErrors` into the SDK's single diagnostics
+/// container. Each `ReportedError` becomes one
+/// [`ValidationError::SchemaReported`] entry inside
+/// [`SdkError::ValidationErrors`] — preserving field paths and inner
+/// `SchemaError` variants without lossy string-squashing.
+///
+/// This is the canonical conversion path used by `?` at every site that
+/// calls `Manifest::parse_toml` or `Index::parse_json`.
+impl From<SchemaErrors> for SdkError {
+    fn from(errors: SchemaErrors) -> Self {
+        let diagnostics = errors
+            .into_iter()
+            .map(ValidationError::SchemaReported)
+            .collect();
+        SdkError::ValidationErrors(diagnostics)
+    }
+}
+
 /// An individual validation failure.
 ///
 /// Collected into [`ValidationReport`] during a validation pass, then
@@ -96,16 +114,17 @@ fn path_suffix(path: Option<&PathBuf>) -> String {
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum ValidationError {
-    /// Wraps a structural [`SchemaError`] for inclusion in a multi-error
-    /// report. Currently reserved: the SDK's [`crate::validate::plugin_dir`]
-    /// is fail-fast on structural parse errors (see the "Multi-error
-    /// collection" section of its rustdoc), so no library code currently
-    /// emits this variant. Kept because Plan 3's `validate --index` flow
-    /// may want to collect structural errors alongside cross-file errors
-    /// when the manifest is partially parseable. `#[from]` keeps future
-    /// `?`-conversions ergonomic.
+    /// Wraps a structural [`ReportedError`] from the schemas crate's
+    /// two-phase parse (`Manifest::parse_toml` / `Index::parse_json`).
+    /// Preserves the schemas-level field path and inner `SchemaError`
+    /// variant losslessly so the CLI can render structural diagnostics
+    /// alongside cross-file diagnostics in one `--output json` array.
+    ///
+    /// The standard conversion path is via [`From<SchemaErrors> for
+    /// SdkError`], which spreads each `ReportedError` from a `SchemaErrors`
+    /// into one `SchemaReported` entry inside `SdkError::ValidationErrors`.
     #[error(transparent)]
-    Schema(#[from] SchemaError),
+    SchemaReported(ReportedError),
 
     #[error("required file {file:?} is missing from the plugin directory")]
     MissingRequiredFile { file: String },
@@ -132,7 +151,7 @@ impl ValidationError {
     /// `SdkError::variant_name`.
     pub fn variant_name(&self) -> &'static str {
         match self {
-            Self::Schema(_) => "Schema",
+            Self::SchemaReported(_) => "SchemaReported",
             Self::MissingRequiredFile { .. } => "MissingRequiredFile",
             Self::PythonParse { .. } => "PythonParse",
             Self::TriggerNotImplemented { .. } => "TriggerNotImplemented",
@@ -226,8 +245,12 @@ mod tests {
     }
 
     fn every_validation_variant() -> Vec<ValidationError> {
+        use influxdb3_plugin_schemas::FieldPath;
         vec![
-            ValidationError::Schema(SchemaError::DescriptionEmpty),
+            ValidationError::SchemaReported(ReportedError::new(
+                FieldPath::root().field("plugin").field("description"),
+                SchemaError::DescriptionEmpty,
+            )),
             ValidationError::MissingRequiredFile {
                 file: "__init__.py".into(),
             },
@@ -355,15 +378,24 @@ mod tests {
         assert!(bottom.downcast_ref::<semver::Error>().is_some());
     }
 
-    /// Testing-spec S3 #7 mirror: `ValidationError::Schema` preserves the
-    /// inner variant via pattern matching. `#[from] SchemaError` makes
-    /// `?`-conversions ergonomic in future structural-collection code.
+    /// Testing-spec S3 #7 mirror: `ValidationError::SchemaReported` wraps
+    /// the schemas-layer `ReportedError` losslessly (path + inner variant),
+    /// so pattern-matching downstream callers can inspect the original
+    /// `SchemaError` variant and the field path that surfaced it.
     #[test]
-    fn schemas_error_structured_payload_preserved_via_validation_schema() {
-        let wrapped: ValidationError = SchemaError::DescriptionEmpty.into();
-        assert!(matches!(
-            wrapped,
-            ValidationError::Schema(SchemaError::DescriptionEmpty)
-        ));
+    fn schemas_error_structured_payload_preserved_via_validation_schema_reported() {
+        use influxdb3_plugin_schemas::FieldPath;
+        let reported = ReportedError::new(
+            FieldPath::root().field("plugin").field("description"),
+            SchemaError::DescriptionEmpty,
+        );
+        let wrapped = ValidationError::SchemaReported(reported);
+        match &wrapped {
+            ValidationError::SchemaReported(r) => {
+                assert_eq!(r.path.as_str(), "plugin.description");
+                assert!(matches!(r.error, SchemaError::DescriptionEmpty));
+            }
+            other => panic!("expected SchemaReported, got {other:?}"),
+        }
     }
 }

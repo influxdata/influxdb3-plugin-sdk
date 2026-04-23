@@ -1,9 +1,9 @@
 ---
 source: influxdb3-plugin-sdk/src/error.rs
-assertion_line: 261
+assertion_line: 299
 expression: tags
 ---
-- Schema
+- SchemaReported
 - MissingRequiredFile
 - PythonParse
 - TriggerNotImplemented

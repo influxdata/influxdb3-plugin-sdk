@@ -1,9 +1,9 @@
 ---
 source: influxdb3-plugin-sdk/src/error.rs
-assertion_line: 252
+assertion_line: 290
 expression: rendered
 ---
-- description must not be empty
+- "plugin.description: description must not be empty"
 - "required file \"__init__.py\" is missing from the plugin directory"
 - "__init__.py does not parse as valid Python: unexpected token"
 - "trigger ProcessWrites is declared in manifest.toml but has no matching top-level `def process_writes(...)` in __init__.py"
