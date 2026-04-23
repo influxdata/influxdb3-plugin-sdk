@@ -1,0 +1,10 @@
+manifest_schema_version = "1.0"
+
+[plugin]
+name = "valid-plugin"
+version = "0.1.0"
+description = "A well-formed plugin with a top-level sync def for its trigger."
+triggers = ["process_writes"]
+
+[dependencies]
+database_version = ">=3.0.0"

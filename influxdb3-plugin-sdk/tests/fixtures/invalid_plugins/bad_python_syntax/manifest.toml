@@ -1,0 +1,10 @@
+manifest_schema_version = "1.0"
+
+[plugin]
+name = "bad-syntax"
+version = "0.1.0"
+description = "__init__.py is syntactically invalid Python."
+triggers = ["process_writes"]
+
+[dependencies]
+database_version = ">=3.0.0"

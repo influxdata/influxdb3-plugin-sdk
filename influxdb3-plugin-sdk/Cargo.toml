@@ -17,6 +17,8 @@ influxdb3-plugin-schemas.workspace = true
 semver.workspace = true
 sha2.workspace = true
 thiserror.workspace = true
+tree-sitter.workspace = true
+tree-sitter-python.workspace = true
 
 [dev-dependencies]
 insta.workspace = true

@@ -1,1 +1,394 @@
-//! Plugin-directory validation: structural checks + code/manifest cross-reference. Implemented in D21.
+//! Plugin-directory validation per Spec 2 Validation.
+//!
+//! Runs two check categories on a plugin directory:
+//!
+//! - **Structural** (delegated to `influxdb3-plugin-schemas` via
+//!   [`Manifest::parse_toml`]): manifest well-formedness, required-file
+//!   presence, name/version/trigger/URL/dep parseability, description length,
+//!   non-empty triggers array, URL scheme allowlist.
+//! - **Code / manifest cross-reference**: `__init__.py` must parse as valid
+//!   Python 3, and for each trigger declared in `manifest.plugin.triggers`
+//!   there must be a top-level synchronous `def <trigger>(...)`. Indirect
+//!   definitions (re-exports, module-level assignments, class methods) and
+//!   `async def` are explicit non-matches per Spec 2 Validation.
+//!
+//! # Multi-error collection
+//!
+//! Structural parse failures short-circuit — we can't meaningfully run
+//! cross-file checks without a valid manifest. Cross-file failures
+//! accumulate into a [`ValidationReport`]; multiple missing triggers or an
+//! unparseable `__init__.py` come back together rather than one-at-a-time.
+//!
+//! # Python parser
+//!
+//! Uses `tree-sitter-python`. Rationale for this pick over pyo3, shell-out,
+//! and other Rust Python parsers lives in the core doc's Design Decisions
+//! under `influxdb3-plugin-sdk` crate specifics.
+
+use influxdb3_plugin_schemas::{Manifest, TriggerType};
+use std::collections::HashMap;
+use std::path::Path;
+
+use crate::{SdkError, ValidationError, ValidationReport};
+
+/// Validates a plugin directory against Spec 2 Validation.
+///
+/// Returns `Ok(())` on success. On failure returns one of:
+/// - `SdkError::Io` — couldn't read `manifest.toml` or `__init__.py`
+/// - `SdkError::Schema` — manifest failed structural parsing (fail-fast)
+/// - `SdkError::ValidationErrors` — cross-file validation collected one or
+///   more failures
+pub fn plugin_dir(dir: &Path) -> Result<(), SdkError> {
+    // Structural: manifest.toml must parse + validate.
+    let manifest_path = dir.join("manifest.toml");
+    let manifest_raw = std::fs::read_to_string(&manifest_path).map_err(|source| SdkError::Io {
+        source,
+        path: Some(manifest_path.clone()),
+    })?;
+    let manifest = Manifest::parse_toml(&manifest_raw)?;
+
+    // Cross-file: __init__.py must exist, parse, and implement the declared
+    // triggers as top-level sync defs.
+    let mut report = ValidationReport::new();
+    let init_path = dir.join("__init__.py");
+    let init_raw = match std::fs::read_to_string(&init_path) {
+        Ok(s) => s,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            report.push(ValidationError::MissingRequiredFile {
+                file: "__init__.py".into(),
+            });
+            return report.into_result();
+        }
+        Err(source) => {
+            return Err(SdkError::Io {
+                source,
+                path: Some(init_path),
+            });
+        }
+    };
+
+    check_python_source(&init_raw, &manifest.plugin.triggers, &mut report);
+    report.into_result()
+}
+
+/// Parses `source` with tree-sitter-python and records validation findings
+/// into `report`. Public within the crate for test ergonomics; not part of
+/// the stable API surface.
+pub(crate) fn check_python_source(
+    source: &str,
+    declared_triggers: &[TriggerType],
+    report: &mut ValidationReport,
+) {
+    let mut parser = tree_sitter::Parser::new();
+    let language = tree_sitter_python::LANGUAGE;
+    parser
+        .set_language(&language.into())
+        .expect("tree-sitter-python grammar initializes");
+
+    let Some(tree) = parser.parse(source, None) else {
+        report.push(ValidationError::PythonParse {
+            message: "tree-sitter produced no parse tree".into(),
+        });
+        return;
+    };
+
+    let root = tree.root_node();
+    if root.has_error() {
+        report.push(ValidationError::PythonParse {
+            message: format_parse_error(root, source),
+        });
+        return;
+    }
+
+    // Walk top-level statements. We care about:
+    //   - `function_definition` — bare def or async def
+    //   - `decorated_definition` — def or async def preceded by one or more
+    //     decorators (e.g., `@staticmethod\ndef foo(): ...`). Decorators don't
+    //     make a def indirect per Spec 2 Validation; only re-exports, class
+    //     methods, and assignments do.
+    // Everything else (class defs, imports, expressions, assignments) is not a
+    // top-level `def` and therefore doesn't satisfy a declared trigger.
+    let mut top_level_defs: HashMap<String, DefKind> = HashMap::new();
+    let mut cursor = root.walk();
+    for child in root.children(&mut cursor) {
+        if let Some((name, kind)) = extract_top_level_def(&child, source) {
+            top_level_defs.insert(name, kind);
+        }
+    }
+
+    // For each declared trigger, check the implementation.
+    for trigger in declared_triggers {
+        let expected = trigger.as_str();
+        match top_level_defs.get(expected) {
+            None => report.push(ValidationError::TriggerNotImplemented { trigger: *trigger }),
+            Some(DefKind::Async) => {
+                report.push(ValidationError::AsyncTriggerFn { trigger: *trigger })
+            }
+            Some(DefKind::Sync) => { /* ok */ }
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+enum DefKind {
+    Sync,
+    Async,
+}
+
+/// If `node` is (or wraps) a top-level function definition, return its name
+/// and sync/async kind. Returns `None` for anything else (class defs,
+/// imports, expressions, assignments, malformed defs caught by tree-sitter's
+/// error recovery).
+fn extract_top_level_def(node: &tree_sitter::Node<'_>, source: &str) -> Option<(String, DefKind)> {
+    let function_def = match node.kind() {
+        "function_definition" => *node,
+        // Decorated form: `@foo\ndef bar():` → decorated_definition with a
+        // function_definition child. Find the inner function_definition.
+        "decorated_definition" => {
+            let mut cursor = node.walk();
+            node.children(&mut cursor)
+                .find(|c| c.kind() == "function_definition")?
+        }
+        _ => return None,
+    };
+    let name_node = function_def.child_by_field_name("name")?;
+    let name = source[name_node.byte_range()].to_owned();
+    let kind = if is_async_function(&function_def) {
+        DefKind::Async
+    } else {
+        DefKind::Sync
+    };
+    Some((name, kind))
+}
+
+/// tree-sitter-python 0.25 emits both `def` and `async def` as
+/// `function_definition` nodes. The async case has an `async` keyword as a
+/// leading child; walk the immediate children for one.
+fn is_async_function(function_def: &tree_sitter::Node<'_>) -> bool {
+    let mut cursor = function_def.walk();
+    for child in function_def.children(&mut cursor) {
+        if child.kind() == "async" {
+            return true;
+        }
+    }
+    false
+}
+
+/// Best-effort human-readable description of the first parse error.
+fn format_parse_error(root: tree_sitter::Node<'_>, source: &str) -> String {
+    let mut cursor = root.walk();
+    for descendant in walk_preorder(root, &mut cursor) {
+        if descendant.is_error() || descendant.is_missing() {
+            let start = descendant.start_position();
+            let snippet = source_snippet(source, &descendant);
+            return format!(
+                "parse error at line {}, column {}: `{}`",
+                start.row + 1,
+                start.column + 1,
+                snippet
+            );
+        }
+    }
+    "parse error (unknown location)".into()
+}
+
+fn source_snippet(source: &str, node: &tree_sitter::Node<'_>) -> String {
+    let range = node.byte_range();
+    let end = range.end.min(range.start + 40);
+    let slice = source.get(range.start..end).unwrap_or("");
+    slice.replace('\n', "\\n")
+}
+
+/// Depth-first pre-order traversal that yields every node. Small hand-rolled
+/// walker since tree-sitter's public API only exposes child-walking.
+fn walk_preorder<'tree>(
+    root: tree_sitter::Node<'tree>,
+    cursor: &mut tree_sitter::TreeCursor<'tree>,
+) -> Vec<tree_sitter::Node<'tree>> {
+    let mut out = Vec::new();
+    out.push(root);
+    let mut stack: Vec<tree_sitter::Node<'_>> = vec![root];
+    while let Some(node) = stack.pop() {
+        for child in node.children(cursor) {
+            out.push(child);
+            stack.push(child);
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn trigger_list(triggers: &[TriggerType]) -> Vec<TriggerType> {
+        triggers.to_vec()
+    }
+
+    #[test]
+    fn happy_path_sync_def_matches_trigger() {
+        let src = "def process_writes(a, b, c):\n    pass\n";
+        let mut report = ValidationReport::new();
+        check_python_source(
+            src,
+            &trigger_list(&[TriggerType::ProcessWrites]),
+            &mut report,
+        );
+        assert!(report.is_empty(), "expected no errors, got {report:?}");
+    }
+
+    #[test]
+    fn missing_trigger_def_reported() {
+        let src = "def something_else():\n    pass\n";
+        let mut report = ValidationReport::new();
+        check_python_source(
+            src,
+            &trigger_list(&[TriggerType::ProcessWrites]),
+            &mut report,
+        );
+        assert_eq!(report.len(), 1);
+    }
+
+    #[test]
+    fn async_def_rejected_even_if_name_matches() {
+        let src = "async def process_writes(a, b, c):\n    pass\n";
+        let mut report = ValidationReport::new();
+        check_python_source(
+            src,
+            &trigger_list(&[TriggerType::ProcessWrites]),
+            &mut report,
+        );
+        let err = report.into_result().unwrap_err();
+        match err {
+            SdkError::ValidationErrors(errs) => {
+                assert_eq!(errs.len(), 1);
+                assert!(matches!(errs[0], ValidationError::AsyncTriggerFn { .. }));
+            }
+            other => panic!("expected AsyncTriggerFn, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn class_method_with_matching_name_does_not_satisfy_trigger() {
+        // Spec 2 Validation: indirect definitions (class methods) are not recognized.
+        let src = "class Foo:\n    def process_writes(self):\n        pass\n";
+        let mut report = ValidationReport::new();
+        check_python_source(
+            src,
+            &trigger_list(&[TriggerType::ProcessWrites]),
+            &mut report,
+        );
+        assert_eq!(report.len(), 1);
+        let err = report.into_result().unwrap_err();
+        let SdkError::ValidationErrors(errs) = err else {
+            panic!()
+        };
+        assert!(matches!(
+            errs[0],
+            ValidationError::TriggerNotImplemented { .. }
+        ));
+    }
+
+    #[test]
+    fn module_level_assignment_does_not_satisfy_trigger() {
+        // Spec 2 Validation: module-level assignments are not recognized.
+        let src = "process_writes = lambda a, b, c: None\n";
+        let mut report = ValidationReport::new();
+        check_python_source(
+            src,
+            &trigger_list(&[TriggerType::ProcessWrites]),
+            &mut report,
+        );
+        assert_eq!(report.len(), 1);
+    }
+
+    #[test]
+    fn def_inside_triple_quoted_string_is_not_a_function() {
+        // Multi-line string literal containing what looks like a def at column 0 —
+        // the regex-based approach we explicitly rejected would false-positive here.
+        let src = r#"
+doc = """
+def process_writes():
+    pass
+"""
+"#;
+        let mut report = ValidationReport::new();
+        check_python_source(
+            src,
+            &trigger_list(&[TriggerType::ProcessWrites]),
+            &mut report,
+        );
+        assert_eq!(report.len(), 1);
+    }
+
+    #[test]
+    fn syntax_error_reported_as_python_parse() {
+        let src = "def oops(:\n    pass\n";
+        let mut report = ValidationReport::new();
+        check_python_source(
+            src,
+            &trigger_list(&[TriggerType::ProcessWrites]),
+            &mut report,
+        );
+        let err = report.into_result().unwrap_err();
+        let SdkError::ValidationErrors(errs) = err else {
+            panic!()
+        };
+        assert_eq!(errs.len(), 1);
+        assert!(matches!(errs[0], ValidationError::PythonParse { .. }));
+    }
+
+    #[test]
+    fn multiple_missing_triggers_reported_together() {
+        let src = "def unrelated():\n    pass\n";
+        let mut report = ValidationReport::new();
+        check_python_source(
+            src,
+            &trigger_list(&[
+                TriggerType::ProcessWrites,
+                TriggerType::ProcessScheduledCall,
+                TriggerType::ProcessRequest,
+            ]),
+            &mut report,
+        );
+        assert_eq!(report.len(), 3);
+    }
+
+    #[test]
+    fn multiple_triggers_accepted_when_all_implemented() {
+        let src = r#"
+def process_writes(a, b, c):
+    pass
+
+def process_scheduled_call(a, b, c):
+    pass
+"#;
+        let mut report = ValidationReport::new();
+        check_python_source(
+            src,
+            &trigger_list(&[
+                TriggerType::ProcessWrites,
+                TriggerType::ProcessScheduledCall,
+            ]),
+            &mut report,
+        );
+        assert!(report.is_empty());
+    }
+
+    #[test]
+    fn decorated_function_still_recognized() {
+        // Decorators don't change top-level-ness — def is still a function_definition.
+        let src = r#"
+@staticmethod
+def process_writes(a, b, c):
+    pass
+"#;
+        let mut report = ValidationReport::new();
+        check_python_source(
+            src,
+            &trigger_list(&[TriggerType::ProcessWrites]),
+            &mut report,
+        );
+        assert!(report.is_empty(), "got {report:?}");
+    }
+}

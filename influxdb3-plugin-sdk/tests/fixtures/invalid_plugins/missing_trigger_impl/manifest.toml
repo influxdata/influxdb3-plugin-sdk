@@ -1,0 +1,10 @@
+manifest_schema_version = "1.0"
+
+[plugin]
+name = "missing-impl"
+version = "0.1.0"
+description = "Manifest declares process_writes but __init__.py does not define it."
+triggers = ["process_writes"]
+
+[dependencies]
+database_version = ">=3.0.0"
