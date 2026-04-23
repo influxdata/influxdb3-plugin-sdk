@@ -22,6 +22,14 @@ use tokio as _;
 // Acknowledged here so D27's lib target compiles cleanly.
 use influxdb3_plugin_sdk as _;
 
+// `assert_cmd` / `predicates` are spawn-and-assert helpers used only in
+// external integration-test files under `tests/`. The lib's own test
+// target sees them as declared dev-deps but never names them.
+#[cfg(test)]
+use assert_cmd as _;
+#[cfg(test)]
+use predicates as _;
+
 pub use config::PluginConfig;
 
 // Schema-type re-exports — phase-2 embedding consumers import from `cli`,
@@ -38,4 +46,5 @@ pub use influxdb3_plugin_schemas::{
 
 mod color;
 mod config;
+mod exit;
 mod output;

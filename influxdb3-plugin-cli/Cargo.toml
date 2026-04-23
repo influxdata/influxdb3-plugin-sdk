@@ -6,6 +6,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 description = "InfluxDB 3 plugin SDK CLI — the `influxdb3-plugin` binary."
+build = "build.rs"
 # publish = false until SDK ships to a public registry. License declared via
 # [workspace.package]; no deny.toml carve-out required.
 publish = false
@@ -25,6 +26,8 @@ influxdb3-plugin-sdk.workspace = true
 tokio.workspace = true
 
 [dev-dependencies]
+assert_cmd.workspace = true
+predicates.workspace = true
 rstest.workspace = true
 
 [lints]

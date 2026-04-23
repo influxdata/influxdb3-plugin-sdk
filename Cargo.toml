@@ -40,8 +40,10 @@ url = { version = "2", features = ["serde"] }
 walkdir = "2"
 
 # dev-dependencies
+assert_cmd = "2"
 assert_matches = "1.5"
 insta = { version = "1.46", features = ["json", "toml", "yaml"] }
+predicates = "3"
 pretty_assertions = "1.4"
 proptest = { version = "1", default-features = false, features = ["std"] }
 rstest = "0.26"

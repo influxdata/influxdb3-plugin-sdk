@@ -11,6 +11,13 @@ use influxdb3_plugin_sdk as _;
 // pattern as the lib-side `tokio` / `sdk` workarounds.
 #[cfg(test)]
 use rstest as _;
+// `assert_cmd` / `predicates` are spawn-and-assert helpers used only in
+// `tests/*.rs`. The bin's test build sees them as declared dev-deps but
+// never names them.
+#[cfg(test)]
+use assert_cmd as _;
+#[cfg(test)]
+use predicates as _;
 
 use clap::Parser;
 use influxdb3_plugin_cli::PluginConfig;

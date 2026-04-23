@@ -2,6 +2,22 @@
 
 use clap::Parser;
 
+/// `<version> (<sha> <build-date>)` fragment fed to clap's `version` attribute.
+///
+/// `build.rs` writes the parenthesized half (either `"(abc1234 2026-04-23)"`
+/// or `"(unknown)"`) to `$OUT_DIR/version_fragment.rs`; we splice it onto
+/// `CARGO_PKG_VERSION` here. clap prepends the binary `name` ("influxdb3-plugin")
+/// when rendering `--version`, so the final shape matches Spec 2 § S2-21:
+///
+/// ```text
+/// influxdb3-plugin <version> (<short-sha> <build-date>)
+/// ```
+const VERSION_STRING: &str = concat!(
+    env!("CARGO_PKG_VERSION"),
+    " ",
+    include!(concat!(env!("OUT_DIR"), "/version_fragment.rs")),
+);
+
 /// Top-level embeddable CLI config for the `influxdb3-plugin` binary.
 ///
 /// Constructed from a process's argument list via clap (`PluginConfig::parse()`)
@@ -13,7 +29,7 @@ use clap::Parser;
 #[derive(Debug, Parser)]
 #[command(
     name = "influxdb3-plugin",
-    version = env!("CARGO_PKG_VERSION"),
+    version = VERSION_STRING,
     about = "Author-side tooling for InfluxDB 3 plugins.",
     long_about = None,
 )]
