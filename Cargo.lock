@@ -477,6 +477,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tree-sitter",
  "tree-sitter-python",
+ "url",
  "walkdir",
 ]
 
