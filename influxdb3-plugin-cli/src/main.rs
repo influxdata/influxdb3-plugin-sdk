@@ -25,6 +25,8 @@ use insta as _;
 use predicates as _;
 #[cfg(test)]
 use tempfile as _;
+#[cfg(test)]
+use toml as _;
 
 use clap::Parser;
 use influxdb3_plugin_cli::PluginConfig;

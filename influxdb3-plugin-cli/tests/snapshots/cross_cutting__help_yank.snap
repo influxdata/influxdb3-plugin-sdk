@@ -1,0 +1,31 @@
+---
+source: influxdb3-plugin-cli/tests/cross_cutting.rs
+expression: stdout
+---
+Toggle the `yanked` flag on an existing index entry
+
+Usage: influxdb3-plugin yank [OPTIONS] --index <INDEX> --out <OUT> <TARGET>
+
+Arguments:
+  <TARGET>
+          `<name>@<version>` identifier of the entry to toggle
+
+Options:
+      --output <OUTPUT>
+          Output format. Auto-detected from stdout's TTY status and `CI` when omitted (Spec 2 § S2-14)
+
+          Possible values:
+          - human: Colorized, human-readable rendering. Default on TTY
+          - json:  Machine-readable JSON on stdout per Spec 2 S2-15. Default in CI / when stdout is not a terminal
+
+      --index <INDEX>
+          Input registry index (read-only per S2-11)
+
+      --out <OUT>
+          Output directory. Receives the derived `index.json`. Created if missing. Must NOT resolve to the directory containing `--index` (S2-12)
+
+      --undo
+          Clear `yanked` instead of setting it
+
+  -h, --help
+          Print help (see a summary with '-h')

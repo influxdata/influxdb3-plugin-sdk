@@ -1,0 +1,38 @@
+---
+source: influxdb3-plugin-cli/tests/cross_cutting.rs
+expression: stdout
+---
+Scaffold a new plugin or registry from a built-in template
+
+Usage: influxdb3-plugin new [OPTIONS] <TEMPLATE> [PATH]
+
+Arguments:
+  <TEMPLATE>
+          Template to scaffold
+          
+          [possible values: process_writes, process_scheduled_call, process_request, registry]
+
+  [PATH]
+          Target directory. Created if missing. Defaults to the current working directory
+          
+          [default: .]
+
+Options:
+      --output <OUTPUT>
+          Output format. Auto-detected from stdout's TTY status and `CI` when omitted (Spec 2 § S2-14)
+
+          Possible values:
+          - human: Colorized, human-readable rendering. Default on TTY
+          - json:  Machine-readable JSON on stdout per Spec 2 S2-15. Default in CI / when stdout is not a terminal
+
+      --name <NAME>
+          Plugin name written into `manifest.toml`. Plugin templates only. Defaults to the basename of `path`; the command errors if the derived basename does not match the plugin-name regex
+
+      --database-version <DATABASE_VERSION>
+          Database-version SemVer range written into the scaffolded manifest's `dependencies.database_version`. Plugin templates only. Defaults to the SDK's [`scaffold::DEFAULT_DATABASE_VERSION`]
+
+      --artifacts-url <ARTIFACTS_URL>
+          Registry artifacts URL written into the scaffolded `index.json`. Registry template only. Defaults to `file://<absolute path>`
+
+  -h, --help
+          Print help (see a summary with '-h')
