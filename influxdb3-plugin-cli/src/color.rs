@@ -5,7 +5,7 @@
 //!
 //! # Absolute rule
 //!
-//! In [`OutputMode::Json`](crate::output::OutputMode::Json) on
+//! In [`OutputMode::Json`] on
 //! [`Stream::Stdout`], color is **never** emitted regardless of any env var.
 //! JSON on stdout must be byte-stable and parseable; ANSI escapes break
 //! `jq` and every other JSON consumer.

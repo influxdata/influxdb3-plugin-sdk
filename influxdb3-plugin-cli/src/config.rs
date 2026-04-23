@@ -57,6 +57,38 @@ impl PluginConfig {
     /// but the signature lets phase-2 embedding await without a runtime
     /// switch. Returns through `Result` per S2-7 (no `std::process::exit`
     /// from the library surface).
+    ///
+    /// # Examples
+    ///
+    /// Standalone binary entry — `main.rs` does the equivalent of:
+    ///
+    /// ```rust,no_run
+    /// # async fn _doc() -> anyhow::Result<()> {
+    /// use clap::Parser;
+    /// use influxdb3_plugin_cli::PluginConfig;
+    ///
+    /// let config = PluginConfig::parse();
+    /// config.run().await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// Embedding host (Spec 2 § Phase-2 Embedding) — invoke from the
+    /// host's existing tokio runtime; no nested runtime is needed:
+    ///
+    /// ```rust,no_run
+    /// # fn _doc(host_argv: Vec<String>) -> anyhow::Result<()> {
+    /// use clap::Parser;
+    /// use influxdb3_plugin_cli::PluginConfig;
+    ///
+    /// let config = PluginConfig::try_parse_from(host_argv)?;
+    /// let runtime = tokio::runtime::Builder::new_current_thread()
+    ///     .enable_all()
+    ///     .build()?;
+    /// runtime.block_on(config.run())?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn run(self) -> anyhow::Result<()> {
         match self.command {
             Command::New(args) => args.run(),

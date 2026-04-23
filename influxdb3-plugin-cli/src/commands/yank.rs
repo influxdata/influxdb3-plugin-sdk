@@ -8,7 +8,8 @@
 //!
 //! Per Spec 2 § yank, re-yanking an already-yanked entry (or `--undo`-ing
 //! a not-yanked entry) is a successful no-op. The SDK distinguishes the
-//! two cases via [`YankOutcome`]; we surface that signal in `--output json`
+//! two cases via [`mutate_index::YankOutcome`]; we surface that signal in
+//! `--output json`
 //! as `"transitioned"` vs `"already_in_desired_state"` and in human mode
 //! as a printed informational marker.
 
