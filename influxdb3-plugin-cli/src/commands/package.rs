@@ -16,7 +16,7 @@
 
 use clap::Args as ClapArgs;
 use influxdb3_plugin_schemas::Index;
-use influxdb3_plugin_sdk::{SdkError, package};
+use influxdb3_plugin_sdk::{SdkError, ValidationError, package};
 use std::path::{Path, PathBuf};
 
 use crate::output::{Env, OutputMode, RealEnv, json::PackageOutput, resolve_output_mode};
@@ -80,7 +80,13 @@ fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
         )));
     }
 
-    let outcome = package::package_plugin(&args.plugin_dir, input_index)?;
+    let outcome = match package::package_plugin(&args.plugin_dir, input_index) {
+        Ok(o) => o,
+        Err(SdkError::ValidationErrors(errs)) => {
+            return Err(validation_errors_to_anyhow(errs, mode));
+        }
+        Err(other) => return Err(other.into()),
+    };
 
     // Materialize bytes.
     let artifact_filename = format!(
@@ -164,4 +170,37 @@ fn render_json(payload: &PackageOutput, writer: &mut impl std::io::Write) -> any
     serde_json::to_writer_pretty(&mut *writer, payload)?;
     writeln!(writer)?;
     Ok(())
+}
+
+fn validation_errors_to_anyhow(
+    errs: Vec<ValidationError>,
+    mode: OutputMode,
+) -> anyhow::Error {
+    match mode {
+        OutputMode::Human => {
+            // Render the full list to stderr so authors see every error
+            // in one pass (Spec 2 § Packaging). Use the same renderer as
+            // `validate` for visual consistency.
+            let diagnostics: Vec<_> = errs
+                .iter()
+                .map(crate::diag_render::diagnostic_from)
+                .collect();
+            let mut buf = Vec::<u8>::new();
+            let _ = crate::diag_render::render_human(&diagnostics, &mut buf);
+            let rendered = String::from_utf8(buf).unwrap_or_default();
+            anyhow::anyhow!("{}", rendered.trim_end())
+        }
+        OutputMode::Json => {
+            // S2-15 for data-tool commands: "stdout must stay empty; the
+            // human-readable error line is written to stderr." Singular —
+            // the spec wants one line, not a multi-line diagnostic block
+            // or a JSON document. We preserve today's summary shape to
+            // keep JSON-mode consumers stable; human mode carries the
+            // rich reporting.
+            anyhow::anyhow!(
+                "{} validation error(s) found",
+                errs.len()
+            )
+        }
+    }
 }
