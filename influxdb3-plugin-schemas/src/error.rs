@@ -433,10 +433,7 @@ mod tests {
                 },
             ),
             ReportedError::new(
-                FieldPath::root()
-                    .field("plugin")
-                    .field("triggers")
-                    .index(0),
+                FieldPath::root().field("plugin").field("triggers").index(0),
                 SchemaError::UnknownTriggerType {
                     trigger: "on_startup".into(),
                 },

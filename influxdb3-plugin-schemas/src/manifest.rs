@@ -279,8 +279,8 @@ impl Manifest {
             .map_err(|source| SchemaErrors::single_at_root(SchemaError::TomlParse { source }))?;
 
         // Phase 2a: schema-version short-circuit.
-        let schema_version =
-            ManifestSchemaVersion::from_str(&raw.manifest_schema_version).map_err(|e| {
+        let schema_version = ManifestSchemaVersion::from_str(&raw.manifest_schema_version)
+            .map_err(|e| {
                 SchemaErrors::new(vec![ReportedError::new(
                     FieldPath::root().field("manifest_schema_version"),
                     e,
@@ -335,8 +335,12 @@ impl Manifest {
         }
 
         // Optional URL fields: when present, must parse + use http/https scheme.
-        let homepage =
-            parse_optional_http_url_from_path(&raw.plugin.homepage, &mut errors, &plugin_path, "homepage");
+        let homepage = parse_optional_http_url_from_path(
+            &raw.plugin.homepage,
+            &mut errors,
+            &plugin_path,
+            "homepage",
+        );
         let repository = parse_optional_http_url_from_path(
             &raw.plugin.repository,
             &mut errors,
@@ -351,12 +355,10 @@ impl Manifest {
         );
 
         // Database version range.
-        let database_version =
-            semver::VersionReq::parse(&raw.dependencies.database_version).map_err(|source| {
-                SchemaError::InvalidDatabaseVersion {
-                    range: raw.dependencies.database_version.clone(),
-                    source,
-                }
+        let database_version = semver::VersionReq::parse(&raw.dependencies.database_version)
+            .map_err(|source| SchemaError::InvalidDatabaseVersion {
+                range: raw.dependencies.database_version.clone(),
+                source,
             });
         let database_version_ok = database_version.as_ref().ok().cloned();
         if let Err(e) = database_version {
@@ -369,10 +371,7 @@ impl Manifest {
         for (i, p) in raw.dependencies.python.iter().enumerate() {
             match PythonRequirement::try_new(p) {
                 Ok(pr) => python_ok.push(pr),
-                Err(e) => errors.push(ReportedError::new(
-                    deps_path.field("python").index(i),
-                    e,
-                )),
+                Err(e) => errors.push(ReportedError::new(deps_path.field("python").index(i), e)),
             }
         }
 
@@ -857,7 +856,10 @@ database_version = ">=3.0.0"
         let manifest = with_fragment(field, value);
         let errors = Manifest::parse_toml(&manifest).unwrap_err();
         assert_eq!(errors.errors().len(), 1);
-        assert_matches!(errors.errors()[0].error, SchemaError::InvalidUrlScheme { .. });
+        assert_matches!(
+            errors.errors()[0].error,
+            SchemaError::InvalidUrlScheme { .. }
+        );
         assert_eq!(errors.errors()[0].path.as_str(), &format!("plugin.{field}"));
     }
 
