@@ -14,11 +14,14 @@ publish = false
 influxdb3-plugin-schemas.workspace = true
 
 # crates.io dependencies
+flate2.workspace = true
 semver.workspace = true
 sha2.workspace = true
+tar.workspace = true
 thiserror.workspace = true
 tree-sitter.workspace = true
 tree-sitter-python.workspace = true
+walkdir.workspace = true
 
 [dev-dependencies]
 insta.workspace = true
