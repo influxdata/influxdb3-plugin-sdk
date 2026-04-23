@@ -588,6 +588,7 @@ dependencies = [
  "insta",
  "predicates",
  "rstest",
+ "semver",
  "serde",
  "serde_json",
  "tempfile",

@@ -5,6 +5,7 @@
 use anyhow as _;
 use influxdb3_plugin_schemas as _;
 use influxdb3_plugin_sdk as _;
+use semver as _;
 use serde as _;
 use serde_json as _;
 

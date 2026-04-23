@@ -34,6 +34,19 @@ pub(crate) struct Diagnostic {
     pub field: Option<String>,
 }
 
+/// `--output json` payload emitted by `yank` (data-tool idiom).
+/// `outcome` is the [`influxdb3_plugin_sdk::mutate_index::YankOutcome`]
+/// rendered as `"transitioned"` or `"already_in_desired_state"`.
+/// `target_state` is `true` after `yank`, `false` after `yank --undo`.
+#[derive(Debug, Serialize)]
+pub(crate) struct YankOutput {
+    pub name: String,
+    pub version: String,
+    pub outcome: &'static str,
+    pub target_state: bool,
+    pub index_path: PathBuf,
+}
+
 /// `--output json` payload emitted by `package` on success (data-tool
 /// idiom). Carries the absolute paths of the artifact + derived index,
 /// the artifact's SHA-256 hash, and the new entry's identity.

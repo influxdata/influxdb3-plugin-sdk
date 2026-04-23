@@ -46,7 +46,8 @@ enum Command {
     Validate(crate::commands::validate::Args),
     /// Validate, archive, hash, and emit a derived index entry.
     Package(crate::commands::package::Args),
-    // Remaining variant lands in D33 (`yank`).
+    /// Toggle the `yanked` flag on an existing index entry.
+    Yank(crate::commands::yank::Args),
 }
 
 impl PluginConfig {
@@ -61,6 +62,7 @@ impl PluginConfig {
             Command::New(args) => args.run(),
             Command::Validate(args) => args.run(),
             Command::Package(args) => args.run(),
+            Command::Yank(args) => args.run(),
         }
     }
 }
