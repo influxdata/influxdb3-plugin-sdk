@@ -5,3 +5,4 @@
 //! Per Spec 2 § Commands.
 
 pub(crate) mod new;
+pub(crate) mod validate;

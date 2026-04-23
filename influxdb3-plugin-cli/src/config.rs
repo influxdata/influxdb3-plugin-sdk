@@ -42,8 +42,9 @@ pub struct PluginConfig {
 enum Command {
     /// Scaffold a new plugin or registry from a built-in template.
     New(crate::commands::new::Args),
-    // Remaining variants land in D31 (`validate`), D32 (`package`),
-    // D33 (`yank`).
+    /// Validate a plugin directory.
+    Validate(crate::commands::validate::Args),
+    // Remaining variants land in D32 (`package`) and D33 (`yank`).
 }
 
 impl PluginConfig {
@@ -56,6 +57,7 @@ impl PluginConfig {
     pub async fn run(self) -> anyhow::Result<()> {
         match self.command {
             Command::New(args) => args.run(),
+            Command::Validate(args) => args.run(),
         }
     }
 }

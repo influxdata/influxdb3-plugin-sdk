@@ -11,6 +11,29 @@
 use serde::Serialize;
 use std::path::PathBuf;
 
+/// `--output json` payload emitted by `validate` on BOTH pass and fail
+/// (validator idiom per S2-15: a single document on stdout always; the
+/// `diagnostics` array is empty on a clean pass, populated on failure).
+#[derive(Debug, Serialize)]
+pub(crate) struct ValidateOutput {
+    /// Validation diagnostics, ordered as the SDK collected them. Empty
+    /// on a clean pass.
+    pub diagnostics: Vec<Diagnostic>,
+}
+
+/// One validation diagnostic. `variant` is a stable string tag drawn from
+/// [`influxdb3_plugin_sdk::ValidationError::variant_name`]; consumers can
+/// pattern-match on it. `message` is the variant's `Display` text.
+/// `field` is the field path (e.g., `plugin.name`) or filename (e.g.,
+/// `manifest.toml`) the error refers to, when applicable.
+#[derive(Debug, Serialize)]
+pub(crate) struct Diagnostic {
+    pub variant: &'static str,
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub field: Option<String>,
+}
+
 /// `--output json` payload emitted by `new` on success (data-tool idiom
 /// per S2-15: stdout carries this single document; failure paths leave
 /// stdout empty and write the error to stderr).
