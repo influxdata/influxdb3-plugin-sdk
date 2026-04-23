@@ -24,5 +24,8 @@ influxdb3-plugin-schemas.workspace = true
 influxdb3-plugin-sdk.workspace = true
 tokio.workspace = true
 
+[dev-dependencies]
+rstest.workspace = true
+
 [lints]
 workspace = true

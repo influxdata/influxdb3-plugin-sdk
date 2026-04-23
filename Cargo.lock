@@ -543,6 +543,7 @@ dependencies = [
  "clap",
  "influxdb3-plugin-schemas",
  "influxdb3-plugin-sdk",
+ "rstest",
  "tokio",
 ]
 
