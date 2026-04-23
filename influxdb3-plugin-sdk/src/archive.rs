@@ -293,18 +293,37 @@ mod archive_path_tests {
         assert_eq!(to_archive_path(&PathBuf::new()), "");
     }
 
-    /// Even if the underlying `Path` was built with backslashes on Windows
-    /// (or OS-specific separators), the output uses `/` because we iterate
-    /// normalized components, not raw bytes. This is the headline guarantee
-    /// motivating the helper's existence.
+    /// Even a path component containing a literal backslash byte (which is a
+    /// valid filename byte on Unix) must produce a forward-slash-separated
+    /// archive path. `to_archive_path` operates on normalized components and
+    /// must not special-case any byte value.
+    ///
+    /// Unix-only: Windows parses `\` as a path separator, so the same input
+    /// would split into different components and this test would spuriously
+    /// fail against a correctly-behaving `to_archive_path`.
+    #[cfg(unix)]
     #[test]
-    fn produces_forward_slash_regardless_of_input_separator() {
-        // Construct the path via components() semantics to match what walkdir
-        // + strip_prefix produces in practice.
-        let p: PathBuf = ["subdir", "leaf"].iter().collect();
+    fn backslash_byte_in_component_does_not_leak_into_archive_path() {
+        // Unix: `PathBuf::from("sub\\leaf")` is one component whose name
+        // contains a literal `\` byte.
+        let p = PathBuf::from("sub\\leaf");
         let result = to_archive_path(&p);
-        assert!(result.contains('/'));
-        assert!(!result.contains('\\'));
+        assert_eq!(result, "sub\\leaf", "single component preserved verbatim");
+        assert!(!result.contains('/'), "single component must not introduce `/`");
+
+        // Multi-component path with a backslash in one component: the component
+        // separator is `/`, component content is preserved byte-for-byte.
+        // On Unix, `PathBuf::from_iter` treats each string as a single
+        // component and backslashes are ordinary filename bytes, so the middle
+        // component's name is literally `sub\leaf` (8 bytes including the
+        // backslash). `to_archive_path` joins the three components with `/`,
+        // yielding the bytes `a/sub\leaf/c`.
+        let p: PathBuf = ["a", "sub\\leaf", "c"].iter().collect();
+        let result = to_archive_path(&p);
+        assert_eq!(
+            result, "a/sub\\leaf/c",
+            "backslash byte inside a component is preserved; `/` only appears as component separator"
+        );
     }
 }
 
