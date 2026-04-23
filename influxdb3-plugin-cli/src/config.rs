@@ -44,7 +44,9 @@ enum Command {
     New(crate::commands::new::Args),
     /// Validate a plugin directory.
     Validate(crate::commands::validate::Args),
-    // Remaining variants land in D32 (`package`) and D33 (`yank`).
+    /// Validate, archive, hash, and emit a derived index entry.
+    Package(crate::commands::package::Args),
+    // Remaining variant lands in D33 (`yank`).
 }
 
 impl PluginConfig {
@@ -58,6 +60,7 @@ impl PluginConfig {
         match self.command {
             Command::New(args) => args.run(),
             Command::Validate(args) => args.run(),
+            Command::Package(args) => args.run(),
         }
     }
 }

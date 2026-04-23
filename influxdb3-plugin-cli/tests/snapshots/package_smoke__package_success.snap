@@ -1,0 +1,12 @@
+---
+source: influxdb3-plugin-cli/tests/package_smoke.rs
+assertion_line: 276
+expression: payload
+---
+{
+  "artifact_path": "<TMPDIR>/build/downsampler-1.2.0.tar.gz",
+  "hash": "sha256:<64 hex>",
+  "index_path": "<TMPDIR>/build/index.json",
+  "new_entry_name": "downsampler",
+  "new_entry_version": "1.2.0"
+}

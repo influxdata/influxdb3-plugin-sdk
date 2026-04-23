@@ -34,6 +34,18 @@ pub(crate) struct Diagnostic {
     pub field: Option<String>,
 }
 
+/// `--output json` payload emitted by `package` on success (data-tool
+/// idiom). Carries the absolute paths of the artifact + derived index,
+/// the artifact's SHA-256 hash, and the new entry's identity.
+#[derive(Debug, Serialize)]
+pub(crate) struct PackageOutput {
+    pub artifact_path: PathBuf,
+    pub index_path: PathBuf,
+    pub hash: String,
+    pub new_entry_name: String,
+    pub new_entry_version: String,
+}
+
 /// `--output json` payload emitted by `new` on success (data-tool idiom
 /// per S2-15: stdout carries this single document; failure paths leave
 /// stdout empty and write the error to stderr).
