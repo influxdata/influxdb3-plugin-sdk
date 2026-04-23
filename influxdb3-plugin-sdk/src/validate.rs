@@ -311,6 +311,14 @@ mod tests {
             &mut report,
         );
         assert_eq!(report.len(), 1);
+        let err = report.into_result().unwrap_err();
+        let SdkError::ValidationErrors(errs) = err else {
+            panic!("expected ValidationErrors")
+        };
+        assert!(matches!(
+            errs[0],
+            ValidationError::TriggerNotImplemented { trigger: TriggerType::ProcessWrites }
+        ));
     }
 
     #[test]
@@ -364,6 +372,14 @@ mod tests {
             &mut report,
         );
         assert_eq!(report.len(), 1);
+        let err = report.into_result().unwrap_err();
+        let SdkError::ValidationErrors(errs) = err else {
+            panic!("expected ValidationErrors")
+        };
+        assert!(matches!(
+            errs[0],
+            ValidationError::TriggerNotImplemented { trigger: TriggerType::ProcessWrites }
+        ));
     }
 
     #[test]
@@ -383,6 +399,14 @@ def process_writes():
             &mut report,
         );
         assert_eq!(report.len(), 1);
+        let err = report.into_result().unwrap_err();
+        let SdkError::ValidationErrors(errs) = err else {
+            panic!("expected ValidationErrors")
+        };
+        assert!(matches!(
+            errs[0],
+            ValidationError::TriggerNotImplemented { trigger: TriggerType::ProcessWrites }
+        ));
     }
 
     #[test]
@@ -416,6 +440,26 @@ def process_writes():
             &mut report,
         );
         assert_eq!(report.len(), 3);
+        let err = report.into_result().unwrap_err();
+        let SdkError::ValidationErrors(errs) = err else {
+            panic!("expected ValidationErrors")
+        };
+        let mut missing: Vec<TriggerType> = errs
+            .iter()
+            .map(|e| match e {
+                ValidationError::TriggerNotImplemented { trigger } => *trigger,
+                other => panic!("expected TriggerNotImplemented, got {other:?}"),
+            })
+            .collect();
+        missing.sort_by_key(|t| t.as_str().to_owned());
+        assert_eq!(
+            missing,
+            vec![
+                TriggerType::ProcessRequest,
+                TriggerType::ProcessScheduledCall,
+                TriggerType::ProcessWrites,
+            ]
+        );
     }
 
     #[test]
