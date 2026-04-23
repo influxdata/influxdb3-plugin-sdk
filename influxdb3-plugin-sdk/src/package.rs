@@ -3,15 +3,15 @@
 //! [`package_plugin`] composes the five author-side library operations
 //! specified in Spec 2 Packaging into a single pipeline:
 //!
-//! 1. [`validate::plugin_dir`](crate::validate::plugin_dir) — manifest +
+//! 1. [`crate::validate::plugin_dir`] — manifest +
 //!    cross-file checks. Fails fast on structural parse errors; collected
 //!    validation failures short-circuit the pipeline via
 //!    [`SdkError::ValidationErrors`].
-//! 2. [`archive::canonical_tar_gz`](crate::archive::canonical_tar_gz) —
+//! 2. [`crate::archive::canonical_tar_gz`] —
 //!    canonical tar.gz bytes per Spec 2 Reproducibility.
-//! 3. [`hash::sha256_of_bytes`](crate::hash::sha256_of_bytes) — SHA-256 of the
+//! 3. [`crate::hash::sha256_of_bytes`] — SHA-256 of the
 //!    archive bytes, rendered as `sha256:<64 lowercase hex chars>`.
-//! 4. [`mutate_index::add_entry`](crate::mutate_index::add_entry) — append
+//! 4. [`crate::mutate_index::add_entry`] — append
 //!    the new `IndexEntry` to a cloned copy of the input index. The S2-2
 //!    immutability check fires here: if `(name, version)` already exists,
 //!    the pipeline returns [`SdkError::AlreadyPublished`].

@@ -5,6 +5,7 @@ authors.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 description = "Author-side packaging library for InfluxDB 3 plugins."
+readme = "README.md"
 # Unpublished until the license is decided. Pairs with
 # `private = { ignore = true }` in deny.toml.
 publish = false
