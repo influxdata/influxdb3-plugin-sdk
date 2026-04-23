@@ -38,6 +38,14 @@ fn version_output_shape_matches_spec() {
         predicate.eval(&stdout),
         "version output {stdout:?} does not match regex {VERSION_RE}"
     );
+
+    // S2-5: version portion MUST match the cli crate's CARGO_PKG_VERSION.
+    let expected_prefix = format!("influxdb3-plugin {} ", env!("CARGO_PKG_VERSION"));
+    assert!(
+        stdout.starts_with(&expected_prefix),
+        "expected version prefix {expected_prefix:?}, got {stdout:?}"
+    );
+
     assert!(
         output.stderr.is_empty(),
         "--version must keep stderr empty, got {:?}",
