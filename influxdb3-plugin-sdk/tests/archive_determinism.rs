@@ -1,8 +1,13 @@
-//! Property: `canonical_tar_gz` is byte-deterministic across two calls on the
-//! same inputs — the S2-3 headline contract enforced at the full archive
-//! composition layer.
+//! Property: `canonical_tar_gz` is byte-pure across two calls on the *same*
+//! materialized directory in the same process. This catches within-process
+//! sources of non-determinism (fresh `HashMap`/`HashSet` `RandomState`, etc.).
 //!
-//! # Reproducibility
+//! The full S2-3 reproducibility contract — invariance under perturbation of
+//! the spec's listed non-inputs (abs path, source mtime, env vars, locale,
+//! UID/GID, executable bit) — is covered in `reproducibility_perturbations.rs`,
+//! one dedicated test per non-input.
+//!
+//! # Reproducibility of proptest failures
 //!
 //! Matches the `influxdb3-plugin-schemas` crate's `determinism.rs` pattern:
 //! proptest's seed is pinned via `PROPTEST_RNG_SEED` and `PROPTEST_RNG_ALGORITHM`
@@ -93,7 +98,7 @@ proptest! {
     })]
 
     #[test]
-    fn canonical_tar_gz_is_byte_deterministic(spec in arb_plugin_spec()) {
+    fn canonical_tar_gz_is_byte_pure_across_two_calls(spec in arb_plugin_spec()) {
         let td = tempfile::tempdir().unwrap();
         let dir = td.path().join("plugin");
         fs::create_dir_all(&dir).unwrap();
