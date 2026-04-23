@@ -8,6 +8,7 @@ use influxdb3_plugin_sdk as _;
 use semver as _;
 use serde as _;
 use serde_json as _;
+use thiserror as _;
 
 // Inline `#[cfg(test)]` modules in the lib use `rstest`; the bin's test
 // build sees it as a declared dev-dep but never names it. Same guard

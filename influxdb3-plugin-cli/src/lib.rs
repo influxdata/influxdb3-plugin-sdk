@@ -46,6 +46,7 @@ pub use influxdb3_plugin_schemas::{
     PythonRequirement, ReportedError, SchemaError, SchemaErrors, TriggerType,
 };
 
+mod cli_error;
 mod color;
 mod commands;
 mod config;
