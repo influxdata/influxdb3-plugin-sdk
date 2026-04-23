@@ -25,9 +25,7 @@
 //! enforcement at the CLI layer (Plan 3), where the command knows the
 //! `--out` target.
 
-use influxdb3_plugin_schemas::{
-    ArtifactHash, Dependencies, Description, Index, IndexEntry, Manifest,
-};
+use influxdb3_plugin_schemas::{ArtifactHash, Index, IndexEntry, Manifest};
 use std::path::Path;
 
 use crate::{SdkError, archive, hash, mutate_index, validate};
@@ -70,21 +68,9 @@ pub struct PackageOutput {
 /// - [`SdkError::AlreadyPublished`] — `(name, version)` already present in
 ///   the input index (S2-2 immutability).
 pub fn package_plugin(plugin_dir: &Path, input_index: Index) -> Result<PackageOutput, SdkError> {
-    // 1. Validate. Short-circuits on any failure.
-    validate::plugin_dir(plugin_dir)?;
-
-    // Re-parse the manifest to extract the fields we need for the index
-    // entry. `validate::plugin_dir` already parsed it once but doesn't
-    // return the Manifest value; re-reading keeps the pipeline's signature
-    // narrow and avoids exposing validate's internals.
-    let manifest_raw =
-        std::fs::read_to_string(plugin_dir.join("manifest.toml")).map_err(|source| {
-            SdkError::Io {
-                source,
-                path: Some(plugin_dir.join("manifest.toml")),
-            }
-        })?;
-    let manifest = Manifest::parse_toml(&manifest_raw)?;
+    // 1. Validate. Returns the parsed manifest on success, eliminating the
+    //    need to re-read and re-parse `manifest.toml` here.
+    let manifest = validate::plugin_dir(plugin_dir)?;
 
     // 2. Archive.
     let archive_bytes =
@@ -93,8 +79,9 @@ pub fn package_plugin(plugin_dir: &Path, input_index: Index) -> Result<PackageOu
     // 3. Hash.
     let hash_value = hash::sha256_of_bytes(&archive_bytes);
 
-    // 4. Compose the index entry from manifest fields + computed hash.
-    let new_entry = entry_from_manifest(&manifest, hash_value.clone());
+    // 4. Compose the index entry from manifest fields + computed hash. We
+    //    consume the manifest by value since it won't be used again.
+    let new_entry = entry_from_manifest(manifest, hash_value.clone());
 
     // 5. Append to a clone of the input index; S2-2 fires here.
     let mut derived_index = input_index;
@@ -108,30 +95,20 @@ pub fn package_plugin(plugin_dir: &Path, input_index: Index) -> Result<PackageOu
     })
 }
 
-fn entry_from_manifest(manifest: &Manifest, hash: ArtifactHash) -> IndexEntry {
-    let plugin = &manifest.plugin;
+fn entry_from_manifest(manifest: Manifest, hash: ArtifactHash) -> IndexEntry {
+    let plugin = manifest.plugin;
     IndexEntry {
-        name: plugin.name.clone(),
-        version: plugin.version.clone(),
-        description: clone_description(&plugin.description),
-        triggers: plugin.triggers.clone(),
-        homepage: plugin.homepage.clone(),
-        repository: plugin.repository.clone(),
-        documentation: plugin.documentation.clone(),
-        dependencies: Dependencies {
-            database_version: manifest.dependencies.database_version.clone(),
-            python: manifest.dependencies.python.clone(),
-        },
+        name: plugin.name,
+        version: plugin.version,
+        description: plugin.description,
+        triggers: plugin.triggers,
+        homepage: plugin.homepage,
+        repository: plugin.repository,
+        documentation: plugin.documentation,
+        dependencies: manifest.dependencies,
         hash,
         yanked: false,
     }
-}
-
-/// `Description` has no public `Clone` derive exposed; rebuild via `try_new`.
-/// Manifest descriptions are already validated to be 1–200 chars, so this
-/// always succeeds — panic indicates a schemas-crate invariant break.
-fn clone_description(d: &Description) -> Description {
-    Description::try_new(d.as_str()).expect("manifest description already validated 1-200 chars")
 }
 
 #[cfg(test)]

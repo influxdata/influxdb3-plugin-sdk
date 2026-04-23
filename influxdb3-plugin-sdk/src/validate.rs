@@ -33,23 +33,54 @@ use crate::{SdkError, ValidationError, ValidationReport};
 
 /// Validates a plugin directory against Spec 2 Validation.
 ///
-/// Returns `Ok(())` on success. On failure returns one of:
-/// - `SdkError::Io` — couldn't read `manifest.toml` or `__init__.py`
-/// - `SdkError::Schema` — manifest failed structural parsing (fail-fast)
-/// - `SdkError::ValidationErrors` — cross-file validation collected one or
-///   more failures
-pub fn plugin_dir(dir: &Path) -> Result<(), SdkError> {
-    // Structural: manifest.toml must parse + validate.
+/// Returns the parsed [`Manifest`] on success so downstream callers (e.g.,
+/// [`crate::package::package_plugin`]) don't need to re-read and re-parse
+/// the file. On failure returns one of:
+/// - `SdkError::Io` — an I/O error other than `NotFound` on required files.
+/// - `SdkError::Schema` — manifest failed structural parsing (fail-fast;
+///   see "Multi-error collection" below).
+/// - `SdkError::ValidationErrors` — one or more cross-file validation
+///   failures collected into a single report.
+///
+/// # Multi-error collection
+///
+/// Spec 2 Validation prescribes "all validation errors are collected and
+/// reported together rather than failing on the first." This contract is
+/// honored at the cross-file layer: a missing `__init__.py`, missing
+/// trigger implementations, and an unparseable Python source can all
+/// surface together in one `ValidationErrors` report.
+///
+/// Structural manifest parsing is a fail-fast cut: if `manifest.toml` is
+/// unparseable or structurally invalid, we cannot learn what triggers are
+/// declared, so we cannot meaningfully continue to cross-file checks.
+/// Missing files (both `manifest.toml` and `__init__.py`) are reported
+/// through `ValidationError::MissingRequiredFile`.
+pub fn plugin_dir(dir: &Path) -> Result<Manifest, SdkError> {
+    let mut report = ValidationReport::new();
+
+    // Required file: manifest.toml. NotFound is a collectible validation
+    // error; any other I/O error surfaces as SdkError::Io.
     let manifest_path = dir.join("manifest.toml");
-    let manifest_raw = std::fs::read_to_string(&manifest_path).map_err(|source| SdkError::Io {
-        source,
-        path: Some(manifest_path.clone()),
-    })?;
+    let manifest_raw = match std::fs::read_to_string(&manifest_path) {
+        Ok(s) => s,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            report.push(ValidationError::MissingRequiredFile {
+                file: "manifest.toml".into(),
+            });
+            report.into_result()?;
+            unreachable!("non-empty report always returns Err");
+        }
+        Err(source) => {
+            return Err(SdkError::Io {
+                source,
+                path: Some(manifest_path),
+            });
+        }
+    };
     let manifest = Manifest::parse_toml(&manifest_raw)?;
 
     // Cross-file: __init__.py must exist, parse, and implement the declared
     // triggers as top-level sync defs.
-    let mut report = ValidationReport::new();
     let init_path = dir.join("__init__.py");
     let init_raw = match std::fs::read_to_string(&init_path) {
         Ok(s) => s,
@@ -57,7 +88,8 @@ pub fn plugin_dir(dir: &Path) -> Result<(), SdkError> {
             report.push(ValidationError::MissingRequiredFile {
                 file: "__init__.py".into(),
             });
-            return report.into_result();
+            report.into_result()?;
+            unreachable!("non-empty report always returns Err");
         }
         Err(source) => {
             return Err(SdkError::Io {
@@ -68,13 +100,13 @@ pub fn plugin_dir(dir: &Path) -> Result<(), SdkError> {
     };
 
     check_python_source(&init_raw, &manifest.plugin.triggers, &mut report);
-    report.into_result()
+    report.into_result()?;
+    Ok(manifest)
 }
 
 /// Parses `source` with tree-sitter-python and records validation findings
-/// into `report`. Public within the crate for test ergonomics; not part of
-/// the stable API surface.
-pub(crate) fn check_python_source(
+/// into `report`. Inline `#[cfg(test)]` module below exercises this directly.
+fn check_python_source(
     source: &str,
     declared_triggers: &[TriggerType],
     report: &mut ValidationReport,
@@ -174,22 +206,20 @@ fn is_async_function(function_def: &tree_sitter::Node<'_>) -> bool {
     false
 }
 
-/// Best-effort human-readable description of the first parse error.
+/// Best-effort human-readable description of the first parse error in
+/// source order.
 fn format_parse_error(root: tree_sitter::Node<'_>, source: &str) -> String {
-    let mut cursor = root.walk();
-    for descendant in walk_preorder(root, &mut cursor) {
-        if descendant.is_error() || descendant.is_missing() {
-            let start = descendant.start_position();
-            let snippet = source_snippet(source, &descendant);
-            return format!(
-                "parse error at line {}, column {}: `{}`",
-                start.row + 1,
-                start.column + 1,
-                snippet
-            );
-        }
-    }
-    "parse error (unknown location)".into()
+    let Some(err_node) = find_first_error_or_missing(root) else {
+        return "parse error (unknown location)".into();
+    };
+    let start = err_node.start_position();
+    let snippet = source_snippet(source, &err_node);
+    format!(
+        "parse error at line {}, column {}: `{}`",
+        start.row + 1,
+        start.column + 1,
+        snippet
+    )
 }
 
 fn source_snippet(source: &str, node: &tree_sitter::Node<'_>) -> String {
@@ -199,22 +229,21 @@ fn source_snippet(source: &str, node: &tree_sitter::Node<'_>) -> String {
     slice.replace('\n', "\\n")
 }
 
-/// Depth-first pre-order traversal that yields every node. Small hand-rolled
-/// walker since tree-sitter's public API only exposes child-walking.
-fn walk_preorder<'tree>(
-    root: tree_sitter::Node<'tree>,
-    cursor: &mut tree_sitter::TreeCursor<'tree>,
-) -> Vec<tree_sitter::Node<'tree>> {
-    let mut out = Vec::new();
-    out.push(root);
-    let mut stack: Vec<tree_sitter::Node<'_>> = vec![root];
-    while let Some(node) = stack.pop() {
-        for child in node.children(cursor) {
-            out.push(child);
-            stack.push(child);
+/// Depth-first in-order search for the earliest-position error or missing
+/// node. Returns the first match in source order, exploiting that
+/// tree-sitter's `children()` yields children in source order and pre-order
+/// visits a parent before its descendants.
+fn find_first_error_or_missing(root: tree_sitter::Node<'_>) -> Option<tree_sitter::Node<'_>> {
+    if root.is_error() || root.is_missing() {
+        return Some(root);
+    }
+    let mut cursor = root.walk();
+    for child in root.children(&mut cursor) {
+        if let Some(found) = find_first_error_or_missing(child) {
+            return Some(found);
         }
     }
-    out
+    None
 }
 
 #[cfg(test)]
@@ -390,5 +419,43 @@ def process_writes(a, b, c):
             &mut report,
         );
         assert!(report.is_empty(), "got {report:?}");
+    }
+
+    /// Regression guard: for a source with multiple syntax errors, the
+    /// reported parse-error position must be the earliest in source order.
+    /// The earlier stack-based `walk_preorder` impl produced order-
+    /// dependent-on-stack-pop semantics, not source order.
+    #[test]
+    fn first_parse_error_is_earliest_position() {
+        // Three errors, introduced on lines 2, 4, and 6 respectively.
+        // Line 2's error is a malformed def (stray `:`), line 4's is a
+        // missing close-paren, line 6's is a malformed class.
+        let src = "\n\
+                   def first(:\n\
+                   \n\
+                   x = (1 + 2\n\
+                   \n\
+                   class Bad[\n";
+        let mut report = ValidationReport::new();
+        check_python_source(
+            src,
+            &trigger_list(&[TriggerType::ProcessWrites]),
+            &mut report,
+        );
+        let err = report.into_result().unwrap_err();
+        let SdkError::ValidationErrors(errs) = err else {
+            panic!("expected ValidationErrors")
+        };
+        assert_eq!(errs.len(), 1);
+        let ValidationError::PythonParse { message } = &errs[0] else {
+            panic!("expected PythonParse, got {:?}", errs[0])
+        };
+        // The earliest error is on line 2, column 10 (the stray `:`).
+        // We don't require an exact column but the line must be 2, never
+        // a later line where a different error also exists.
+        assert!(
+            message.contains("line 2"),
+            "expected error on line 2 (earliest position), got: {message}"
+        );
     }
 }

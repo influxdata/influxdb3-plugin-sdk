@@ -39,6 +39,27 @@ fn missing_init_reports_missing_required_file() {
     }
 }
 
+/// Spec 2 Validation groups `manifest.toml` and `__init__.py` under the same
+/// "required files exist" rule. Both missing-file cases must surface as
+/// `ValidationError::MissingRequiredFile`, not as a raw `SdkError::Io`.
+#[test]
+fn missing_manifest_reports_missing_required_file() {
+    let err =
+        validate::plugin_dir(&fixtures().join("invalid_plugins/missing_manifest")).unwrap_err();
+    match err {
+        SdkError::ValidationErrors(errs) => {
+            assert_eq!(errs.len(), 1);
+            match &errs[0] {
+                ValidationError::MissingRequiredFile { file } => {
+                    assert_eq!(file, "manifest.toml");
+                }
+                other => panic!("expected MissingRequiredFile(manifest.toml), got {other:?}"),
+            }
+        }
+        other => panic!("expected ValidationErrors(MissingRequiredFile), got {other:?}"),
+    }
+}
+
 #[test]
 fn missing_trigger_impl_reports_trigger_not_implemented() {
     let err =
