@@ -70,12 +70,12 @@ fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
     std::fs::create_dir_all(&args.out)
         .map_err(|e| anyhow::anyhow!("failed to create --out {}: {e}", args.out.display()))?;
     if paths_overlap(&args.index, &args.out)? {
-        anyhow::bail!(
+        return Err(crate::cli_error::CliError::usage(anyhow::anyhow!(
             "--out {} resolves to the directory containing --index {}; \
              they must be disjoint (Spec 2 § S2-12)",
             args.out.display(),
             args.index.display(),
-        );
+        )));
     }
 
     let outcome = if args.undo {
@@ -116,14 +116,20 @@ fn outcome_label(outcome: mutate_index::YankOutcome) -> &'static str {
 /// validated via [`PluginName`] and `version` via SemVer 2.0.0.
 fn parse_target(s: &str) -> anyhow::Result<(PluginName, Version)> {
     let (name_str, version_str) = s.split_once('@').ok_or_else(|| {
-        anyhow::anyhow!(
+        crate::cli_error::CliError::usage(anyhow::anyhow!(
             "target {s:?} must be in `<name>@<version>` form (e.g., `downsampler@1.2.0`)"
-        )
+        ))
     })?;
-    let name = PluginName::from_str(name_str)
-        .map_err(|e| anyhow::anyhow!("invalid plugin name {name_str:?}: {e}"))?;
-    let version = Version::parse(version_str)
-        .map_err(|e| anyhow::anyhow!("invalid SemVer version {version_str:?}: {e}"))?;
+    let name = PluginName::from_str(name_str).map_err(|e| {
+        crate::cli_error::CliError::usage(anyhow::anyhow!(
+            "invalid plugin name {name_str:?}: {e}"
+        ))
+    })?;
+    let version = Version::parse(version_str).map_err(|e| {
+        crate::cli_error::CliError::usage(anyhow::anyhow!(
+            "invalid SemVer version {version_str:?}: {e}"
+        ))
+    })?;
     Ok((name, version))
 }
 

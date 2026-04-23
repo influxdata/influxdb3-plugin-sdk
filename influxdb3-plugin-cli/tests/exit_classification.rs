@@ -122,3 +122,47 @@ fn package_self_overwrite_exits_two() {
         .code(2)
         .stderr(predicates::str::contains("S2-12").or(predicates::str::contains("disjoint")));
 }
+
+#[test]
+fn yank_self_overwrite_exits_two() {
+    let tmp = TempDir::new().unwrap();
+    let reg = tmp.path().join("reg");
+    plugin()
+        .args(["new", "registry", reg.to_str().unwrap()])
+        .assert()
+        .success();
+    // Empty index — `yank` will fail at entry lookup, but the S2-12
+    // path-overlap check must fire FIRST and return 2.
+    plugin()
+        .args([
+            "yank",
+            "whatever@1.0.0",
+            "--index",
+            reg.join("index.json").to_str().unwrap(),
+            "--out",
+            reg.to_str().unwrap(),
+        ])
+        .assert()
+        .code(2);
+}
+
+#[test]
+fn yank_malformed_target_exits_two() {
+    let tmp = TempDir::new().unwrap();
+    let reg = tmp.path().join("reg");
+    plugin()
+        .args(["new", "registry", reg.to_str().unwrap()])
+        .assert()
+        .success();
+    plugin()
+        .args([
+            "yank",
+            "name:version",  // `:` not `@`
+            "--index",
+            reg.join("index.json").to_str().unwrap(),
+            "--out",
+            tmp.path().join("y").to_str().unwrap(),
+        ])
+        .assert()
+        .code(2);
+}
