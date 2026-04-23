@@ -6,6 +6,7 @@ expression: rendered
 - description must not be empty
 - 1 validation error(s) found
 - "archive construction failed: path too long"
+- "archive path \"plugin-name-0.1.0/a/b/c/extremely/deep/path/leaf\" exceeds ustar split-path limit (255 bytes); shorten file paths or the plugin name/version"
 - hash computation failed
 - "plugin (\"downsampler\", \"1.2.0\") already exists in the target index. Existing versions of \"downsampler\" in this index: [\"1.0.0\", \"1.1.0\", \"1.2.0\"]. Increment version in manifest.toml or run `yank` instead."
 - "plugin (\"downsampler\", \"1.2.0\") is not present in the target index"

@@ -3,8 +3,10 @@
 //! Two-layer design:
 //! - [`SdkError`] — crate-level error type returned by every public function.
 //!   Covers I/O, schema propagation, multi-error validation results,
-//!   archive/hash failures, and two specific policy-check failures
-//!   (`AlreadyPublished` for S2-2, `PathOverlap` for S2-12).
+//!   archive/hash failures (including a distinct `PathTooLong` variant for
+//!   Spec 2 Reproducibility rule 6's ustar split-path limit), and two
+//!   specific policy-check failures (`AlreadyPublished` for S2-2,
+//!   `PathOverlap` for S2-12).
 //! - [`ValidationError`] — individual validation failures, collected into
 //!   [`ValidationReport`] and surfaced together via
 //!   [`SdkError::ValidationErrors`] per Spec 2 Validation's "all errors
@@ -40,6 +42,12 @@ pub enum SdkError {
 
     #[error("archive construction failed: {message}")]
     Archive { message: String },
+
+    #[error("archive path {archive_path:?} exceeds ustar split-path limit ({limit} bytes); shorten file paths or the plugin name/version")]
+    PathTooLong {
+        archive_path: String,
+        limit: usize,
+    },
 
     #[error("hash computation failed")]
     Hash {
@@ -85,6 +93,7 @@ impl SdkError {
             Self::Schema(_) => "Schema",
             Self::ValidationErrors(_) => "ValidationErrors",
             Self::Archive { .. } => "Archive",
+            Self::PathTooLong { .. } => "PathTooLong",
             Self::Hash { .. } => "Hash",
             Self::AlreadyPublished { .. } => "AlreadyPublished",
             Self::EntryNotFound { .. } => "EntryNotFound",
@@ -250,6 +259,10 @@ mod tests {
             }]),
             SdkError::Archive {
                 message: "path too long".into(),
+            },
+            SdkError::PathTooLong {
+                archive_path: "plugin-name-0.1.0/a/b/c/extremely/deep/path/leaf".into(),
+                limit: 255,
             },
             SdkError::Hash {
                 source: std::io::Error::other("read failed"),

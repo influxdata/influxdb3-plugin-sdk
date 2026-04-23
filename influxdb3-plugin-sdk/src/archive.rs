@@ -19,7 +19,9 @@
 //!    auto-creates parents), so per-directory mode doesn't apply.
 //! 6. **PAX extended headers**: none. Paths whose archive representation
 //!    exceeds ustar's 255-byte split-path limit are rejected at package
-//!    time with [`SdkError::Archive`].
+//!    time with [`SdkError::PathTooLong`] (distinct from the catch-all
+//!    [`SdkError::Archive`] variant so callers can pattern-match spec F-4
+//!    failures without string-scraping).
 //! 7. **Gzip header timestamp**: `0`.
 //! 8. **Original filename header**: omitted (FNAME flag not set; no
 //!    `GzBuilder::filename()` call).
@@ -109,15 +111,16 @@ pub fn canonical_tar_gz(
 
     // Reject any archive path that exceeds ustar's 255-byte limit (100 name +
     // 155 prefix, with a split required at a '/'). tar::Header::set_path also
-    // errors in this case but we surface a domain-typed error earlier.
+    // errors in this case but we surface a domain-typed error earlier via
+    // the dedicated `SdkError::PathTooLong` variant so callers can
+    // pattern-match on this spec F-4 failure without string-scraping.
+    const USTAR_PATH_LIMIT: usize = 255;
     for entry in &entries {
         let archive_path = format!("{}/{}", archive_root, to_archive_path(&entry.relative));
-        if archive_path.len() > 255 {
-            return Err(SdkError::Archive {
-                message: format!(
-                    "archive path {archive_path:?} exceeds ustar's 255-byte limit; \
-                     shorten file paths or the plugin name/version"
-                ),
+        if archive_path.len() > USTAR_PATH_LIMIT {
+            return Err(SdkError::PathTooLong {
+                archive_path,
+                limit: USTAR_PATH_LIMIT,
             });
         }
     }
@@ -532,8 +535,8 @@ mod tests {
 
         let err = canonical_tar_gz(&dir, &name(), &version()).unwrap_err();
         assert!(
-            matches!(err, SdkError::Archive { .. }),
-            "expected SdkError::Archive, got {err:?}"
+            matches!(err, SdkError::PathTooLong { limit: 255, .. }),
+            "expected SdkError::PathTooLong, got {err:?}"
         );
     }
 

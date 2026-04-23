@@ -1,12 +1,12 @@
 ---
 source: influxdb3-plugin-sdk/src/error.rs
-assertion_line: 250
 expression: tags
 ---
 - Io
 - Schema
 - ValidationErrors
 - Archive
+- PathTooLong
 - Hash
 - AlreadyPublished
 - EntryNotFound

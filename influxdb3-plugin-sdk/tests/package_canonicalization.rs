@@ -214,8 +214,8 @@ fn rule6_rejects_archive_path_over_ustar_limit() {
 
     let err = canonical_tar_gz(&dir, &plugin_name(), &plugin_version()).unwrap_err();
     assert!(
-        matches!(err, SdkError::Archive { .. }),
-        "expected SdkError::Archive, got {err:?}"
+        matches!(err, SdkError::PathTooLong { limit: 255, .. }),
+        "expected SdkError::PathTooLong, got {err:?}"
     );
 }
 
