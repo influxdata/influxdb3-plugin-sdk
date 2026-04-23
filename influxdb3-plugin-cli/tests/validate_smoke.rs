@@ -15,7 +15,7 @@
 use std::path::Path;
 
 mod common;
-use common::{cli_cmd, write_valid_plugin, VALID_INIT, VALID_MANIFEST};
+use common::{cli_cmd, write_valid_plugin, SEEDED_INDEX, VALID_INIT, VALID_MANIFEST};
 
 fn spawn_validate<P: AsRef<Path>>(target: P, extra: &[&str]) -> assert_cmd::assert::Assert {
     let mut cmd = cli_cmd();
@@ -199,11 +199,31 @@ fn validate_with_index_surfaces_uniqueness_collision() {
 /// Without `--index`, uniqueness is not checked even if a collision
 /// would exist on disk (S2-15 / Spec 2 § validate flag semantics).
 #[test]
-fn validate_without_index_skips_uniqueness_check() {
+fn validate_without_index_flag_passes() {
     let td = tempfile::tempdir().unwrap();
     let plugin_dir = td.path().join("p");
     write_valid_plugin(&plugin_dir);
 
+    spawn_validate(&plugin_dir, &["--output", "json"]).success();
+}
+
+/// Proves `validate` does NOT auto-discover any index file from conventional
+/// paths. We plant an index at the plugin-dir's parent that WOULD collide on
+/// `(name, version)` if read; validation without `--index` must still succeed
+/// because no implicit discovery occurs.
+#[test]
+fn validate_does_not_auto_discover_adjacent_index() {
+    let td = tempfile::tempdir().unwrap();
+    let plugin_dir = td.path().join("p");
+    write_valid_plugin(&plugin_dir);
+
+    // SEEDED_INDEX carries a `(downsampler, 1.2.0)` entry that WOULD collide
+    // with the plugin's (name, version) if validate auto-discovered it.
+    std::fs::write(td.path().join("index.json"), SEEDED_INDEX).unwrap();
+    std::fs::write(plugin_dir.join("index.json"), SEEDED_INDEX).unwrap();
+
+    // Run validate without `--index`. Must succeed — no auto-discovery means
+    // the planted indexes are invisible.
     spawn_validate(&plugin_dir, &["--output", "json"]).success();
 }
 
