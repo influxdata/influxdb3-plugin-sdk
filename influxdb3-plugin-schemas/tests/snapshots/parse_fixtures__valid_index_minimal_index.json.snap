@@ -1,0 +1,28 @@
+---
+source: influxdb3-plugin-schemas/tests/parse_fixtures.rs
+expression: index
+---
+Index {
+    index_schema_version: IndexSchemaVersion {
+        major: 1,
+        minor: 0,
+    },
+    artifacts_url: ArtifactsUrl(
+        Url {
+            scheme: "https",
+            cannot_be_a_base: false,
+            username: "",
+            password: None,
+            host: Some(
+                Domain(
+                    "plugins.example.com",
+                ),
+            ),
+            port: None,
+            path: "/artifacts",
+            query: None,
+            fragment: None,
+        },
+    ),
+    plugins: [],
+}

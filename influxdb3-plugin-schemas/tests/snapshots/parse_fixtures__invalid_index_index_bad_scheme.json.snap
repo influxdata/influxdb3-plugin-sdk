@@ -1,0 +1,5 @@
+---
+source: influxdb3-plugin-schemas/tests/parse_fixtures.rs
+expression: errors.to_string()
+---
+artifacts_url: artifacts_url "s3://bucket/plugins" uses unsupported scheme "s3"; allowed: http, https, file

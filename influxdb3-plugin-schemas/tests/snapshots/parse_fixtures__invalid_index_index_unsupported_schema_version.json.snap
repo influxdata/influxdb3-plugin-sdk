@@ -1,0 +1,5 @@
+---
+source: influxdb3-plugin-schemas/tests/parse_fixtures.rs
+expression: errors.to_string()
+---
+index_schema_version: index_schema_version "2.0" has unsupported major; this library supports major 1

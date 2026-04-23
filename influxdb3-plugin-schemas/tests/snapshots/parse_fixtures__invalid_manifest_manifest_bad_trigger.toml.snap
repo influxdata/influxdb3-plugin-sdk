@@ -1,0 +1,5 @@
+---
+source: influxdb3-plugin-schemas/tests/parse_fixtures.rs
+expression: errors.to_string()
+---
+plugin.triggers[0]: trigger "on_startup" is not in the closed set {process_writes, process_scheduled_call, process_request}

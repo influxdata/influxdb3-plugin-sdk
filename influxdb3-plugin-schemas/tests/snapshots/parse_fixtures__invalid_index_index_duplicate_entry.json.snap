@@ -1,0 +1,5 @@
+---
+source: influxdb3-plugin-schemas/tests/parse_fixtures.rs
+expression: errors.to_string()
+---
+plugins[1]: duplicate plugin entry ("dup", "1.0.0") in index

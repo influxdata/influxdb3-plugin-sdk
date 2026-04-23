@@ -1,0 +1,5 @@
+---
+source: influxdb3-plugin-schemas/tests/parse_fixtures.rs
+expression: errors.to_string()
+---
+plugin.version: version "1.2" is not SemVer 2.0.0 compliant: unexpected end of input while parsing minor version number

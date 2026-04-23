@@ -1,0 +1,5 @@
+---
+source: influxdb3-plugin-schemas/tests/parse_fixtures.rs
+expression: errors.to_string()
+---
+plugins[0].hash: hash "sha256:abc" must be formatted as sha256:<64 lowercase hex chars>

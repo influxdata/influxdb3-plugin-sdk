@@ -1,0 +1,137 @@
+---
+source: influxdb3-plugin-schemas/tests/parse_fixtures.rs
+expression: index
+---
+Index {
+    index_schema_version: IndexSchemaVersion {
+        major: 1,
+        minor: 0,
+    },
+    artifacts_url: ArtifactsUrl(
+        Url {
+            scheme: "https",
+            cannot_be_a_base: false,
+            username: "",
+            password: None,
+            host: Some(
+                Domain(
+                    "plugins.example.com",
+                ),
+            ),
+            port: None,
+            path: "/artifacts",
+            query: None,
+            fragment: None,
+        },
+    ),
+    plugins: [
+        IndexEntry {
+            name: PluginName(
+                "downsampler",
+            ),
+            version: Version {
+                major: 1,
+                minor: 2,
+                patch: 0,
+            },
+            description: Description(
+                "Notify an HTTP endpoint on every WAL commit.",
+            ),
+            triggers: [
+                ProcessWrites,
+                ProcessScheduledCall,
+            ],
+            homepage: Some(
+                Url {
+                    scheme: "https",
+                    cannot_be_a_base: false,
+                    username: "",
+                    password: None,
+                    host: Some(
+                        Domain(
+                            "influxdata.com",
+                        ),
+                    ),
+                    port: None,
+                    path: "/",
+                    query: None,
+                    fragment: None,
+                },
+            ),
+            repository: Some(
+                Url {
+                    scheme: "https",
+                    cannot_be_a_base: false,
+                    username: "",
+                    password: None,
+                    host: Some(
+                        Domain(
+                            "github.com",
+                        ),
+                    ),
+                    port: None,
+                    path: "/influxdata/plugin-downsampler",
+                    query: None,
+                    fragment: None,
+                },
+            ),
+            documentation: Some(
+                Url {
+                    scheme: "https",
+                    cannot_be_a_base: false,
+                    username: "",
+                    password: None,
+                    host: Some(
+                        Domain(
+                            "github.com",
+                        ),
+                    ),
+                    port: None,
+                    path: "/influxdata/plugin-downsampler/readme.md",
+                    query: None,
+                    fragment: None,
+                },
+            ),
+            dependencies: Dependencies {
+                database_version: VersionReq {
+                    comparators: [
+                        Comparator {
+                            op: GreaterEq,
+                            major: 3,
+                            minor: Some(
+                                2,
+                            ),
+                            patch: Some(
+                                0,
+                            ),
+                            pre: Prerelease(""),
+                        },
+                        Comparator {
+                            op: Less,
+                            major: 4,
+                            minor: Some(
+                                0,
+                            ),
+                            patch: Some(
+                                0,
+                            ),
+                            pre: Prerelease(""),
+                        },
+                    ],
+                },
+                python: [
+                    PythonRequirement(
+                        "requests>=2.31,<3",
+                    ),
+                    PythonRequirement(
+                        "pydantic~=2.0",
+                    ),
+                ],
+            },
+            hash: ArtifactHash(
+                "sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+            ),
+            yanked: false,
+        },
+    ],
+}

@@ -1,0 +1,5 @@
+---
+source: influxdb3-plugin-schemas/tests/parse_fixtures.rs
+expression: errors.to_string()
+---
+plugins[0].dependencies.database_version: database_version ">=not-a-real-version" is not a valid SemVer range: unexpected character 'n' while parsing major version number

@@ -1,0 +1,5 @@
+---
+source: influxdb3-plugin-schemas/tests/parse_fixtures.rs
+expression: errors.to_string()
+---
+plugin.name: plugin name "Bad_Name" must be 1-64 characters: lowercase letters, digits, or hyphens, starting with a lowercase letter or digit

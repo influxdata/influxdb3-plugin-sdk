@@ -1,0 +1,7 @@
+---
+source: influxdb3-plugin-schemas/tests/parse_fixtures.rs
+expression: errors.to_string()
+---
+dependencies.python[0]: python requirement "requests>>=2.0" is not PEP 508-parseable: no such comparison operator ">>=", must be one of ~= == != <= >= < > ===
+requests>>=2.0
+        ^^^^^^

@@ -1,0 +1,47 @@
+---
+source: influxdb3-plugin-schemas/tests/parse_fixtures.rs
+expression: manifest
+---
+Manifest {
+    manifest_schema_version: ManifestSchemaVersion {
+        major: 1,
+        minor: 0,
+    },
+    plugin: PluginMetadata {
+        name: PluginName(
+            "minimal",
+        ),
+        version: Version {
+            major: 0,
+            minor: 1,
+            patch: 0,
+        },
+        description: Description(
+            "The smallest well-formed plugin.",
+        ),
+        triggers: [
+            ProcessWrites,
+        ],
+        homepage: None,
+        repository: None,
+        documentation: None,
+    },
+    dependencies: Dependencies {
+        database_version: VersionReq {
+            comparators: [
+                Comparator {
+                    op: GreaterEq,
+                    major: 3,
+                    minor: Some(
+                        0,
+                    ),
+                    patch: Some(
+                        0,
+                    ),
+                    pre: Prerelease(""),
+                },
+            ],
+        },
+        python: [],
+    },
+}
