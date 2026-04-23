@@ -123,16 +123,20 @@ fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
 fn reject_unsupported_flags(args: &Args) -> anyhow::Result<()> {
     if args.template == Template::Registry {
         if args.name.is_some() {
-            anyhow::bail!("--name is not supported with the `registry` template");
+            return Err(crate::cli_error::CliError::usage(anyhow::anyhow!(
+                "--name is not supported with the `registry` template"
+            )));
         }
         if args.database_version.is_some() {
-            anyhow::bail!("--database-version is not supported with the `registry` template");
+            return Err(crate::cli_error::CliError::usage(anyhow::anyhow!(
+                "--database-version is not supported with the `registry` template"
+            )));
         }
     } else if args.artifacts_url.is_some() {
-        anyhow::bail!(
+        return Err(crate::cli_error::CliError::usage(anyhow::anyhow!(
             "--artifacts-url is only supported with the `registry` template, not `{}`",
             args.template.as_str()
-        );
+        )));
     }
     Ok(())
 }

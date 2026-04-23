@@ -259,7 +259,7 @@ fn new_rejects_artifacts_url_on_plugin_template() {
         &["process_writes", "--artifacts-url", "https://example.com/a"],
     )
     .failure()
-    .code(1);
+    .code(2);
 }
 
 #[test]
@@ -269,7 +269,7 @@ fn new_rejects_name_on_registry_template() {
 
     spawn_new(&target, &["registry", "--name", "x"])
         .failure()
-        .code(1);
+        .code(2);
 }
 
 /// Unknown template → clap parse error → exit code 2 (S2-18 usage error).

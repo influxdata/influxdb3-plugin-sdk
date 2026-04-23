@@ -50,3 +50,48 @@ fn new_with_invalid_explicit_name_exits_two() {
         .assert()
         .code(2);
 }
+
+#[test]
+fn new_artifacts_url_on_plugin_template_exits_two() {
+    let tmp = TempDir::new().unwrap();
+    plugin()
+        .args([
+            "new",
+            "process_writes",
+            tmp.path().join("x").to_str().unwrap(),
+            "--artifacts-url",
+            "https://example.com",
+        ])
+        .assert()
+        .code(2);
+}
+
+#[test]
+fn new_database_version_on_registry_template_exits_two() {
+    let tmp = TempDir::new().unwrap();
+    plugin()
+        .args([
+            "new",
+            "registry",
+            tmp.path().join("r").to_str().unwrap(),
+            "--database-version",
+            ">=3",
+        ])
+        .assert()
+        .code(2);
+}
+
+#[test]
+fn new_name_on_registry_template_exits_two() {
+    let tmp = TempDir::new().unwrap();
+    plugin()
+        .args([
+            "new",
+            "registry",
+            tmp.path().join("r2").to_str().unwrap(),
+            "--name",
+            "whatever",
+        ])
+        .assert()
+        .code(2);
+}
