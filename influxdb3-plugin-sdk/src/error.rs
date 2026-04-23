@@ -53,6 +53,9 @@ pub enum SdkError {
     )]
     AlreadyPublished { name: String, version: String },
 
+    #[error("plugin ({name:?}, {version:?}) is not present in the target index")]
+    EntryNotFound { name: String, version: String },
+
     #[error(
         "output directory {output:?} overlaps with input path {input:?}; \
          they must be disjoint"
@@ -72,6 +75,7 @@ impl SdkError {
             Self::Archive { .. } => "Archive",
             Self::Hash { .. } => "Hash",
             Self::AlreadyPublished { .. } => "AlreadyPublished",
+            Self::EntryNotFound { .. } => "EntryNotFound",
             Self::PathOverlap { .. } => "PathOverlap",
         }
     }
@@ -199,6 +203,10 @@ mod tests {
                 source: std::io::Error::other("read failed"),
             },
             SdkError::AlreadyPublished {
+                name: "downsampler".into(),
+                version: "1.2.0".into(),
+            },
+            SdkError::EntryNotFound {
                 name: "downsampler".into(),
                 version: "1.2.0".into(),
             },

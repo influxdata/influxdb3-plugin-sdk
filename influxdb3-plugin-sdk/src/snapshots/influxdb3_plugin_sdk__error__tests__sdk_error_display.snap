@@ -1,6 +1,6 @@
 ---
 source: influxdb3-plugin-sdk/src/error.rs
-assertion_line: 234
+assertion_line: 241
 expression: rendered
 ---
 - "I/O error at /tmp/x: boom"
@@ -9,4 +9,5 @@ expression: rendered
 - "archive construction failed: path too long"
 - "hash computation failed: read failed"
 - "plugin (\"downsampler\", \"1.2.0\") already exists in the target index; increment version or run `yank` instead"
+- "plugin (\"downsampler\", \"1.2.0\") is not present in the target index"
 - "output directory \"/a\" overlaps with input path \"/a/index.json\"; they must be disjoint"
