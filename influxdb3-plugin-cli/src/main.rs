@@ -38,8 +38,22 @@ async fn main() -> std::process::ExitCode {
     match config.run().await {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(e) => {
-            eprintln!("{e:#}");
-            std::process::ExitCode::from(1)
+            use influxdb3_plugin_cli::__private::CliErrorKind;
+            match CliErrorKind::of(&e) {
+                CliErrorKind::Silent => {
+                    // stdout already carried the signal (e.g. validate's
+                    // diagnostics doc in JSON mode). Do not pollute stderr.
+                    std::process::ExitCode::from(1)
+                }
+                CliErrorKind::Usage => {
+                    eprintln!("{e:#}");
+                    std::process::ExitCode::from(2)
+                }
+                CliErrorKind::Runtime => {
+                    eprintln!("{e:#}");
+                    std::process::ExitCode::from(1)
+                }
+            }
         }
     }
 }

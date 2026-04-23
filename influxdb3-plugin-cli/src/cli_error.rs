@@ -17,7 +17,7 @@
 //! `main.rs` renders it on stderr and exits 1.
 
 #[derive(Debug, thiserror::Error)]
-pub(crate) enum CliError {
+pub enum CliError {
     /// Command invoked incorrectly. Renders on stderr; exit 2.
     #[error(transparent)]
     Usage(anyhow::Error),
@@ -54,14 +54,14 @@ impl CliError {
 /// Constructed from `anyhow::Error` via [`CliErrorKind::of`], which
 /// downcasts to [`CliError`] and falls back to `Runtime`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum CliErrorKind {
+pub enum CliErrorKind {
     Runtime,
     Usage,
     Silent,
 }
 
 impl CliErrorKind {
-    pub(crate) fn of(e: &anyhow::Error) -> Self {
+    pub fn of(e: &anyhow::Error) -> Self {
         match e.downcast_ref::<CliError>() {
             Some(CliError::Usage(_)) => CliErrorKind::Usage,
             Some(CliError::Silent(_)) => CliErrorKind::Silent,
