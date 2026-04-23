@@ -38,13 +38,55 @@
 //! produce byte-different gzip streams at the same compression level and
 //! would break determinism. Compression level is fixed at 6 via
 //! [`flate2::Compression::new`].
+//!
+//! # Cross-platform determinism caveat
+//!
+//! Spec 2 Reproducibility lists "filesystem executable bit" as an input
+//! contributing to output bytes. Unix filesystems report the exec bit;
+//! Windows has no Unix-style exec bit. A plugin directory containing a
+//! `chmod +x` file packaged on Unix produces an archive with a 0755 entry
+//! for that file; the same directory packaged on Windows produces a 0644
+//! entry. **Byte-identity across operating systems is not guaranteed for
+//! plugins that carry executable files.** Plugins that bundle no exec
+//! files are byte-identical across platforms.
+//!
+//! # Directory entries
+//!
+//! Directories are intentionally omitted from the archive — tar extraction
+//! creates parent directories automatically when needed. Consequence:
+//! extracted directory modes are umask-dependent at `tar xf` time rather
+//! than pinned by the archive. Spec 2 Reproducibility's "directories →
+//! 0755" rule refers to dir-entry mode IF emitted; this implementation
+//! chooses not to emit them. Plugin-runtime install (Spec 4) creates
+//! `plugin_dir/<name>/<version>/` directly via the DB and does not rely
+//! on tar's extracted directory modes.
 
 use flate2::{Compression, GzBuilder};
 use influxdb3_plugin_schemas::PluginName;
 use semver::Version;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use crate::SdkError;
+
+/// Joins a relative path's components with `/` for use as a tar entry path.
+///
+/// Tar archives canonically use `/` as the separator. On Windows,
+/// `Path::display()` emits `\` between components, which would produce
+/// malformed archive paths. This helper explicitly enumerates components
+/// and joins them with `/`, producing correct output on every platform.
+///
+/// Assumes the input is a normalized relative path — no root, no parent
+/// (`..`) components. The archive pipeline builds these from walkdir entries
+/// stripped of the plugin-dir prefix, so this precondition holds.
+fn to_archive_path(relative: &Path) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    for component in relative.components() {
+        if let Component::Normal(os) = component {
+            parts.push(os.to_string_lossy().into_owned());
+        }
+    }
+    parts.join("/")
+}
 
 /// Packages `plugin_dir` into a canonical gzipped tar archive.
 ///
@@ -69,7 +111,7 @@ pub fn canonical_tar_gz(
     // 155 prefix, with a split required at a '/'). tar::Header::set_path also
     // errors in this case but we surface a domain-typed error earlier.
     for entry in &entries {
-        let archive_path = format!("{}/{}", archive_root, entry.relative.display());
+        let archive_path = format!("{}/{}", archive_root, to_archive_path(&entry.relative));
         if archive_path.len() > 255 {
             return Err(SdkError::Archive {
                 message: format!(
@@ -86,12 +128,9 @@ pub fn canonical_tar_gz(
         .mtime(0) // canonical: gzip MTIME = 0
         .write(&mut buf, Compression::new(6));
     let mut tarball = tar::Builder::new(gz);
-    // `follow_symlinks(false)` would change `append_*` semantics; we don't
-    // use append_path / append_dir_all anyway (we construct headers
-    // manually), so follow-symlinks is moot here.
 
     for entry in entries {
-        let archive_path = format!("{}/{}", archive_root, entry.relative.display());
+        let archive_path = format!("{}/{}", archive_root, to_archive_path(&entry.relative));
         let data = std::fs::read(&entry.absolute).map_err(|source| SdkError::Io {
             source,
             path: Some(entry.absolute.clone()),
@@ -147,6 +186,10 @@ fn collect_entries(plugin_dir: &Path) -> Result<Vec<Entry>, SdkError> {
     })?;
 
     let mut entries = Vec::new();
+    // `follow_links(false)` makes walkdir report symlinks with their own
+    // file_type (is_symlink, not is_file/is_dir). The filter below skips
+    // anything that isn't a regular file, so symlinks are excluded from
+    // the archive — plugins shouldn't rely on them.
     let walk = walkdir::WalkDir::new(&plugin_dir)
         .sort_by_file_name() // stable walk order (we re-sort by archive path below regardless)
         .follow_links(false);
@@ -186,9 +229,12 @@ fn collect_entries(plugin_dir: &Path) -> Result<Vec<Entry>, SdkError> {
         });
     }
 
-    // Canonical order: lexicographic UTF-8 byte order on the archive path.
-    // Using relative paths is equivalent because archive_root prefix is
-    // identical for every entry.
+    // Canonical order: lexicographic byte order on the archive path.
+    // `as_encoded_bytes()` returns WTF-8 on Windows and UTF-8 on Unix; for
+    // ASCII paths — which plugin files always are in practice — the two are
+    // byte-identical. Sorting by relative paths (rather than full archive
+    // paths) is equivalent because the `archive_root` prefix is identical
+    // for every entry.
     entries.sort_by(|a, b| {
         a.relative
             .as_os_str()
@@ -224,6 +270,45 @@ fn is_executable(path: &Path) -> std::io::Result<bool> {
 fn is_executable(_path: &Path) -> std::io::Result<bool> {
     // Windows has no Unix-style exec bit. Every file ships as 0644.
     Ok(false)
+}
+
+#[cfg(test)]
+mod archive_path_tests {
+    use super::to_archive_path;
+    use std::path::PathBuf;
+
+    #[test]
+    fn single_component_returns_component_string() {
+        assert_eq!(
+            to_archive_path(&PathBuf::from("manifest.toml")),
+            "manifest.toml"
+        );
+    }
+
+    #[test]
+    fn nested_components_joined_with_forward_slash() {
+        let p: PathBuf = ["a", "b", "c.py"].iter().collect();
+        assert_eq!(to_archive_path(&p), "a/b/c.py");
+    }
+
+    #[test]
+    fn empty_path_returns_empty_string() {
+        assert_eq!(to_archive_path(&PathBuf::new()), "");
+    }
+
+    /// Even if the underlying `Path` was built with backslashes on Windows
+    /// (or OS-specific separators), the output uses `/` because we iterate
+    /// normalized components, not raw bytes. This is the headline guarantee
+    /// motivating the helper's existence.
+    #[test]
+    fn produces_forward_slash_regardless_of_input_separator() {
+        // Construct the path via components() semantics to match what walkdir
+        // + strip_prefix produces in practice.
+        let p: PathBuf = ["subdir", "leaf"].iter().collect();
+        let result = to_archive_path(&p);
+        assert!(result.contains('/'));
+        assert!(!result.contains('\\'));
+    }
 }
 
 #[cfg(test)]

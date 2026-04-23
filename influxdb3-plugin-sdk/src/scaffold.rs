@@ -87,8 +87,16 @@ pub fn registry(dir: &Path) -> Result<(), SdkError> {
         source,
         path: Some(dir.to_path_buf()),
     })?;
-    let artifacts_url = format!("file://{}", absolute.display());
-    let contents = REGISTRY_INDEX.replace("{{artifacts_url}}", &artifacts_url);
+    // `Url::from_file_path` is the correct cross-platform way to build a
+    // `file://` URL. Naïve `format!("file://{}", path.display())` breaks on
+    // Windows UNC paths (`\\?\C:\...`) and mishandles non-UTF8 path bytes.
+    let artifacts_url = url::Url::from_file_path(&absolute).map_err(|()| SdkError::Archive {
+        message: format!(
+            "failed to construct file:// URL from scaffold path {}",
+            absolute.display()
+        ),
+    })?;
+    let contents = REGISTRY_INDEX.replace("{{artifacts_url}}", artifacts_url.as_str());
     write_file(&index_path, &contents)
 }
 
@@ -242,6 +250,33 @@ mod tests {
         // artifacts_url should be a file:// URL rooted in the scaffolded dir.
         let url = index.artifacts_url.to_string();
         assert!(url.starts_with("file://"), "got: {url}");
+    }
+
+    /// Regression guard: the scaffolded artifacts_url must round-trip through
+    /// `url::Url::parse` + `.to_file_path()` back to the absolute scaffold
+    /// directory. The earlier `format!("file://{}", path.display())` impl
+    /// produced malformed URLs on Windows (UNC `\\?\C:\...` paths) — even on
+    /// Unix, formatting via `.display()` can emit non-canonical bytes for
+    /// non-UTF8 paths. `url::Url::from_file_path` is the correct API.
+    #[test]
+    fn scaffold_registry_artifacts_url_is_valid_file_url() {
+        let td = TempDir::new("registry_url_valid");
+        let dir = td.path().join("my-registry");
+        registry(&dir).unwrap();
+
+        let raw = fs::read_to_string(dir.join("index.json")).unwrap();
+        let index = Index::parse_json(&raw).unwrap();
+        let url_str = index.artifacts_url.to_string();
+
+        let parsed = url::Url::parse(&url_str).expect("artifacts_url must be a valid URL");
+        assert_eq!(parsed.scheme(), "file");
+
+        // Round-trip to a path and compare to the canonical scaffold dir.
+        let recovered = parsed
+            .to_file_path()
+            .expect("file URL must convert back to a path");
+        let expected = std::fs::canonicalize(&dir).unwrap();
+        assert_eq!(recovered, expected);
     }
 
     #[test]

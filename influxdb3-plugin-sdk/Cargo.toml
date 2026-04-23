@@ -22,6 +22,7 @@ tar.workspace = true
 thiserror.workspace = true
 tree-sitter.workspace = true
 tree-sitter-python.workspace = true
+url.workspace = true
 walkdir.workspace = true
 
 [dev-dependencies]
