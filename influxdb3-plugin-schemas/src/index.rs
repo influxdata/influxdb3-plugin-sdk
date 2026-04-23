@@ -214,7 +214,11 @@ fn is_false(b: &bool) -> bool {
 impl Index {
     /// Parses an index from a JSON string.
     ///
-    /// Enforces `(name, version)` uniqueness after structural parsing succeeds.
+    /// Two-phase: raw JSON deserialize → schema-version short-circuit →
+    /// per-entry field validation with error collection (including
+    /// duplicate `(name, version)` detection). All field-level errors from
+    /// a single document are collected into `SchemaErrors` with field-path
+    /// context.
     ///
     /// # Examples
     ///
@@ -230,46 +234,71 @@ impl Index {
     /// let index = Index::parse_json(source).unwrap();
     /// assert!(index.plugins.is_empty());
     /// ```
-    pub fn parse_json(input: &str) -> Result<Self, SchemaError> {
-        let parsed: Self =
-            serde_json::from_str(input).map_err(|source| SchemaError::JsonParse { source })?;
-        parsed.validate()?;
-        Ok(parsed)
-    }
-
-    fn validate(&self) -> Result<(), SchemaError> {
+    pub fn parse_json(input: &str) -> Result<Self, crate::SchemaErrors> {
+        use crate::raw::RawIndex;
+        use crate::{FieldPath, ReportedError, SchemaErrors};
         use std::collections::HashSet;
-        let mut seen: HashSet<(&str, &semver::Version)> = HashSet::new();
-        for entry in &self.plugins {
-            // Per-entry rules mirror the manifest's validate() rules per the
-            // core design doc's "Index-entry validation mirrors manifest
-            // validation" subsection.
-            if entry.triggers.is_empty() {
-                return Err(SchemaError::EmptyTriggers);
+        use std::str::FromStr;
+
+        // Phase 1: raw deserialize.
+        let raw: RawIndex = serde_json::from_str(input)
+            .map_err(|source| SchemaErrors::single_at_root(SchemaError::JsonParse { source }))?;
+
+        // Phase 2a: schema-version short-circuit.
+        let schema_version =
+            IndexSchemaVersion::from_str(&raw.index_schema_version).map_err(|e| {
+                SchemaErrors::new(vec![ReportedError::new(
+                    FieldPath::root().field("index_schema_version"),
+                    e,
+                )])
+            })?;
+
+        // Phase 2b: collect field-level errors.
+        let mut errors = Vec::new();
+        let root = FieldPath::root();
+
+        let artifacts_url = match ArtifactsUrl::try_new(&raw.artifacts_url) {
+            Ok(u) => Some(u),
+            Err(e) => {
+                errors.push(ReportedError::new(root.field("artifacts_url"), e));
+                None
             }
-            for url in [&entry.homepage, &entry.repository, &entry.documentation]
-                .into_iter()
-                .flatten()
-            {
-                let scheme = url.scheme();
-                if !matches!(scheme, "http" | "https") {
-                    return Err(SchemaError::InvalidUrlScheme {
-                        url: url.to_string(),
-                        scheme: scheme.to_owned(),
-                    });
-                }
+        };
+
+        let mut entries_ok: Vec<IndexEntry> = Vec::with_capacity(raw.plugins.len());
+        let mut seen: HashSet<(String, String)> = HashSet::new();
+
+        for (i, raw_entry) in raw.plugins.iter().enumerate() {
+            let entry_path = root.field("plugins").index(i);
+            let validated = validate_raw_entry(raw_entry, &entry_path, &mut errors);
+
+            // Duplicate check uses the raw name/version strings — catches
+            // duplicates even if the entry itself has other validation errors.
+            let key = (raw_entry.name.clone(), raw_entry.version.clone());
+            if !seen.insert(key) {
+                errors.push(ReportedError::new(
+                    entry_path.clone(),
+                    SchemaError::DuplicateIndexEntry {
+                        name: raw_entry.name.clone(),
+                        version: raw_entry.version.clone(),
+                    },
+                ));
             }
 
-            // Existing duplicate-(name, version) check.
-            let key = (entry.name.as_str(), &entry.version);
-            if !seen.insert(key) {
-                return Err(SchemaError::DuplicateIndexEntry {
-                    name: entry.name.as_str().to_owned(),
-                    version: entry.version.to_string(),
-                });
+            if let Some(entry) = validated {
+                entries_ok.push(entry);
             }
         }
-        Ok(())
+
+        if !errors.is_empty() {
+            return Err(SchemaErrors::new(errors));
+        }
+
+        Ok(Index {
+            index_schema_version: schema_version,
+            artifacts_url: artifacts_url.unwrap(),
+            plugins: entries_ok,
+        })
     }
 
     /// Serializes this index to the canonical JSON form defined by Spec 2
@@ -322,6 +351,125 @@ impl Index {
 
 fn normalize_nfc(s: &str) -> String {
     s.nfc().collect()
+}
+
+/// Validates a single `RawIndexEntry`, pushing any errors into the supplied
+/// `errors` Vec with paths relative to `path`. Returns `Some(IndexEntry)` on
+/// success, `None` if any error was pushed for this entry (so the caller
+/// can skip it when assembling the final `Index::plugins`).
+fn validate_raw_entry(
+    raw: &crate::raw::RawIndexEntry,
+    path: &crate::FieldPath,
+    errors: &mut Vec<crate::ReportedError>,
+) -> Option<IndexEntry> {
+    use crate::manifest::parse_optional_http_url_from_path;
+    use crate::{Description, PluginName, PythonRequirement, ReportedError, TriggerType};
+    use std::str::FromStr;
+
+    let local_err_count = errors.len();
+
+    let name = match PluginName::from_str(&raw.name) {
+        Ok(n) => Some(n),
+        Err(e) => {
+            errors.push(ReportedError::new(path.field("name"), e));
+            None
+        }
+    };
+
+    let version = match semver::Version::parse(&raw.version) {
+        Ok(v) => Some(v),
+        Err(source) => {
+            errors.push(ReportedError::new(
+                path.field("version"),
+                SchemaError::InvalidVersion {
+                    version: raw.version.clone(),
+                    source,
+                },
+            ));
+            None
+        }
+    };
+
+    let description = match Description::try_new(&raw.description) {
+        Ok(d) => Some(d),
+        Err(e) => {
+            errors.push(ReportedError::new(path.field("description"), e));
+            None
+        }
+    };
+
+    let mut triggers_ok: Vec<TriggerType> = Vec::with_capacity(raw.triggers.len());
+    if raw.triggers.is_empty() {
+        errors.push(ReportedError::new(
+            path.field("triggers"),
+            SchemaError::EmptyTriggers,
+        ));
+    } else {
+        for (i, t) in raw.triggers.iter().enumerate() {
+            match TriggerType::from_str(t) {
+                Ok(tt) => triggers_ok.push(tt),
+                Err(e) => errors.push(ReportedError::new(path.field("triggers").index(i), e)),
+            }
+        }
+    }
+
+    let homepage = parse_optional_http_url_from_path(&raw.homepage, errors, path, "homepage");
+    let repository = parse_optional_http_url_from_path(&raw.repository, errors, path, "repository");
+    let documentation =
+        parse_optional_http_url_from_path(&raw.documentation, errors, path, "documentation");
+
+    let database_version = match semver::VersionReq::parse(&raw.dependencies.database_version) {
+        Ok(r) => Some(r),
+        Err(source) => {
+            errors.push(ReportedError::new(
+                path.field("dependencies").field("database_version"),
+                SchemaError::InvalidDatabaseVersion {
+                    range: raw.dependencies.database_version.clone(),
+                    source,
+                },
+            ));
+            None
+        }
+    };
+
+    let mut python_ok: Vec<PythonRequirement> = Vec::with_capacity(raw.dependencies.python.len());
+    for (i, p) in raw.dependencies.python.iter().enumerate() {
+        match PythonRequirement::try_new(p) {
+            Ok(pr) => python_ok.push(pr),
+            Err(e) => errors.push(ReportedError::new(
+                path.field("dependencies").field("python").index(i),
+                e,
+            )),
+        }
+    }
+
+    let hash = match ArtifactHash::try_new(&raw.hash) {
+        Ok(h) => Some(h),
+        Err(e) => {
+            errors.push(ReportedError::new(path.field("hash"), e));
+            None
+        }
+    };
+
+    if errors.len() > local_err_count {
+        return None;
+    }
+
+    Some(IndexEntry {
+        name: name.unwrap(),
+        version: version.unwrap(),
+        description: description.unwrap(),
+        triggers: triggers_ok,
+        homepage,
+        repository,
+        documentation,
+        dependencies: crate::Dependencies {
+            database_version: database_version.unwrap(),
+            python: python_ok,
+        },
+        hash: hash.unwrap(),
+        yanked: raw.yanked,
+    })
 }
 
 #[cfg(test)]
@@ -492,10 +640,13 @@ mod index_tests {
       "hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111" }
   ]
 }"#;
+        let errors = Index::parse_json(dup).unwrap_err();
+        assert_eq!(errors.errors().len(), 1);
         assert_matches!(
-            Index::parse_json(dup),
-            Err(SchemaError::DuplicateIndexEntry { .. })
+            errors.errors()[0].error,
+            SchemaError::DuplicateIndexEntry { .. }
         );
+        assert_eq!(errors.errors()[0].path.as_str(), "plugins[1]");
     }
 
     #[test]
@@ -510,25 +661,34 @@ mod index_tests {
     #[test]
     fn empty_triggers_rejected_per_entry() {
         let src = MINIMAL.replace(r#""triggers": ["process_writes"]"#, r#""triggers": []"#);
-        assert_matches!(Index::parse_json(&src), Err(SchemaError::EmptyTriggers));
+        let errors = Index::parse_json(&src).unwrap_err();
+        assert_eq!(errors.errors().len(), 1);
+        assert_matches!(errors.errors()[0].error, SchemaError::EmptyTriggers);
+        assert_eq!(errors.errors()[0].path.as_str(), "plugins[0].triggers");
     }
 
     #[test]
     fn invalid_homepage_scheme_rejected_per_entry() {
         let src = MINIMAL.replace(r#""hash":"#, r#""homepage": "ftp://bad/", "hash":"#);
+        let errors = Index::parse_json(&src).unwrap_err();
+        assert_eq!(errors.errors().len(), 1);
         assert_matches!(
-            Index::parse_json(&src),
-            Err(SchemaError::InvalidUrlScheme { .. })
+            errors.errors()[0].error,
+            SchemaError::InvalidUrlScheme { .. }
         );
+        assert_eq!(errors.errors()[0].path.as_str(), "plugins[0].homepage");
     }
 
     #[test]
     fn invalid_repository_scheme_rejected_per_entry() {
         let src = MINIMAL.replace(r#""hash":"#, r#""repository": "git://bad/", "hash":"#);
+        let errors = Index::parse_json(&src).unwrap_err();
+        assert_eq!(errors.errors().len(), 1);
         assert_matches!(
-            Index::parse_json(&src),
-            Err(SchemaError::InvalidUrlScheme { .. })
+            errors.errors()[0].error,
+            SchemaError::InvalidUrlScheme { .. }
         );
+        assert_eq!(errors.errors()[0].path.as_str(), "plugins[0].repository");
     }
 
     #[test]
@@ -537,10 +697,13 @@ mod index_tests {
             r#""hash":"#,
             r#""documentation": "s3://bucket/docs", "hash":"#,
         );
+        let errors = Index::parse_json(&src).unwrap_err();
+        assert_eq!(errors.errors().len(), 1);
         assert_matches!(
-            Index::parse_json(&src),
-            Err(SchemaError::InvalidUrlScheme { .. })
+            errors.errors()[0].error,
+            SchemaError::InvalidUrlScheme { .. }
         );
+        assert_eq!(errors.errors()[0].path.as_str(), "plugins[0].documentation");
     }
 
     #[test]
@@ -559,6 +722,79 @@ mod index_tests {
             r#""experimental_top_level": true, "artifacts_url":"#,
         );
         assert!(Index::parse_json(&src).is_ok());
+    }
+
+    /// Two-phase parse collects per-entry defects across multiple entries
+    /// AND duplicate-(name, version) detection — all in a single pass.
+    #[test]
+    fn collects_multiple_entry_defects_and_duplicate() {
+        // plugins[0] has a valid entry.
+        // plugins[1] has a bad hash.
+        // plugins[2] duplicates plugins[0] (name + version).
+        // plugins[3] has a bad description (too long).
+        // Expect 3 errors: hash, duplicate, description.
+        let long_desc = "a".repeat(201);
+        let json = format!(
+            r#"{{
+  "index_schema_version": "1.0",
+  "artifacts_url": "https://plugins.example.com/artifacts",
+  "plugins": [
+    {{ "name": "alpha", "version": "1.0.0", "description": "ok", "triggers": ["process_writes"],
+       "dependencies": {{"database_version":">=3.0.0","python":[]}},
+       "hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000" }},
+    {{ "name": "beta",  "version": "2.0.0", "description": "ok", "triggers": ["process_writes"],
+       "dependencies": {{"database_version":">=3.0.0","python":[]}},
+       "hash": "not-a-hash" }},
+    {{ "name": "alpha", "version": "1.0.0", "description": "ok", "triggers": ["process_writes"],
+       "dependencies": {{"database_version":">=3.0.0","python":[]}},
+       "hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111" }},
+    {{ "name": "gamma", "version": "3.0.0", "description": "{long_desc}", "triggers": ["process_writes"],
+       "dependencies": {{"database_version":">=3.0.0","python":[]}},
+       "hash": "sha256:2222222222222222222222222222222222222222222222222222222222222222" }}
+  ]
+}}"#
+        );
+
+        let errors = Index::parse_json(&json).expect_err("should fail");
+        let e = errors.errors();
+        assert_eq!(
+            e.len(),
+            3,
+            "expected 3 errors, got {}: {:?}",
+            e.len(),
+            e.iter()
+                .map(|r| (r.path.as_str(), &r.error))
+                .collect::<Vec<_>>()
+        );
+
+        let paths: Vec<&str> = e.iter().map(|r| r.path.as_str()).collect();
+        assert!(
+            paths.iter().any(|p| *p == "plugins[1].hash"),
+            "missing hash path: {paths:?}"
+        );
+        assert!(
+            paths.iter().any(|p| p.starts_with("plugins[2]")),
+            "missing duplicate path: {paths:?}"
+        );
+        assert!(
+            paths.iter().any(|p| *p == "plugins[3].description"),
+            "missing description path: {paths:?}"
+        );
+    }
+
+    #[test]
+    fn index_schema_version_mismatch_short_circuits() {
+        let json = r#"{
+  "index_schema_version": "99.0",
+  "artifacts_url": "ftp://bad",
+  "plugins": []
+}"#;
+        let errors = Index::parse_json(json).expect_err("should fail");
+        assert_eq!(errors.errors().len(), 1);
+        assert_matches::assert_matches!(
+            errors.errors()[0].error,
+            SchemaError::UnsupportedIndexMajor { .. }
+        );
     }
 }
 

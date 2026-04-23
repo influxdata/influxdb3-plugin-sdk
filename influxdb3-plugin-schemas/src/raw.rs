@@ -9,9 +9,6 @@
 //! These types are not re-exported from the crate. The public API presents only
 //! the validated `Manifest` / `Index` / `IndexEntry` types.
 //!
-//! Index-side raw types (`RawIndex`, `RawIndexEntry`) are still allowed
-//! `dead_code` until Chunk 4 wires up `Index::parse_json`; removed there.
-
 #[derive(Debug, serde::Deserialize)]
 pub(crate) struct RawManifest {
     pub manifest_schema_version: String,
