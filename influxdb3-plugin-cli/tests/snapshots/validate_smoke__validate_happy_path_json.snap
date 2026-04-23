@@ -1,0 +1,7 @@
+---
+source: influxdb3-plugin-cli/tests/validate_smoke.rs
+expression: payload
+---
+{
+  "diagnostics": []
+}

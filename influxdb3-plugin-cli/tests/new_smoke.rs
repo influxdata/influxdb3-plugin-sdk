@@ -71,6 +71,47 @@ fn new_process_writes_happy_path_json_mode() {
     insta::assert_json_snapshot!("new_process_writes_json", payload);
 }
 
+/// Snapshot the JSON output for one scaffold template. `target` is the
+/// path basename used to derive the plugin name (and the redacted
+/// fragment in the snapshot's `target_dir`).
+fn snapshot_new_template(template: &str, target: &str, snapshot_name: &str) {
+    let td = tempfile::tempdir().unwrap();
+    let target_path = td.path().join(target);
+    let assert = spawn_new(&target_path, &[template, "--output", "json"]).success();
+    let stdout = std::str::from_utf8(&assert.get_output().stdout).unwrap();
+    let mut payload: serde_json::Value = serde_json::from_str(stdout).expect("stdout is JSON");
+    let placeholder = format!("<TMPDIR>/{target}");
+    payload
+        .as_object_mut()
+        .unwrap()
+        .insert("target_dir".into(), placeholder.into());
+    insta::assert_json_snapshot!(snapshot_name, payload);
+}
+
+/// Spec 2 § S2-16: every per-template JSON output is a stable schema
+/// commitment. One snapshot per template locks that contract.
+/// `process_writes` is covered by `new_process_writes_happy_path_json_mode`
+/// above; this group covers the remaining three.
+
+#[test]
+fn new_process_scheduled_call_json_snapshot() {
+    snapshot_new_template(
+        "process_scheduled_call",
+        "downsampler",
+        "new_process_scheduled_call_json",
+    );
+}
+
+#[test]
+fn new_process_request_json_snapshot() {
+    snapshot_new_template("process_request", "downsampler", "new_process_request_json");
+}
+
+#[test]
+fn new_registry_json_snapshot() {
+    snapshot_new_template("registry", "reg", "new_registry_json");
+}
+
 #[test]
 fn new_each_plugin_template_writes_matching_init() {
     for template in [

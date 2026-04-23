@@ -61,6 +61,7 @@ fn validate_happy_path_emits_empty_diagnostics_array() {
         serde_json::json!({ "diagnostics": [] }),
         "happy path must emit empty diagnostics array"
     );
+    insta::assert_json_snapshot!("validate_happy_path_json", payload);
 }
 
 /// Validator idiom: failure path emits a single JSON document on STDOUT
@@ -86,6 +87,7 @@ fn validate_failure_emits_diagnostics_on_stdout_and_exits_one() {
     assert_eq!(diags.len(), 1);
     assert_eq!(diags[0]["variant"], "MissingRequiredFile");
     assert_eq!(diags[0]["field"], "__init__.py");
+    insta::assert_json_snapshot!("validate_missing_init_json", payload);
 }
 
 #[test]
@@ -144,6 +146,7 @@ database_version = ">=3.0.0"
         fields.contains(&"plugin.homepage"),
         "missing plugin.homepage: {fields:?}"
     );
+    insta::assert_json_snapshot!("validate_multi_defect_json", payload);
 }
 
 #[test]
@@ -167,6 +170,7 @@ fn validate_async_trigger_diagnostic_points_at_init() {
     assert_eq!(diags.len(), 1);
     assert_eq!(diags[0]["variant"], "AsyncTriggerFn");
     assert_eq!(diags[0]["field"], "__init__.py");
+    insta::assert_json_snapshot!("validate_async_trigger_json", payload);
 }
 
 /// `validate --index <path>` runs the same checks plus a uniqueness
@@ -207,6 +211,7 @@ fn validate_with_index_surfaces_uniqueness_collision() {
     assert_eq!(diags.len(), 1);
     assert_eq!(diags[0]["variant"], "NameVersionConflict");
     assert_eq!(diags[0]["field"], "downsampler@1.2.0");
+    insta::assert_json_snapshot!("validate_name_version_conflict_json", payload);
 }
 
 /// Without `--index`, uniqueness is not checked even if a collision

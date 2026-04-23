@@ -47,6 +47,15 @@ fn spawn_yank(
     cmd.assert()
 }
 
+/// Strip the per-machine `index_path` field so the snapshot is
+/// reproducible across hosts.
+fn redact_index_path(payload: &mut serde_json::Value) {
+    payload
+        .as_object_mut()
+        .expect("payload is a JSON object")
+        .insert("index_path".into(), "<TMPDIR>/build/index.json".into());
+}
+
 fn read_yanked_flag(index_path: &Path, name: &str, version: &str) -> bool {
     let raw = std::fs::read_to_string(index_path).unwrap();
     let v: serde_json::Value = serde_json::from_str(&raw).unwrap();
@@ -76,7 +85,7 @@ fn yank_happy_path_sets_flag_and_emits_transitioned() {
     .success();
 
     let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
-    let payload: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    let mut payload: serde_json::Value = serde_json::from_str(&stdout).unwrap();
     assert_eq!(payload["outcome"], "transitioned");
     assert_eq!(payload["target_state"], true);
     assert_eq!(payload["name"], "downsampler");
@@ -86,6 +95,9 @@ fn yank_happy_path_sets_flag_and_emits_transitioned() {
         read_yanked_flag(&out.join("index.json"), "downsampler", "1.2.0"),
         "derived index must reflect yanked=true"
     );
+
+    redact_index_path(&mut payload);
+    insta::assert_json_snapshot!("yank_transitioned_json", payload);
 }
 
 #[test]
@@ -111,7 +123,7 @@ fn yank_undo_clears_flag() {
     .success();
 
     let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
-    let payload: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    let mut payload: serde_json::Value = serde_json::from_str(&stdout).unwrap();
     assert_eq!(payload["outcome"], "transitioned");
     assert_eq!(payload["target_state"], false);
 
@@ -119,6 +131,9 @@ fn yank_undo_clears_flag() {
         !read_yanked_flag(&out.join("index.json"), "downsampler", "1.2.0"),
         "derived index must reflect yanked=false after --undo"
     );
+
+    redact_index_path(&mut payload);
+    insta::assert_json_snapshot!("yank_undo_transitioned_json", payload);
 }
 
 /// Idempotency: re-yanking an already-yanked entry exits 0 with the
@@ -146,9 +161,12 @@ fn yank_already_yanked_is_no_op_with_marker() {
     )
     .success();
     let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
-    let payload: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    let mut payload: serde_json::Value = serde_json::from_str(&stdout).unwrap();
     assert_eq!(payload["outcome"], "already_in_desired_state");
     assert_eq!(payload["target_state"], true);
+
+    redact_index_path(&mut payload);
+    insta::assert_json_snapshot!("yank_already_in_desired_state_json", payload);
 }
 
 /// Missing entry → exit 1 + stderr message.

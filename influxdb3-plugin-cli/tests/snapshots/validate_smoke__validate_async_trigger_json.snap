@@ -1,0 +1,13 @@
+---
+source: influxdb3-plugin-cli/tests/validate_smoke.rs
+expression: payload
+---
+{
+  "diagnostics": [
+    {
+      "field": "__init__.py",
+      "message": "trigger ProcessWrites is implemented as `async def` in __init__.py; the runtime invokes trigger functions synchronously",
+      "variant": "AsyncTriggerFn"
+    }
+  ]
+}

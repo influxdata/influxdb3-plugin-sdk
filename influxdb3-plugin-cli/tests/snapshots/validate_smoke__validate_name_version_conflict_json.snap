@@ -1,0 +1,13 @@
+---
+source: influxdb3-plugin-cli/tests/validate_smoke.rs
+expression: payload
+---
+{
+  "diagnostics": [
+    {
+      "field": "downsampler@1.2.0",
+      "message": "plugin (\"downsampler\", \"1.2.0\") already exists in the target index; increment version or run `yank` instead",
+      "variant": "NameVersionConflict"
+    }
+  ]
+}

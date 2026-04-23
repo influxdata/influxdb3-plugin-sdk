@@ -1,0 +1,23 @@
+---
+source: influxdb3-plugin-cli/tests/validate_smoke.rs
+expression: payload
+---
+{
+  "diagnostics": [
+    {
+      "field": "plugin.name",
+      "message": "plugin.name: plugin name \"BAD_NAME\" must be 1-64 characters: lowercase letters, digits, or hyphens, starting with a lowercase letter or digit",
+      "variant": "SchemaReported"
+    },
+    {
+      "field": "plugin.version",
+      "message": "plugin.version: version \"1.2\" is not SemVer 2.0.0 compliant: unexpected end of input while parsing minor version number",
+      "variant": "SchemaReported"
+    },
+    {
+      "field": "plugin.homepage",
+      "message": "plugin.homepage: URL \"ftp://bad\" must use http or https scheme (was \"ftp\")",
+      "variant": "SchemaReported"
+    }
+  ]
+}

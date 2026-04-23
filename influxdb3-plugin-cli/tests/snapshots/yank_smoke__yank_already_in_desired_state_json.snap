@@ -1,0 +1,11 @@
+---
+source: influxdb3-plugin-cli/tests/yank_smoke.rs
+expression: payload
+---
+{
+  "index_path": "<TMPDIR>/build/index.json",
+  "name": "downsampler",
+  "outcome": "already_in_desired_state",
+  "target_state": true,
+  "version": "1.2.0"
+}
