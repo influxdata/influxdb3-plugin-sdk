@@ -72,12 +72,12 @@ fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
     std::fs::create_dir_all(&args.out)
         .map_err(|e| anyhow::anyhow!("failed to create --out {}: {e}", args.out.display()))?;
     if paths_overlap(&args.index, &args.out)? {
-        anyhow::bail!(
+        return Err(crate::cli_error::CliError::usage(anyhow::anyhow!(
             "--out {} resolves to the directory containing --index {}; \
              they must be disjoint (Spec 2 § S2-12)",
             args.out.display(),
             args.index.display(),
-        );
+        )));
     }
 
     let outcome = package::package_plugin(&args.plugin_dir, input_index)?;

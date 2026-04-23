@@ -95,3 +95,30 @@ fn new_name_on_registry_template_exits_two() {
         .assert()
         .code(2);
 }
+
+#[test]
+fn package_self_overwrite_exits_two() {
+    let tmp = TempDir::new().unwrap();
+    let reg = tmp.path().join("reg");
+    plugin()
+        .args(["new", "registry", reg.to_str().unwrap()])
+        .assert()
+        .success();
+    let plug = tmp.path().join("p");
+    plugin()
+        .args(["new", "process_writes", plug.to_str().unwrap()])
+        .assert()
+        .success();
+    plugin()
+        .args([
+            "package",
+            plug.to_str().unwrap(),
+            "--index",
+            reg.join("index.json").to_str().unwrap(),
+            "--out",
+            reg.to_str().unwrap(),
+        ])
+        .assert()
+        .code(2)
+        .stderr(predicates::str::contains("S2-12").or(predicates::str::contains("disjoint")));
+}
