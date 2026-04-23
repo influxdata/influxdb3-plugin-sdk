@@ -470,6 +470,7 @@ dependencies = [
  "influxdb3-plugin-schemas",
  "insta",
  "pretty_assertions",
+ "proptest",
  "semver",
  "sha2",
  "tar",

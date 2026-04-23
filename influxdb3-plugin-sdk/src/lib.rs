@@ -18,6 +18,14 @@
 //! Consumers should go through `influxdb3-plugin-cli`'s public API.
 //! Refactoring freedom is the goal.
 
+// `proptest` is used only in the `tests/archive_determinism.rs` integration
+// test, not in any inline `#[cfg(test)]` module. The lib crate's test target
+// still sees it as a declared dev-dep, so this guard keeps
+// `unused_crate_dependencies` satisfied on the lib test build. Same pattern
+// as the schemas crate.
+#[cfg(test)]
+use proptest as _;
+
 mod error;
 
 pub mod archive;
