@@ -25,7 +25,7 @@ use std::path::PathBuf;
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum SdkError {
-    #[error("I/O error{}: {source}", path_suffix(.path.as_ref()))]
+    #[error("I/O error{}", path_suffix(.path.as_ref()))]
     Io {
         #[source]
         source: std::io::Error,
@@ -41,7 +41,7 @@ pub enum SdkError {
     #[error("archive construction failed: {message}")]
     Archive { message: String },
 
-    #[error("hash computation failed: {source}")]
+    #[error("hash computation failed")]
     Hash {
         #[source]
         source: std::io::Error,

@@ -344,4 +344,13 @@ fn new_conflict_error_mentions_path_once() {
         occurrences, 1,
         "stderr should mention the conflicting path exactly once; was:\n{stderr}"
     );
+
+    // After the Chunk 6 polish, "already exists" should appear exactly
+    // once in the rendered error chain (anyhow's source-walk plus
+    // `#[source]` no longer duplicates the inner io::Error's message).
+    let phrase_occurrences = stderr.matches("already exists").count();
+    assert_eq!(
+        phrase_occurrences, 1,
+        "phrase 'already exists' should appear exactly once; was:\n{stderr}"
+    );
 }
