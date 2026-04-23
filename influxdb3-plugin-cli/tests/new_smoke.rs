@@ -236,7 +236,7 @@ fn new_rejects_invalid_explicit_name() {
 
     let assert = spawn_new(&target, &["process_writes", "--name", "BAD_NAME"])
         .failure()
-        .code(1);
+        .code(2);
 
     let stderr = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
     assert!(

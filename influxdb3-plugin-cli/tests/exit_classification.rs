@@ -35,3 +35,18 @@ fn plain_runtime_failure_exits_one() {
         .assert()
         .code(1);
 }
+
+#[test]
+fn new_with_invalid_explicit_name_exits_two() {
+    let tmp = TempDir::new().unwrap();
+    plugin()
+        .args([
+            "new",
+            "process_writes",
+            tmp.path().join("ok-dir").to_str().unwrap(),
+            "--name",
+            "Bad_Name",
+        ])
+        .assert()
+        .code(2);
+}

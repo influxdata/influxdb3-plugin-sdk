@@ -198,9 +198,11 @@ fn resolve_plugin_name(dir: &Path, name_arg: Option<String>) -> anyhow::Result<S
 
     match PluginName::from_str(&candidate) {
         Ok(_) => Ok(candidate),
-        Err(_) if source_was_explicit => Err(anyhow::anyhow!(
-            "--name {candidate:?} is not a valid plugin name; \
-             must match `[a-z0-9][a-z0-9-]{{0,63}}` (1-64 chars)"
+        Err(_) if source_was_explicit => Err(crate::cli_error::CliError::usage(
+            anyhow::anyhow!(
+                "--name {candidate:?} is not a valid plugin name; \
+                 must match `[a-z0-9][a-z0-9-]{{0,63}}` (1-64 chars)"
+            ),
         )),
         Err(_) => Err(anyhow::anyhow!(
             "derived plugin name {candidate:?} (from path basename) is not a valid \
