@@ -25,19 +25,24 @@ use proptest::test_runner::{Config as ProptestConfig, RngAlgorithm};
 use semver::Version;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+
+// Monotonic per-process counter: `SystemTime::now().as_nanos()` can repeat
+// under rapid calls on macOS (sub-microsecond resolution is not guaranteed),
+// causing TempDir path collisions between proptest iterations. An atomic
+// counter is monotonic and collision-free regardless of clock resolution.
+static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 struct TempDir(PathBuf);
 
 impl TempDir {
     fn new(tag: &str) -> Self {
+        let n = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
         let base = std::env::temp_dir().join(format!(
             "influxdb3-plugin-sdk-proptest-{}-{}-{}",
             tag,
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
+            n,
         ));
         let _ = fs::remove_dir_all(&base);
         fs::create_dir_all(&base).unwrap();
@@ -54,24 +59,31 @@ impl Drop for TempDir {
     }
 }
 
-/// A plugin-directory spec: a list of (relative path, contents) pairs.
-/// Path components are short ASCII names; contents are byte vectors.
+/// A plugin-directory spec: a list of (flat filename, contents) pairs.
+///
+/// Flat-path shape avoids the class of fs::write panics that occur when a
+/// generated path at `a/b` conflicts with a later generated file at `a`
+/// (would require `a` to be both a file and a directory). Flat paths are
+/// sufficient to exercise the determinism guarantee — the canonicalization
+/// rules (sort order, per-entry header fields, gzip framing) are oblivious
+/// to directory depth.
 #[derive(Debug, Clone)]
 struct PluginSpec {
-    files: Vec<(Vec<String>, Vec<u8>)>,
+    files: Vec<(String, Vec<u8>)>,
 }
 
-fn arb_component() -> impl Strategy<Value = String> {
-    // Short lowercase names, avoiding reserved exclusion tokens.
+fn arb_filename() -> impl Strategy<Value = String> {
+    // Short lowercase names, avoiding reserved exclusion tokens and the two
+    // required fixture files. Add `.py` suffix to keep shapes realistic.
     proptest::string::string_regex("[a-z][a-z0-9]{0,6}")
         .unwrap()
         .prop_filter("excluded pattern", |s| {
             s != "target" && s != ".git" && s != "__pycache__"
         })
-}
-
-fn arb_path() -> impl Strategy<Value = Vec<String>> {
-    proptest::collection::vec(arb_component(), 1..=3)
+        .prop_map(|s| format!("{s}.py"))
+        .prop_filter("reserved fixture name", |s| {
+            s != "manifest.toml" && s != "__init__.py"
+        })
 }
 
 fn arb_contents() -> impl Strategy<Value = Vec<u8>> {
@@ -79,16 +91,14 @@ fn arb_contents() -> impl Strategy<Value = Vec<u8>> {
 }
 
 fn arb_plugin_spec() -> impl Strategy<Value = PluginSpec> {
-    proptest::collection::vec((arb_path(), arb_contents()), 0..=5).prop_map(|files| {
-        // De-duplicate by joined path to avoid write collisions in the
-        // generator.
+    proptest::collection::vec((arb_filename(), arb_contents()), 0..=5).prop_map(|files| {
+        // De-duplicate by filename: repeats would cause the second fs::write
+        // to overwrite the first and change the final directory state
+        // depending on Vec ordering.
         let mut seen = std::collections::HashSet::new();
         let files: Vec<_> = files
             .into_iter()
-            .filter(|(components, _)| {
-                let joined = components.join("/");
-                seen.insert(joined) && !components.iter().any(|c| c.ends_with(".pyc"))
-            })
+            .filter(|(name, _)| seen.insert(name.clone()))
             .collect();
         PluginSpec { files }
     })
@@ -113,19 +123,8 @@ fn materialize(spec: &PluginSpec, root: &Path) {
         "def process_writes(a, b, c):\n    pass\n",
     )
     .unwrap();
-    for (components, contents) in &spec.files {
-        // Skip anything that would collide with the two required files above.
-        let joined = components.join("/");
-        if joined == "manifest.toml" || joined == "__init__.py" {
-            continue;
-        }
-        let mut target = root.to_path_buf();
-        for c in &components[..components.len() - 1] {
-            target = target.join(c);
-        }
-        fs::create_dir_all(&target).unwrap();
-        target = target.join(components.last().unwrap());
-        fs::write(&target, contents).unwrap();
+    for (name, contents) in &spec.files {
+        fs::write(root.join(name), contents).unwrap();
     }
 }
 
