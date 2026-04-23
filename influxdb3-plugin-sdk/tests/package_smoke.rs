@@ -13,8 +13,7 @@
 use influxdb3_plugin_schemas::{Index, TriggerType};
 use influxdb3_plugin_sdk::package::package_plugin;
 use influxdb3_plugin_sdk::scaffold;
-use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 mod common;
 use common::empty_index;
@@ -126,14 +125,41 @@ fn scaffold_then_validate_then_package_round_trips() {
     assert_eq!(out.new_entry.version, semver::Version::new(0, 1, 0));
 }
 
-// Verify the pipeline writes no files — the library layer owns bytes only.
+/// The pipeline must not mutate the source plugin directory. We verify this
+/// by snapshotting the entire tree (relative path + content SHA-256) before
+/// and after the call, not just the root's mtime.
 #[test]
-fn pipeline_writes_no_files_to_disk() {
+fn pipeline_does_not_mutate_source_plugin_dir() {
     let plugin_dir = fixtures().join("valid_plugin");
-    // Snapshot the mtime of the plugin dir pre-call; if package_plugin
-    // somehow wrote inside it, mtime would shift.
-    let before = fs::metadata(&plugin_dir).unwrap().modified().unwrap();
+
+    let before = snapshot_tree(&plugin_dir);
     let _ = package_plugin(&plugin_dir, empty_index()).unwrap();
-    let after = fs::metadata(&plugin_dir).unwrap().modified().unwrap();
-    assert_eq!(before, after);
+    let after = snapshot_tree(&plugin_dir);
+
+    assert_eq!(before, after, "plugin directory must be unchanged after package()");
+}
+
+/// Returns a sorted Vec of `(relative_path, sha256)` pairs for every file
+/// under `dir`, so `assert_eq!` on two snapshots catches adds, removes,
+/// renames, and content changes — everything mtime alone misses.
+fn snapshot_tree(dir: &Path) -> Vec<(PathBuf, [u8; 32])> {
+    use sha2::{Digest, Sha256};
+    fn walk(dir: &Path, root: &Path, out: &mut Vec<(PathBuf, [u8; 32])>) {
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let entry = entry.unwrap();
+            let path = entry.path();
+            let rel = path.strip_prefix(root).unwrap().to_path_buf();
+            if path.is_dir() {
+                walk(&path, root, out);
+            } else {
+                let bytes = std::fs::read(&path).unwrap();
+                let hash: [u8; 32] = Sha256::digest(&bytes).into();
+                out.push((rel, hash));
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(dir, dir, &mut out);
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    out
 }
