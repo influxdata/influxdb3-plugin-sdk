@@ -21,6 +21,7 @@ fn fixtures() -> PathBuf {
 
 #[test]
 fn canonical_form_is_idempotent() {
+    let mut processed = 0;
     for entry in fs::read_dir(fixtures()).unwrap() {
         let path = entry.unwrap().path();
         if path.extension().and_then(|e| e.to_str()) != Some("json") {
@@ -35,11 +36,8 @@ fn canonical_form_is_idempotent() {
             .unwrap()
             .to_canonical_json()
             .unwrap();
-        assert_eq!(
-            once,
-            twice,
-            "canonical form changed on second pass for {}",
-            path.display()
-        );
+        assert_eq!(once, twice, "canonical form changed on second pass for {}", path.display());
+        processed += 1;
     }
+    assert!(processed >= 1, "no valid index fixtures found at {}", fixtures().display());
 }
