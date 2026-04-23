@@ -130,11 +130,15 @@ fn json_stdout_emits_no_ansi_under_force_color() {
     );
 }
 
-/// S2-14 e2e: `CI=true` (per-spawn env) forces json mode when no
-/// explicit `--output` is given. We invoke `new` since it's the simplest
-/// command that emits JSON on success.
+/// S2-14 end-to-end spot check: when `CI=true` is set (in addition to the
+/// non-TTY piped stdout that `assert_cmd` already produces), stdout is a
+/// single valid JSON document. This does NOT isolate CI=true as the sole
+/// trigger — `assert_cmd`'s pipe already forces non-TTY → json. A PTY-based
+/// test that would isolate CI=true's independent effect is a deferred
+/// follow-up (see the "Non-goals" section of plan
+/// 2026-04-23-test-audit-remediation).
 #[test]
-fn ci_env_forces_json_mode_e2e() {
+fn ci_env_plus_pipe_yields_json_stdout() {
     let td = tempfile::tempdir().unwrap();
     let target = td.path().join("p");
 
@@ -147,9 +151,7 @@ fn ci_env_forces_json_mode_e2e() {
         .success();
     let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
     let _: serde_json::Value = serde_json::from_str(&stdout).unwrap_or_else(|e| {
-        panic!(
-            "CI=true must force json mode (S2-14); stdout failed to parse as JSON: {e}\n{stdout}"
-        )
+        panic!("stdout failed to parse as JSON: {e}\n{stdout}")
     });
 }
 
