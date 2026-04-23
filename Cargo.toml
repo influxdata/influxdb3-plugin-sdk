@@ -41,6 +41,7 @@ insta = { version = "1.46", features = ["json", "toml", "yaml"] }
 pretty_assertions = "1.4"
 proptest = { version = "1", default-features = false, features = ["std"] }
 rstest = "0.26"
+tempfile = "3"
 
 [workspace.lints.rust]
 missing_copy_implementations = "deny"

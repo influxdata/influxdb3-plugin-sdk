@@ -24,40 +24,7 @@ use proptest::prelude::*;
 use proptest::test_runner::{Config as ProptestConfig, RngAlgorithm};
 use semver::Version;
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
-
-// Monotonic per-process counter: `SystemTime::now().as_nanos()` can repeat
-// under rapid calls on macOS (sub-microsecond resolution is not guaranteed),
-// causing TempDir path collisions between proptest iterations. An atomic
-// counter is monotonic and collision-free regardless of clock resolution.
-static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
-
-struct TempDir(PathBuf);
-
-impl TempDir {
-    fn new(tag: &str) -> Self {
-        let n = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
-        let base = std::env::temp_dir().join(format!(
-            "influxdb3-plugin-sdk-proptest-{}-{}-{}",
-            tag,
-            std::process::id(),
-            n,
-        ));
-        let _ = fs::remove_dir_all(&base);
-        fs::create_dir_all(&base).unwrap();
-        Self(base)
-    }
-    fn path(&self) -> &Path {
-        &self.0
-    }
-}
-
-impl Drop for TempDir {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
+use std::path::Path;
 
 /// A plugin-directory spec: a list of (flat filename, contents) pairs.
 ///
@@ -138,7 +105,7 @@ proptest! {
 
     #[test]
     fn canonical_tar_gz_is_byte_deterministic(spec in arb_plugin_spec()) {
-        let td = TempDir::new("det");
+        let td = tempfile::tempdir().unwrap();
         let dir = td.path().join("plugin");
         fs::create_dir_all(&dir).unwrap();
         materialize(&spec, &dir);

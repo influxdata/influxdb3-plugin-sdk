@@ -10,35 +10,10 @@
 use influxdb3_plugin_schemas::{Index, Manifest, TriggerType};
 use influxdb3_plugin_sdk::{SdkError, scaffold};
 use std::fs;
-use std::path::{Path, PathBuf};
-
-struct TempDir(PathBuf);
-
-impl TempDir {
-    fn new(tag: &str) -> Self {
-        let base = std::env::temp_dir().join(format!(
-            "influxdb3-plugin-sdk-scaffold-smoke-{}-{}",
-            tag,
-            std::process::id()
-        ));
-        let _ = fs::remove_dir_all(&base);
-        fs::create_dir_all(&base).unwrap();
-        Self(base)
-    }
-    fn path(&self) -> &Path {
-        &self.0
-    }
-}
-
-impl Drop for TempDir {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
 
 #[test]
 fn plugin_scaffold_produces_parseable_manifest() {
-    let td = TempDir::new("plugin_parses");
+    let td = tempfile::tempdir().unwrap();
     let dir = td.path().join("downsampler");
     scaffold::plugin(&dir, "downsampler", TriggerType::ProcessWrites)
         .expect("plugin scaffold should succeed");
@@ -54,7 +29,7 @@ fn plugin_scaffold_produces_parseable_manifest() {
 
 #[test]
 fn plugin_scaffold_rejects_invalid_name() {
-    let td = TempDir::new("plugin_bad_name");
+    let td = tempfile::tempdir().unwrap();
     let dir = td.path().join("bad-name");
     let err = scaffold::plugin(&dir, "BAD_NAME", TriggerType::ProcessWrites).unwrap_err();
     assert!(matches!(
@@ -65,7 +40,7 @@ fn plugin_scaffold_rejects_invalid_name() {
 
 #[test]
 fn registry_scaffold_produces_parseable_index() {
-    let td = TempDir::new("registry_parses");
+    let td = tempfile::tempdir().unwrap();
     let dir = td.path().join("my-registry");
     scaffold::registry(&dir).expect("registry scaffold should succeed");
 

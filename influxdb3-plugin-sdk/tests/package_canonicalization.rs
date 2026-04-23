@@ -13,35 +13,11 @@
 use influxdb3_plugin_sdk::archive::canonical_tar_gz;
 use semver::Version;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 // ─── Fixture helpers ─────────────────────────────────────────────────────────
 
-struct TempDir(PathBuf);
-
-impl TempDir {
-    fn new(tag: &str) -> Self {
-        let base = std::env::temp_dir().join(format!(
-            "influxdb3-plugin-sdk-package-canon-{}-{}",
-            tag,
-            std::process::id()
-        ));
-        let _ = fs::remove_dir_all(&base);
-        fs::create_dir_all(&base).unwrap();
-        Self(base)
-    }
-    fn path(&self) -> &Path {
-        &self.0
-    }
-}
-
-impl Drop for TempDir {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
-
-fn minimal_plugin_dir(td: &TempDir) -> PathBuf {
+fn minimal_plugin_dir(td: &tempfile::TempDir) -> PathBuf {
     let dir = td.path().join("plugin");
     fs::create_dir_all(&dir).unwrap();
     fs::write(
@@ -84,7 +60,7 @@ fn gunzip(bytes: &[u8]) -> Vec<u8> {
 
 #[test]
 fn rule1_tar_format_is_ustar() {
-    let td = TempDir::new("ustar");
+    let td = tempfile::tempdir().unwrap();
     let dir = minimal_plugin_dir(&td);
     let bytes = canonical_tar_gz(&dir, &plugin_name(), &plugin_version()).unwrap();
     let tar_bytes = gunzip(&bytes);
@@ -97,7 +73,7 @@ fn rule1_tar_format_is_ustar() {
 
 #[test]
 fn rule2_entries_sorted_by_path() {
-    let td = TempDir::new("sort");
+    let td = tempfile::tempdir().unwrap();
     let dir = td.path().join("plugin");
     fs::create_dir_all(&dir).unwrap();
     fs::write(
@@ -126,7 +102,7 @@ fn rule2_entries_sorted_by_path() {
 
 #[test]
 fn rule3_every_entry_mtime_zero() {
-    let td = TempDir::new("mtime");
+    let td = tempfile::tempdir().unwrap();
     let dir = minimal_plugin_dir(&td);
     let bytes = canonical_tar_gz(&dir, &plugin_name(), &plugin_version()).unwrap();
     let mut archive = tar::Archive::new(std::io::Cursor::new(gunzip(&bytes)));
@@ -140,7 +116,7 @@ fn rule3_every_entry_mtime_zero() {
 
 #[test]
 fn rule4_uid_gid_and_names_canonical() {
-    let td = TempDir::new("ids");
+    let td = tempfile::tempdir().unwrap();
     let dir = minimal_plugin_dir(&td);
     let bytes = canonical_tar_gz(&dir, &plugin_name(), &plugin_version()).unwrap();
     let mut archive = tar::Archive::new(std::io::Cursor::new(gunzip(&bytes)));
@@ -158,7 +134,7 @@ fn rule4_uid_gid_and_names_canonical() {
 
 #[test]
 fn rule5_non_exec_files_are_0644() {
-    let td = TempDir::new("mode_nonexec");
+    let td = tempfile::tempdir().unwrap();
     let dir = minimal_plugin_dir(&td);
     let bytes = canonical_tar_gz(&dir, &plugin_name(), &plugin_version()).unwrap();
     let mut archive = tar::Archive::new(std::io::Cursor::new(gunzip(&bytes)));
@@ -172,7 +148,7 @@ fn rule5_non_exec_files_are_0644() {
 #[cfg(unix)]
 fn rule5_exec_files_are_0755() {
     use std::os::unix::fs::PermissionsExt;
-    let td = TempDir::new("mode_exec");
+    let td = tempfile::tempdir().unwrap();
     let dir = minimal_plugin_dir(&td);
     let script = dir.join("run.sh");
     fs::write(&script, "#!/bin/sh\necho hi\n").unwrap();
@@ -197,7 +173,7 @@ fn rule5_exec_files_are_0755() {
 fn rule6_rejects_archive_path_over_ustar_limit() {
     use influxdb3_plugin_sdk::SdkError;
 
-    let td = TempDir::new("longpath");
+    let td = tempfile::tempdir().unwrap();
     let dir = td.path().join("plugin");
     fs::create_dir_all(&dir).unwrap();
     fs::write(
@@ -229,7 +205,7 @@ fn rule6_rejects_archive_path_over_ustar_limit() {
 
 #[test]
 fn rule7_gzip_mtime_zero() {
-    let td = TempDir::new("gzmtime");
+    let td = tempfile::tempdir().unwrap();
     let dir = minimal_plugin_dir(&td);
     let bytes = canonical_tar_gz(&dir, &plugin_name(), &plugin_version()).unwrap();
     // Bytes 4..8, little-endian, per RFC 1952.
@@ -241,7 +217,7 @@ fn rule7_gzip_mtime_zero() {
 
 #[test]
 fn rule8_gzip_fname_flag_clear() {
-    let td = TempDir::new("gzfname");
+    let td = tempfile::tempdir().unwrap();
     let dir = minimal_plugin_dir(&td);
     let bytes = canonical_tar_gz(&dir, &plugin_name(), &plugin_version()).unwrap();
     // FLG byte at offset 3; FNAME is bit 3 (0x08). MUST be clear.

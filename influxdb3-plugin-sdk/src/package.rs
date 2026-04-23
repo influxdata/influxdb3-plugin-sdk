@@ -116,31 +116,6 @@ mod tests {
     use super::*;
     use influxdb3_plugin_schemas::{ArtifactsUrl, IndexSchemaVersion};
     use std::fs;
-    use std::path::PathBuf;
-
-    struct TempDir(PathBuf);
-
-    impl TempDir {
-        fn new(tag: &str) -> Self {
-            let base = std::env::temp_dir().join(format!(
-                "influxdb3-plugin-sdk-package-test-{}-{}",
-                tag,
-                std::process::id()
-            ));
-            let _ = fs::remove_dir_all(&base);
-            fs::create_dir_all(&base).unwrap();
-            Self(base)
-        }
-        fn path(&self) -> &Path {
-            &self.0
-        }
-    }
-
-    impl Drop for TempDir {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
-        }
-    }
 
     fn write_valid_plugin(dir: &Path) {
         fs::create_dir_all(dir).unwrap();
@@ -174,7 +149,7 @@ mod tests {
 
     #[test]
     fn happy_path_populates_every_output_field() {
-        let td = TempDir::new("happy");
+        let td = tempfile::tempdir().unwrap();
         let dir = td.path().join("downsampler");
         write_valid_plugin(&dir);
 
@@ -194,7 +169,7 @@ mod tests {
 
     #[test]
     fn entry_hash_matches_archive_bytes() {
-        let td = TempDir::new("hash_match");
+        let td = tempfile::tempdir().unwrap();
         let dir = td.path().join("p");
         write_valid_plugin(&dir);
 
@@ -205,7 +180,7 @@ mod tests {
 
     #[test]
     fn duplicate_name_version_rejected_by_s2_2() {
-        let td = TempDir::new("dup");
+        let td = tempfile::tempdir().unwrap();
         let dir = td.path().join("p");
         write_valid_plugin(&dir);
 
@@ -221,7 +196,7 @@ mod tests {
 
     #[test]
     fn validation_failure_short_circuits_pipeline() {
-        let td = TempDir::new("validation");
+        let td = tempfile::tempdir().unwrap();
         let dir = td.path().join("p");
         fs::create_dir_all(&dir).unwrap();
         // Declare process_writes but don't implement it.
@@ -249,7 +224,7 @@ mod tests {
         // duplicate is found, no intermediate state is observable.
         // This test verifies the second package_plugin call does NOT add
         // to the index passed in (the first call's derived_index).
-        let td = TempDir::new("preserve");
+        let td = tempfile::tempdir().unwrap();
         let dir = td.path().join("p");
         write_valid_plugin(&dir);
 

@@ -120,14 +120,8 @@ fn archive_is_extractable_and_contains_expected_entries() {
 /// Testing-spec Section 5 #12.
 #[test]
 fn scaffold_then_validate_then_package_round_trips() {
-    let td_root = std::env::temp_dir().join(format!(
-        "influxdb3-plugin-sdk-scaffold-to-package-{}",
-        std::process::id()
-    ));
-    let _ = fs::remove_dir_all(&td_root);
-    fs::create_dir_all(&td_root).unwrap();
-
-    let plugin_dir = td_root.join("scaffolded");
+    let td = tempfile::tempdir().unwrap();
+    let plugin_dir = td.path().join("scaffolded");
     scaffold::plugin(&plugin_dir, "scaffolded", TriggerType::ProcessWrites)
         .expect("scaffold should succeed");
 
@@ -135,8 +129,6 @@ fn scaffold_then_validate_then_package_round_trips() {
         package_plugin(&plugin_dir, empty_index()).expect("scaffolded plugin must package cleanly");
     assert_eq!(out.new_entry.name.as_str(), "scaffolded");
     assert_eq!(out.new_entry.version, semver::Version::new(0, 1, 0));
-
-    let _ = fs::remove_dir_all(&td_root);
 }
 
 // Verify the pipeline writes no files — the library layer owns bytes only.

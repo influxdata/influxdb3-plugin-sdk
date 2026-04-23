@@ -314,35 +314,8 @@ mod tests {
     use std::fs;
     use std::path::PathBuf;
 
-    // Minimal temp-dir helper, duplicated from scaffold.rs. Duplication is
-    // intentional: keeping the helper inline lets each test module be
-    // understood without cross-file navigation, and the pattern is 20 lines.
-    struct TempDir(PathBuf);
-
-    impl TempDir {
-        fn new(tag: &str) -> Self {
-            let base = std::env::temp_dir().join(format!(
-                "influxdb3-plugin-sdk-archive-test-{}-{}",
-                tag,
-                std::process::id()
-            ));
-            let _ = fs::remove_dir_all(&base);
-            fs::create_dir_all(&base).unwrap();
-            Self(base)
-        }
-        fn path(&self) -> &Path {
-            &self.0
-        }
-    }
-
-    impl Drop for TempDir {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
-        }
-    }
-
-    fn minimal_plugin_dir(td: &TempDir) -> PathBuf {
-        let dir = td.path().join("plugin");
+    fn minimal_plugin_dir(base: &Path) -> PathBuf {
+        let dir = base.join("plugin");
         fs::create_dir_all(&dir).unwrap();
         fs::write(
             dir.join("manifest.toml"),
@@ -367,8 +340,8 @@ mod tests {
 
     #[test]
     fn builds_deterministic_bytes_across_calls() {
-        let td = TempDir::new("deterministic");
-        let dir = minimal_plugin_dir(&td);
+        let td = tempfile::tempdir().unwrap();
+        let dir = minimal_plugin_dir(td.path());
         let a = canonical_tar_gz(&dir, &name(), &version()).unwrap();
         let b = canonical_tar_gz(&dir, &name(), &version()).unwrap();
         assert_eq!(a, b, "same inputs must produce byte-identical output");
@@ -376,8 +349,8 @@ mod tests {
 
     #[test]
     fn skips_excluded_paths() {
-        let td = TempDir::new("exclude");
-        let dir = minimal_plugin_dir(&td);
+        let td = tempfile::tempdir().unwrap();
+        let dir = minimal_plugin_dir(td.path());
         fs::create_dir_all(dir.join("target")).unwrap();
         fs::write(dir.join("target/noise"), "ignore me").unwrap();
         fs::create_dir_all(dir.join("__pycache__")).unwrap();
@@ -398,7 +371,7 @@ mod tests {
 
     #[test]
     fn entries_sorted_by_archive_path() {
-        let td = TempDir::new("sort");
+        let td = tempfile::tempdir().unwrap();
         let dir = td.path().join("plugin");
         fs::create_dir_all(&dir).unwrap();
         // Create in out-of-order sequence; the archive must still be sorted.
@@ -427,8 +400,8 @@ mod tests {
 
     #[test]
     fn tar_format_is_ustar() {
-        let td = TempDir::new("ustar");
-        let dir = minimal_plugin_dir(&td);
+        let td = tempfile::tempdir().unwrap();
+        let dir = minimal_plugin_dir(td.path());
         let bytes = canonical_tar_gz(&dir, &name(), &version()).unwrap();
         let tar_bytes = gunzip(&bytes);
         // ustar magic is at offset 257 in the first header block: "ustar\0"
@@ -441,8 +414,8 @@ mod tests {
 
     #[test]
     fn every_entry_mtime_is_zero() {
-        let td = TempDir::new("mtime");
-        let dir = minimal_plugin_dir(&td);
+        let td = tempfile::tempdir().unwrap();
+        let dir = minimal_plugin_dir(td.path());
         let bytes = canonical_tar_gz(&dir, &name(), &version()).unwrap();
         let mut archive = tar::Archive::new(std::io::Cursor::new(gunzip(&bytes)));
         for entry in archive.entries_with_seek().unwrap() {
@@ -454,8 +427,8 @@ mod tests {
 
     #[test]
     fn every_entry_uid_gid_and_names_canonical() {
-        let td = TempDir::new("ids");
-        let dir = minimal_plugin_dir(&td);
+        let td = tempfile::tempdir().unwrap();
+        let dir = minimal_plugin_dir(td.path());
         let bytes = canonical_tar_gz(&dir, &name(), &version()).unwrap();
         let mut archive = tar::Archive::new(std::io::Cursor::new(gunzip(&bytes)));
         for entry in archive.entries_with_seek().unwrap() {
@@ -472,8 +445,8 @@ mod tests {
 
     #[test]
     fn file_modes_are_0644_for_non_exec() {
-        let td = TempDir::new("mode");
-        let dir = minimal_plugin_dir(&td);
+        let td = tempfile::tempdir().unwrap();
+        let dir = minimal_plugin_dir(td.path());
         let bytes = canonical_tar_gz(&dir, &name(), &version()).unwrap();
         let mut archive = tar::Archive::new(std::io::Cursor::new(gunzip(&bytes)));
         for entry in archive.entries_with_seek().unwrap() {
@@ -493,8 +466,8 @@ mod tests {
     #[cfg(unix)]
     fn exec_bit_preserved_as_0755() {
         use std::os::unix::fs::PermissionsExt;
-        let td = TempDir::new("exec");
-        let dir = minimal_plugin_dir(&td);
+        let td = tempfile::tempdir().unwrap();
+        let dir = minimal_plugin_dir(td.path());
         let script = dir.join("run.sh");
         fs::write(&script, "#!/bin/sh\necho hi\n").unwrap();
         fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
@@ -515,7 +488,7 @@ mod tests {
 
     #[test]
     fn rejects_path_over_ustar_limit() {
-        let td = TempDir::new("longpath");
+        let td = tempfile::tempdir().unwrap();
         let dir = td.path().join("plugin");
         fs::create_dir_all(&dir).unwrap();
         fs::write(
@@ -547,8 +520,8 @@ mod tests {
 
     #[test]
     fn gzip_mtime_is_zero() {
-        let td = TempDir::new("gzmtime");
-        let dir = minimal_plugin_dir(&td);
+        let td = tempfile::tempdir().unwrap();
+        let dir = minimal_plugin_dir(td.path());
         let bytes = canonical_tar_gz(&dir, &name(), &version()).unwrap();
         // Gzip MTIME is bytes 4..8 (little-endian).
         let mtime = u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
@@ -557,8 +530,8 @@ mod tests {
 
     #[test]
     fn gzip_fname_flag_is_not_set() {
-        let td = TempDir::new("gzfname");
-        let dir = minimal_plugin_dir(&td);
+        let td = tempfile::tempdir().unwrap();
+        let dir = minimal_plugin_dir(td.path());
         let bytes = canonical_tar_gz(&dir, &name(), &version()).unwrap();
         // FLG byte is at offset 3. FNAME is bit 3 (0x08). MUST be clear.
         let flg = bytes[3];
@@ -569,8 +542,8 @@ mod tests {
     fn round_trip_archive_contents() {
         // Not a canonicalization rule per se — sanity check that the archive
         // we produce is actually extractable and contains the expected files.
-        let td = TempDir::new("roundtrip");
-        let dir = minimal_plugin_dir(&td);
+        let td = tempfile::tempdir().unwrap();
+        let dir = minimal_plugin_dir(td.path());
         let bytes = canonical_tar_gz(&dir, &name(), &version()).unwrap();
         let listing = list_tar_paths(&bytes);
         assert!(listing.contains(&"p-0.1.0/manifest.toml".to_owned()));

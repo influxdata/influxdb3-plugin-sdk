@@ -139,36 +139,9 @@ mod tests {
     use influxdb3_plugin_schemas::{Index, Manifest};
     use std::fs;
 
-    // Temp dir helper: create a unique subdir under the system temp dir for
-    // each test. Deferred cleanup via a drop guard.
-    struct TempDir(PathBuf);
-
-    impl TempDir {
-        fn new(tag: &str) -> Self {
-            let base = std::env::temp_dir().join(format!(
-                "influxdb3-plugin-sdk-test-{}-{}",
-                tag,
-                std::process::id()
-            ));
-            let _ = fs::remove_dir_all(&base);
-            fs::create_dir_all(&base).unwrap();
-            Self(base)
-        }
-
-        fn path(&self) -> &Path {
-            &self.0
-        }
-    }
-
-    impl Drop for TempDir {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
-        }
-    }
-
     #[test]
     fn scaffold_process_writes_plugin_creates_three_files() {
-        let td = TempDir::new("process_writes");
+        let td = tempfile::tempdir().unwrap();
         let dir = td.path().join("my-plugin");
         plugin(&dir, "my-plugin", TriggerType::ProcessWrites).unwrap();
 
@@ -179,7 +152,7 @@ mod tests {
 
     #[test]
     fn scaffold_writes_valid_manifest() {
-        let td = TempDir::new("valid_manifest");
+        let td = tempfile::tempdir().unwrap();
         let dir = td.path().join("downsampler");
         plugin(&dir, "downsampler", TriggerType::ProcessWrites).unwrap();
 
@@ -191,7 +164,7 @@ mod tests {
 
     #[test]
     fn scaffold_rejects_invalid_name_up_front() {
-        let td = TempDir::new("bad_name");
+        let td = tempfile::tempdir().unwrap();
         let dir = td.path().join("bad-name-test");
         let err = plugin(&dir, "BAD_NAME", TriggerType::ProcessWrites).unwrap_err();
         assert!(matches!(
@@ -204,7 +177,7 @@ mod tests {
 
     #[test]
     fn scaffold_rejects_existing_files() {
-        let td = TempDir::new("existing");
+        let td = tempfile::tempdir().unwrap();
         let dir = td.path().join("plugin");
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join("manifest.toml"), "pre-existing").unwrap();
@@ -225,7 +198,7 @@ mod tests {
             TriggerType::ProcessScheduledCall,
             TriggerType::ProcessRequest,
         ] {
-            let td = TempDir::new(trigger.as_str());
+            let td = tempfile::tempdir().unwrap();
             let dir = td.path().join("p");
             plugin(&dir, "p", trigger).unwrap();
             let init = fs::read_to_string(dir.join("__init__.py")).unwrap();
@@ -240,7 +213,7 @@ mod tests {
 
     #[test]
     fn scaffold_registry_creates_parseable_index() {
-        let td = TempDir::new("registry");
+        let td = tempfile::tempdir().unwrap();
         let dir = td.path().join("my-registry");
         registry(&dir).unwrap();
 
@@ -260,7 +233,7 @@ mod tests {
     /// non-UTF8 paths. `url::Url::from_file_path` is the correct API.
     #[test]
     fn scaffold_registry_artifacts_url_is_valid_file_url() {
-        let td = TempDir::new("registry_url_valid");
+        let td = tempfile::tempdir().unwrap();
         let dir = td.path().join("my-registry");
         registry(&dir).unwrap();
 
@@ -281,7 +254,7 @@ mod tests {
 
     #[test]
     fn scaffold_registry_rejects_existing_index() {
-        let td = TempDir::new("registry_existing");
+        let td = tempfile::tempdir().unwrap();
         let dir = td.path().join("r");
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join("index.json"), "{}").unwrap();
