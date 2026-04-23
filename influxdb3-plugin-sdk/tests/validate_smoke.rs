@@ -175,3 +175,31 @@ fn validate_with_index_returns_manifest_when_no_collision() {
         .expect("no collision; should pass");
     assert_eq!(manifest.plugin.name.as_str(), "valid-plugin");
 }
+
+#[test]
+fn multi_cross_file_defects_collected_in_one_pass() {
+    let err = validate::plugin_dir(
+        &fixtures().join("invalid_plugins/multi_cross_file_defect"),
+    )
+    .unwrap_err();
+
+    let SdkError::ValidationErrors(errs) = err else {
+        panic!("expected ValidationErrors, got {err:?}");
+    };
+    assert_eq!(errs.len(), 2, "expected 2 errors, got {}: {:?}", errs.len(), errs);
+
+    let async_found = errs.iter().any(|e| {
+        matches!(
+            e,
+            ValidationError::AsyncTriggerFn { trigger: TriggerType::ProcessWrites }
+        )
+    });
+    let missing_found = errs.iter().any(|e| {
+        matches!(
+            e,
+            ValidationError::TriggerNotImplemented { trigger: TriggerType::ProcessScheduledCall }
+        )
+    });
+    assert!(async_found, "expected AsyncTriggerFn(ProcessWrites) among {errs:?}");
+    assert!(missing_found, "expected TriggerNotImplemented(ProcessScheduledCall) among {errs:?}");
+}

@@ -1,0 +1,14 @@
+# multi_cross_file_defect/manifest.toml — structurally valid.
+# Declares two triggers: one will be async_def (rejected), one will be
+# missing entirely (TriggerNotImplemented). Both defects live at the SDK
+# cross-file layer (post-structural), so validation must collect both.
+manifest_schema_version = "1.0"
+
+[plugin]
+name = "multi-defect"
+version = "0.1.0"
+description = "Fixture for multi-defect cross-file collection test."
+triggers = ["process_writes", "process_scheduled_call"]
+
+[dependencies]
+database_version = ">=3.0.0"
