@@ -9,11 +9,8 @@
 //! These types are not re-exported from the crate. The public API presents only
 //! the validated `Manifest` / `Index` / `IndexEntry` types.
 //!
-//! `#[allow(dead_code)]` covers the gap between Chunk 2 (types added) and
-//! Chunks 3/4 (types consumed by `parse_toml` / `parse_json`); to be removed
-//! once consumption lands.
-
-#![allow(dead_code)]
+//! Index-side raw types (`RawIndex`, `RawIndexEntry`) are still allowed
+//! `dead_code` until Chunk 4 wires up `Index::parse_json`; removed there.
 
 #[derive(Debug, serde::Deserialize)]
 pub(crate) struct RawManifest {

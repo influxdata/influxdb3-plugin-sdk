@@ -1,6 +1,6 @@
 //! Plugin manifest (`manifest.toml`) types and parsing.
 
-use crate::SchemaError;
+use crate::{PluginName, SchemaError};
 use std::fmt;
 use std::str::FromStr;
 
@@ -236,9 +236,17 @@ pub struct Manifest {
 impl Manifest {
     /// Parses a manifest from a TOML string.
     ///
-    /// Structural parsing via serde + newtype `Deserialize` impls runs first;
-    /// post-parse validation for rules serde can't express (non-empty triggers,
-    /// URL scheme allowlist) runs after.
+    /// Uses two-phase parsing: raw deserialization (serde-level syntax +
+    /// shape) followed by collection-mode structured validation. Returns
+    /// every validation error in a single pass via `SchemaErrors`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err(SchemaErrors)` if TOML parsing fails (single `TomlParse`
+    /// error, short-circuit), if the `manifest_schema_version` is unsupported
+    /// or malformed (single short-circuit error), or if any field-level
+    /// validator rejects a value (one or more errors collected with
+    /// field-path context).
     ///
     /// # Examples
     ///
@@ -261,34 +269,177 @@ impl Manifest {
     /// let manifest = Manifest::parse_toml(source).unwrap();
     /// assert_eq!(manifest.plugin.name.as_str(), "example");
     /// ```
-    pub fn parse_toml(input: &str) -> Result<Self, SchemaError> {
-        let parsed: Self =
-            toml::from_str(input).map_err(|source| SchemaError::TomlParse { source })?;
-        parsed.validate()?;
-        Ok(parsed)
-    }
+    pub fn parse_toml(input: &str) -> Result<Self, crate::SchemaErrors> {
+        use crate::raw::RawManifest;
+        use crate::{FieldPath, ReportedError, SchemaErrors};
+        use std::str::FromStr;
 
-    fn validate(&self) -> Result<(), SchemaError> {
-        if self.plugin.triggers.is_empty() {
-            return Err(SchemaError::EmptyTriggers);
+        // Phase 1: raw deserialize. Syntax / required-field errors are fatal.
+        let raw: RawManifest = toml::from_str(input)
+            .map_err(|source| SchemaErrors::single_at_root(SchemaError::TomlParse { source }))?;
+
+        // Phase 2a: schema-version short-circuit.
+        let schema_version =
+            ManifestSchemaVersion::from_str(&raw.manifest_schema_version).map_err(|e| {
+                SchemaErrors::new(vec![ReportedError::new(
+                    FieldPath::root().field("manifest_schema_version"),
+                    e,
+                )])
+            })?;
+
+        // Phase 2b: collect field-level errors.
+        let mut errors = Vec::new();
+        let plugin_path = FieldPath::root().field("plugin");
+        let deps_path = FieldPath::root().field("dependencies");
+
+        let name = PluginName::from_str(&raw.plugin.name);
+        let name_ok = name.as_ref().ok().cloned();
+        if let Err(e) = name {
+            errors.push(ReportedError::new(plugin_path.field("name"), e));
         }
-        for url in [
-            &self.plugin.homepage,
-            &self.plugin.repository,
-            &self.plugin.documentation,
-        ]
-        .into_iter()
-        .flatten()
-        {
-            let scheme = url.scheme();
-            if !matches!(scheme, "http" | "https") {
-                return Err(SchemaError::InvalidUrlScheme {
-                    url: url.to_string(),
-                    scheme: scheme.to_owned(),
-                });
+
+        let version = semver::Version::parse(&raw.plugin.version).map_err(|source| {
+            SchemaError::InvalidVersion {
+                version: raw.plugin.version.clone(),
+                source,
+            }
+        });
+        let version_ok = version.as_ref().ok().cloned();
+        if let Err(e) = version {
+            errors.push(ReportedError::new(plugin_path.field("version"), e));
+        }
+
+        let description = Description::try_new(&raw.plugin.description);
+        let description_ok = description.as_ref().ok().cloned();
+        if let Err(e) = description {
+            errors.push(ReportedError::new(plugin_path.field("description"), e));
+        }
+
+        // Triggers: non-empty + each entry must parse as TriggerType.
+        let mut triggers_ok: Vec<TriggerType> = Vec::with_capacity(raw.plugin.triggers.len());
+        if raw.plugin.triggers.is_empty() {
+            errors.push(ReportedError::new(
+                plugin_path.field("triggers"),
+                SchemaError::EmptyTriggers,
+            ));
+        } else {
+            for (i, trig) in raw.plugin.triggers.iter().enumerate() {
+                match TriggerType::from_str(trig) {
+                    Ok(t) => triggers_ok.push(t),
+                    Err(e) => errors.push(ReportedError::new(
+                        plugin_path.field("triggers").index(i),
+                        e,
+                    )),
+                }
             }
         }
-        Ok(())
+
+        // Optional URL fields: when present, must parse + use http/https scheme.
+        let homepage =
+            parse_optional_http_url_from_path(&raw.plugin.homepage, &mut errors, &plugin_path, "homepage");
+        let repository = parse_optional_http_url_from_path(
+            &raw.plugin.repository,
+            &mut errors,
+            &plugin_path,
+            "repository",
+        );
+        let documentation = parse_optional_http_url_from_path(
+            &raw.plugin.documentation,
+            &mut errors,
+            &plugin_path,
+            "documentation",
+        );
+
+        // Database version range.
+        let database_version =
+            semver::VersionReq::parse(&raw.dependencies.database_version).map_err(|source| {
+                SchemaError::InvalidDatabaseVersion {
+                    range: raw.dependencies.database_version.clone(),
+                    source,
+                }
+            });
+        let database_version_ok = database_version.as_ref().ok().cloned();
+        if let Err(e) = database_version {
+            errors.push(ReportedError::new(deps_path.field("database_version"), e));
+        }
+
+        // Python requirements.
+        let mut python_ok: Vec<PythonRequirement> =
+            Vec::with_capacity(raw.dependencies.python.len());
+        for (i, p) in raw.dependencies.python.iter().enumerate() {
+            match PythonRequirement::try_new(p) {
+                Ok(pr) => python_ok.push(pr),
+                Err(e) => errors.push(ReportedError::new(
+                    deps_path.field("python").index(i),
+                    e,
+                )),
+            }
+        }
+
+        if !errors.is_empty() {
+            return Err(SchemaErrors::new(errors));
+        }
+
+        // Safe unwraps: all `_ok` variables are `Some(_)` because no errors
+        // were pushed in their respective branches.
+        Ok(Manifest {
+            manifest_schema_version: schema_version,
+            plugin: PluginMetadata {
+                name: name_ok.unwrap(),
+                version: version_ok.unwrap(),
+                description: description_ok.unwrap(),
+                triggers: triggers_ok,
+                homepage,
+                repository,
+                documentation,
+            },
+            dependencies: Dependencies {
+                database_version: database_version_ok.unwrap(),
+                python: python_ok,
+            },
+        })
+    }
+}
+
+/// Parses an optional URL string field, requiring `http` or `https` scheme.
+///
+/// Returns `None` if the input is `None` (field absent). Returns `Some(url)`
+/// on success. Pushes a `ReportedError` and returns `None` on parse or
+/// scheme failure. `pub(crate)` so `index.rs` can reuse it for per-entry
+/// URL validation.
+pub(crate) fn parse_optional_http_url_from_path(
+    raw: &Option<String>,
+    errors: &mut Vec<crate::ReportedError>,
+    parent: &crate::FieldPath,
+    field_name: &str,
+) -> Option<url::Url> {
+    use crate::ReportedError;
+
+    let raw = raw.as_deref()?;
+    match url::Url::parse(raw) {
+        Ok(u) => match u.scheme() {
+            "http" | "https" => Some(u),
+            other => {
+                errors.push(ReportedError::new(
+                    parent.field(field_name),
+                    SchemaError::InvalidUrlScheme {
+                        url: raw.to_owned(),
+                        scheme: other.to_owned(),
+                    },
+                ));
+                None
+            }
+        },
+        Err(source) => {
+            errors.push(ReportedError::new(
+                parent.field(field_name),
+                SchemaError::InvalidUrl {
+                    url: raw.to_owned(),
+                    source,
+                },
+            ));
+            None
+        }
     }
 }
 
@@ -536,8 +687,10 @@ manifest_schema_version = "1.0"
 [dependencies]
 database_version = ">=3.2.0"
 "#;
-        let err = Manifest::parse_toml(missing).unwrap_err();
-        assert_matches!(err, SchemaError::TomlParse { .. });
+        let errors = Manifest::parse_toml(missing).unwrap_err();
+        assert_eq!(errors.errors().len(), 1);
+        assert_eq!(errors.errors()[0].path.as_str(), "");
+        assert_matches!(errors.errors()[0].error, SchemaError::TomlParse { .. });
     }
 
     #[test]
@@ -552,8 +705,10 @@ triggers = ["process_writes"]
 [dependencies]
 database_version = ">=3.2.0"
 "#;
-        let err = Manifest::parse_toml(missing).unwrap_err();
-        assert_matches!(err, SchemaError::TomlParse { .. });
+        let errors = Manifest::parse_toml(missing).unwrap_err();
+        assert_eq!(errors.errors().len(), 1);
+        assert_eq!(errors.errors()[0].path.as_str(), "");
+        assert_matches!(errors.errors()[0].error, SchemaError::TomlParse { .. });
     }
 
     #[test]
@@ -589,6 +744,84 @@ database_version = ">=3.2.0,<4.0.0"
         let m = Manifest::parse_toml(&src).unwrap();
         assert_eq!(m.manifest_schema_version.minor(), 1);
     }
+
+    /// Two-phase parse: a manifest with N distinct field-level defects
+    /// returns exactly N errors in one pass. Guards against accidental
+    /// short-circuiting in the validation phase.
+    #[test]
+    fn collects_multiple_defects_in_one_pass() {
+        // Bad: uppercase name, non-SemVer version, unknown trigger, ftp URL.
+        // All four should be reported in a single `SchemaErrors`.
+        let input = r#"
+manifest_schema_version = "1.0"
+
+[plugin]
+name = "Bad_Name"
+version = "1.2"
+description = "multi-defect fixture"
+triggers = ["on_startup"]
+homepage = "ftp://bad"
+
+[dependencies]
+database_version = ">=3.0.0"
+"#;
+        let errors = Manifest::parse_toml(input).expect_err("should fail");
+        let e = errors.errors();
+        assert_eq!(
+            e.len(),
+            4,
+            "expected 4 errors, got {}: {:?}",
+            e.len(),
+            e.iter().map(|r| &r.error).collect::<Vec<_>>()
+        );
+
+        let paths: Vec<&str> = e.iter().map(|r| r.path.as_str()).collect();
+        assert!(
+            paths.contains(&"plugin.name"),
+            "missing plugin.name: {paths:?}"
+        );
+        assert!(
+            paths.contains(&"plugin.version"),
+            "missing plugin.version: {paths:?}"
+        );
+        assert!(
+            paths.contains(&"plugin.triggers[0]"),
+            "missing plugin.triggers[0]: {paths:?}"
+        );
+        assert!(
+            paths.contains(&"plugin.homepage"),
+            "missing plugin.homepage: {paths:?}"
+        );
+    }
+
+    /// Schema-version short-circuit: an unsupported major skips field-level
+    /// validation entirely. Returns exactly 1 error even when the rest of
+    /// the document has additional defects.
+    #[test]
+    fn schema_version_mismatch_short_circuits_with_single_error() {
+        let input = r#"
+manifest_schema_version = "99.0"
+
+[plugin]
+name = "Bad_Name"
+version = "1.0.0"
+description = "x"
+triggers = ["process_writes"]
+
+[dependencies]
+database_version = ">=3.0.0"
+"#;
+        let errors = Manifest::parse_toml(input).expect_err("should fail");
+        assert_eq!(
+            errors.errors().len(),
+            1,
+            "short-circuit: expected exactly 1 error"
+        );
+        assert_matches::assert_matches!(
+            errors.errors()[0].error,
+            SchemaError::UnsupportedManifestMajor { .. }
+        );
+    }
 }
 
 #[cfg(test)]
@@ -622,8 +855,10 @@ database_version = ">=3.0.0"
     #[case("documentation", r#""s3://bucket""#)]
     fn rejects_non_http_urls(#[case] field: &str, #[case] value: &str) {
         let manifest = with_fragment(field, value);
-        let err = Manifest::parse_toml(&manifest).unwrap_err();
-        assert_matches!(err, SchemaError::InvalidUrlScheme { .. });
+        let errors = Manifest::parse_toml(&manifest).unwrap_err();
+        assert_eq!(errors.errors().len(), 1);
+        assert_matches!(errors.errors()[0].error, SchemaError::InvalidUrlScheme { .. });
+        assert_eq!(errors.errors()[0].path.as_str(), &format!("plugin.{field}"));
     }
 
     #[rstest]
@@ -651,16 +886,18 @@ triggers = []
 [dependencies]
 database_version = ">=3.0.0"
 "#;
-        let err = Manifest::parse_toml(input).unwrap_err();
-        assert_matches!(err, SchemaError::EmptyTriggers);
+        let errors = Manifest::parse_toml(input).unwrap_err();
+        assert_eq!(errors.errors().len(), 1);
+        assert_matches!(errors.errors()[0].error, SchemaError::EmptyTriggers);
+        assert_eq!(errors.errors()[0].path.as_str(), "plugin.triggers");
     }
 
-    /// Invalid `dependencies.database_version` (not a parseable SemVer
-    /// range) propagates from `semver::VersionReq::deserialize` through
-    /// serde — it surfaces as `SchemaError::TomlParse`. (See the schemas
-    /// crate's "Error policy for invalid parsed fields" Spec Coverage note
-    /// in README.md for why this isn't `InvalidDatabaseVersion` directly:
-    /// serde's `Error::custom` wraps the inner error.)
+    /// Invalid `dependencies.database_version` now surfaces as
+    /// `SchemaError::InvalidDatabaseVersion` directly with the
+    /// `dependencies.database_version` path. The two-phase parser routes
+    /// the raw String through `semver::VersionReq::parse` and wraps any
+    /// failure into the dedicated structured variant — no more
+    /// `serde::Error::custom` flattening.
     #[test]
     fn rejects_invalid_database_version() {
         let input = r#"
@@ -675,7 +912,15 @@ triggers = ["process_writes"]
 [dependencies]
 database_version = ">=not-a-version"
 "#;
-        let err = Manifest::parse_toml(input).unwrap_err();
-        assert_matches!(err, SchemaError::TomlParse { .. });
+        let errors = Manifest::parse_toml(input).unwrap_err();
+        assert_eq!(errors.errors().len(), 1);
+        assert_matches!(
+            errors.errors()[0].error,
+            SchemaError::InvalidDatabaseVersion { .. }
+        );
+        assert_eq!(
+            errors.errors()[0].path.as_str(),
+            "dependencies.database_version"
+        );
     }
 }
