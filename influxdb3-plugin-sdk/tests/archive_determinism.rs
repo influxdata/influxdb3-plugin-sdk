@@ -73,17 +73,14 @@ struct PluginSpec {
 }
 
 fn arb_filename() -> impl Strategy<Value = String> {
-    // Short lowercase names, avoiding reserved exclusion tokens and the two
-    // required fixture files. Add `.py` suffix to keep shapes realistic.
+    // Short lowercase names with `.py` suffix. After the suffix, the output
+    // can't collide with directory-exclusion tokens (`target`, `.git`,
+    // `__pycache__` — which match path components, not filenames) or with
+    // the required fixture files (`manifest.toml` / `__init__.py` —
+    // different extension), so no post-map filters are needed.
     proptest::string::string_regex("[a-z][a-z0-9]{0,6}")
         .unwrap()
-        .prop_filter("excluded pattern", |s| {
-            s != "target" && s != ".git" && s != "__pycache__"
-        })
         .prop_map(|s| format!("{s}.py"))
-        .prop_filter("reserved fixture name", |s| {
-            s != "manifest.toml" && s != "__init__.py"
-        })
 }
 
 fn arb_contents() -> impl Strategy<Value = Vec<u8>> {

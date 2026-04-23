@@ -10,8 +10,9 @@
 
 #![allow(unused_crate_dependencies)]
 
-use influxdb3_plugin_schemas::{ArtifactsUrl, Index, IndexSchemaVersion};
+use influxdb3_plugin_schemas::{ArtifactsUrl, Index, IndexSchemaVersion, TriggerType};
 use influxdb3_plugin_sdk::package::package_plugin;
+use influxdb3_plugin_sdk::scaffold;
 use std::fs;
 use std::path::PathBuf;
 
@@ -111,6 +112,31 @@ fn archive_is_extractable_and_contains_expected_entries() {
         .collect();
     assert!(paths.contains(&"valid-plugin-0.1.0/manifest.toml".to_owned()));
     assert!(paths.contains(&"valid-plugin-0.1.0/__init__.py".to_owned()));
+}
+
+/// End-to-end canary: the scaffold template's output must itself be
+/// valid and packageable. Catches "template produces something that won't
+/// validate" regressions — a bug class that single-layer tests miss.
+/// Testing-spec Section 5 #12.
+#[test]
+fn scaffold_then_validate_then_package_round_trips() {
+    let td_root = std::env::temp_dir().join(format!(
+        "influxdb3-plugin-sdk-scaffold-to-package-{}",
+        std::process::id()
+    ));
+    let _ = fs::remove_dir_all(&td_root);
+    fs::create_dir_all(&td_root).unwrap();
+
+    let plugin_dir = td_root.join("scaffolded");
+    scaffold::plugin(&plugin_dir, "scaffolded", TriggerType::ProcessWrites)
+        .expect("scaffold should succeed");
+
+    let out =
+        package_plugin(&plugin_dir, empty_index()).expect("scaffolded plugin must package cleanly");
+    assert_eq!(out.new_entry.name.as_str(), "scaffolded");
+    assert_eq!(out.new_entry.version, semver::Version::new(0, 1, 0));
+
+    let _ = fs::remove_dir_all(&td_root);
 }
 
 // Verify the pipeline writes no files — the library layer owns bytes only.

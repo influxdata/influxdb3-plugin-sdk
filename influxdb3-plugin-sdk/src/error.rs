@@ -313,4 +313,57 @@ mod tests {
             SdkError::Schema(SchemaError::DescriptionEmpty)
         ));
     }
+
+    /// Testing-spec S3 #7: schemas errors wrapped in `SdkError::Schema` must
+    /// preserve the structured payload so callers can pattern-match on the
+    /// inner `SchemaError` variant. With `#[error(transparent)]`, `.source()`
+    /// delegates through — so the correct propagation test is
+    /// pattern-matching on the wrapper variant.
+    ///
+    /// Additionally, for schemas variants that themselves carry a
+    /// `#[source]` (e.g., `InvalidVersion` wraps `semver::Error`), the full
+    /// `Error::source()` chain reaches the bottom.
+    #[test]
+    fn schemas_error_structured_payload_preserved_via_sdk_schema() {
+        use std::error::Error as _;
+
+        // 1. Field-carrying variant: pattern-matching recovers the fields.
+        let wrapped = SdkError::from(SchemaError::InvalidPluginName {
+            name: "Bad-Name".into(),
+        });
+        match &wrapped {
+            SdkError::Schema(SchemaError::InvalidPluginName { name }) => {
+                assert_eq!(name, "Bad-Name");
+            }
+            other => panic!("expected SdkError::Schema(InvalidPluginName), got {other:?}"),
+        }
+        // `#[error(transparent)]`: Display passes through unchanged.
+        assert!(wrapped.to_string().contains("Bad-Name"));
+
+        // 2. Nested `#[source]`: schemas variant wraps `semver::Error`.
+        //    `Error::source()` on `SdkError::Schema` delegates through
+        //    `transparent` to the SchemaError's own `#[source]`, reaching
+        //    the underlying semver::Error at the bottom.
+        let sem_err = semver::Version::parse("1.2").unwrap_err();
+        let wrapped = SdkError::from(SchemaError::InvalidVersion {
+            version: "1.2".into(),
+            source: sem_err,
+        });
+        let bottom = wrapped
+            .source()
+            .expect("nested source reaches semver::Error");
+        assert!(bottom.downcast_ref::<semver::Error>().is_some());
+    }
+
+    /// Testing-spec S3 #7 mirror: `ValidationError::Schema` preserves the
+    /// inner variant via pattern matching. `#[from] SchemaError` makes
+    /// `?`-conversions ergonomic in future structural-collection code.
+    #[test]
+    fn schemas_error_structured_payload_preserved_via_validation_schema() {
+        let wrapped: ValidationError = SchemaError::DescriptionEmpty.into();
+        assert!(matches!(
+            wrapped,
+            ValidationError::Schema(SchemaError::DescriptionEmpty)
+        ));
+    }
 }
