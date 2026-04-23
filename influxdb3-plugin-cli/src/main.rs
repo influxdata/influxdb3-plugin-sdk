@@ -2,6 +2,7 @@
 // lib uses anyhow/schemas/sdk; the bin does not name them directly. Same
 // `use _ as _;` workaround as `lib.rs` to satisfy `unused_crate_dependencies`
 // on the bin target.
+use anstyle as _;
 use anyhow as _;
 use influxdb3_plugin_schemas as _;
 use influxdb3_plugin_sdk as _;

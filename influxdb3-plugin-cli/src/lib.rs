@@ -12,6 +12,7 @@
 //! parser drift from a parallel direct dependency on
 //! `influxdb3-plugin-schemas`.
 
+use anstyle as _;
 // `tokio` is a bin-only dep (main.rs's `#[tokio::main]`); the lib surface
 // itself awaits without spawning. `unused_crate_dependencies` fires on the
 // lib target unless we acknowledge the dep here. Same pattern as the

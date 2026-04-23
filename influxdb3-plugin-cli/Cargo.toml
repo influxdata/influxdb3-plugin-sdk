@@ -20,6 +20,7 @@ name = "influxdb3-plugin"
 path = "src/main.rs"
 
 [dependencies]
+anstyle.workspace = true
 anyhow.workspace = true
 clap.workspace = true
 influxdb3-plugin-schemas.workspace = true
