@@ -27,6 +27,7 @@ url.workspace = true
 walkdir.workspace = true
 
 [dev-dependencies]
+filetime.workspace = true
 insta.workspace = true
 pretty_assertions.workspace = true
 proptest.workspace = true

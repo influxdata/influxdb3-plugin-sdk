@@ -25,6 +25,8 @@
 // as the schemas crate.
 #[cfg(test)]
 use proptest as _;
+#[cfg(test)]
+use filetime as _;
 
 mod error;
 

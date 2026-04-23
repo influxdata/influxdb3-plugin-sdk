@@ -621,6 +621,7 @@ dependencies = [
 name = "influxdb3-plugin-sdk"
 version = "0.1.0"
 dependencies = [
+ "filetime",
  "flate2",
  "influxdb3-plugin-schemas",
  "insta",
