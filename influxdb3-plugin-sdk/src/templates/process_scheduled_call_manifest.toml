@@ -1,0 +1,10 @@
+manifest_schema_version = "1.0"
+
+[plugin]
+name = "{{name}}"
+version = "0.1.0"
+description = "A new scheduled-call plugin."
+triggers = ["process_scheduled_call"]
+
+[dependencies]
+database_version = ">=3.0.0"
