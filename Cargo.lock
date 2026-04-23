@@ -585,8 +585,12 @@ dependencies = [
  "clap",
  "influxdb3-plugin-schemas",
  "influxdb3-plugin-sdk",
+ "insta",
  "predicates",
  "rstest",
+ "serde",
+ "serde_json",
+ "tempfile",
  "tokio",
 ]
 

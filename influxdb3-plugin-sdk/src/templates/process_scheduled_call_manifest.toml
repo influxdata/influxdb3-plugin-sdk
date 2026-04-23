@@ -7,4 +7,4 @@ description = "A new scheduled-call plugin."
 triggers = ["process_scheduled_call"]
 
 [dependencies]
-database_version = ">=3.0.0"
+database_version = "{{database_version}}"

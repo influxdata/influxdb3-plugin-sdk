@@ -40,7 +40,9 @@ pub struct PluginConfig {
 
 #[derive(Debug, clap::Subcommand)]
 enum Command {
-    // Populated in D30 (`new`), D31 (`validate`), D32 (`package`),
+    /// Scaffold a new plugin or registry from a built-in template.
+    New(crate::commands::new::Args),
+    // Remaining variants land in D31 (`validate`), D32 (`package`),
     // D33 (`yank`).
 }
 
@@ -52,6 +54,8 @@ impl PluginConfig {
     /// switch. Returns through `Result` per S2-7 (no `std::process::exit`
     /// from the library surface).
     pub async fn run(self) -> anyhow::Result<()> {
-        match self.command {}
+        match self.command {
+            Command::New(args) => args.run(),
+        }
     }
 }

@@ -122,7 +122,7 @@ fn archive_is_extractable_and_contains_expected_entries() {
 fn scaffold_then_validate_then_package_round_trips() {
     let td = tempfile::tempdir().unwrap();
     let plugin_dir = td.path().join("scaffolded");
-    scaffold::plugin(&plugin_dir, "scaffolded", TriggerType::ProcessWrites)
+    scaffold::plugin(&plugin_dir, "scaffolded", TriggerType::ProcessWrites, None)
         .expect("scaffold should succeed");
 
     let out =

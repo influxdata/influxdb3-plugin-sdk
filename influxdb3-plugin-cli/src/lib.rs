@@ -18,17 +18,17 @@
 // `schemas` crate's `proptest` guard.
 use tokio as _;
 
-// `sdk` becomes a real lib-side dep once D30+ wires command implementations.
-// Acknowledged here so D27's lib target compiles cleanly.
-use influxdb3_plugin_sdk as _;
-
-// `assert_cmd` / `predicates` are spawn-and-assert helpers used only in
-// external integration-test files under `tests/`. The lib's own test
+// `assert_cmd` / `predicates` / `insta` / `tempfile` are integration-test
+// helpers used only in external `tests/*.rs` files. The lib's own test
 // target sees them as declared dev-deps but never names them.
 #[cfg(test)]
 use assert_cmd as _;
 #[cfg(test)]
+use insta as _;
+#[cfg(test)]
 use predicates as _;
+#[cfg(test)]
+use tempfile as _;
 
 pub use config::PluginConfig;
 
@@ -45,6 +45,7 @@ pub use influxdb3_plugin_schemas::{
 };
 
 mod color;
+mod commands;
 mod config;
 mod exit;
 mod output;
