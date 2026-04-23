@@ -73,3 +73,39 @@ fn validate_human_failure_still_writes_summary_on_stderr() {
         .code(1)
         .stderr(predicate::str::contains("validation failed"));
 }
+
+#[test]
+fn validate_human_diagnostics_do_not_duplicate_field_prefix() {
+    // Construct a plugin whose manifest has a bad `plugin.name`, so
+    // the diagnostic message starts with "plugin.name: plugin name ...".
+    // The renderer must NOT prepend another "plugin.name:" on top of that.
+    // The per-diagnostic lines land on stdout (see `render_human` in
+    // `commands/validate.rs`); stderr carries only the anyhow summary.
+    let tmp = scaffold_bad_plugin();
+    let plugin_dir = tmp.path().join("bad");
+    let assert = Command::cargo_bin("influxdb3-plugin")
+        .unwrap()
+        .args([
+            "validate",
+            plugin_dir.to_str().unwrap(),
+            "--output",
+            "human",
+        ])
+        .assert()
+        .code(1);
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout);
+    let stderr = String::from_utf8_lossy(&assert.get_output().stderr);
+    assert!(
+        !stdout.contains("plugin.name: plugin.name:"),
+        "stdout duplicates the field prefix: {stdout}"
+    );
+    assert!(
+        !stderr.contains("plugin.name: plugin.name:"),
+        "stderr duplicates the field prefix: {stderr}"
+    );
+    // Sanity: the single occurrence is still present on stdout.
+    assert!(
+        stdout.contains("plugin.name: plugin name"),
+        "stdout should contain the single field-prefixed message: {stdout}"
+    );
+}

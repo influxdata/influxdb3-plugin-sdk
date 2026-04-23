@@ -16,12 +16,12 @@
 
 use clap::Args as ClapArgs;
 use influxdb3_plugin_schemas::Index;
-use influxdb3_plugin_sdk::{SdkError, ValidationError, validate};
+use influxdb3_plugin_sdk::{SdkError, validate};
 use std::path::PathBuf;
 
 use crate::output::{
     Env, OutputMode, RealEnv,
-    json::{Diagnostic, ValidateOutput},
+    json::ValidateOutput,
     resolve_output_mode,
 };
 
@@ -104,38 +104,9 @@ fn run_validation(args: &Args) -> anyhow::Result<ValidateOutput> {
             diagnostics: Vec::new(),
         }),
         Err(SdkError::ValidationErrors(errs)) => Ok(ValidateOutput {
-            diagnostics: errs.iter().map(diagnostic_from).collect(),
+            diagnostics: errs.iter().map(crate::diag_render::diagnostic_from).collect(),
         }),
         Err(other) => Err(other.into()),
-    }
-}
-
-fn diagnostic_from(err: &ValidationError) -> Diagnostic {
-    let variant = err.variant_name();
-    let message = err.to_string();
-    let field = match err {
-        ValidationError::SchemaReported(reported) => {
-            let p = reported.path.as_str();
-            if p.is_empty() {
-                None
-            } else {
-                Some(p.to_owned())
-            }
-        }
-        ValidationError::MissingRequiredFile { file } => Some(file.clone()),
-        ValidationError::PythonParse { .. }
-        | ValidationError::TriggerNotImplemented { .. }
-        | ValidationError::AsyncTriggerFn { .. } => Some("__init__.py".to_owned()),
-        ValidationError::NameVersionConflict { name, version } => Some(format!("{name}@{version}")),
-        // `ValidationError` is `#[non_exhaustive]`; future variants
-        // surface with `variant_name` + `Display` only until the CLI
-        // grows explicit handling for them.
-        _ => None,
-    };
-    Diagnostic {
-        variant,
-        message,
-        field,
     }
 }
 
@@ -151,28 +122,7 @@ fn render_human(outcome: &ValidateOutput, writer: &mut impl std::io::Write) -> s
     if outcome.diagnostics.is_empty() {
         writeln!(writer, "validation passed: 0 diagnostics")?;
     } else {
-        writeln!(
-            writer,
-            "validation failed: {} diagnostic(s)",
-            outcome.diagnostics.len()
-        )?;
-        for (i, d) in outcome.diagnostics.iter().enumerate() {
-            match &d.field {
-                Some(field) => {
-                    writeln!(
-                        writer,
-                        "  {}. [{}] {}: {}",
-                        i + 1,
-                        d.variant,
-                        field,
-                        d.message
-                    )?;
-                }
-                None => {
-                    writeln!(writer, "  {}. [{}] {}", i + 1, d.variant, d.message)?;
-                }
-            }
-        }
+        crate::diag_render::render_human(&outcome.diagnostics, writer)?;
     }
     Ok(())
 }

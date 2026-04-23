@@ -62,5 +62,6 @@ mod cli_error;
 mod color;
 mod commands;
 mod config;
+mod diag_render;
 mod exit;
 mod output;
