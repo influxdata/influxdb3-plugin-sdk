@@ -138,9 +138,12 @@ fn check_no_existing(paths: &[&PathBuf]) -> Result<(), SdkError> {
     for path in paths {
         if path.exists() {
             return Err(SdkError::Io {
+                // Bare message — the outer `SdkError::Io`'s Display adds
+                // ` at {path}` via `path_suffix`, so including the path here
+                // too produces a duplicate in the rendered error chain.
                 source: std::io::Error::new(
                     std::io::ErrorKind::AlreadyExists,
-                    format!("{} already exists", path.display()),
+                    "already exists",
                 ),
                 path: Some((*path).clone()),
             });

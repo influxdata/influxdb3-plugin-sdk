@@ -314,3 +314,34 @@ fn new_failure_in_json_mode_keeps_stdout_empty() {
         "stderr MUST carry the human-readable error (S2-15)"
     );
 }
+
+#[test]
+fn new_conflict_error_mentions_path_once() {
+    use assert_cmd::Command;
+    use std::fs;
+    use tempfile::TempDir;
+
+    let tmp = TempDir::new().unwrap();
+    let dir = tmp.path().join("conflict");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join("manifest.toml"), "pre-existing").unwrap();
+
+    let output = Command::cargo_bin("influxdb3-plugin")
+        .unwrap()
+        .args([
+            "new",
+            "process_writes",
+            dir.to_str().unwrap(),
+            "--output",
+            "human",
+        ])
+        .output()
+        .unwrap();
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let occurrences = stderr.matches(dir.to_str().unwrap()).count();
+    assert_eq!(
+        occurrences, 1,
+        "stderr should mention the conflicting path exactly once; was:\n{stderr}"
+    );
+}
