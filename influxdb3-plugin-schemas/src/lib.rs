@@ -18,9 +18,9 @@
 //! a schema major are minor bumps; breaking schema changes bump the crate's
 //! major.
 //!
-//! The crate is currently unpublished pending the project's license
-//! decision. The stability commitment above applies to the types defined
-//! here and will be anchored at first publish.
+//! The crate is licensed `MIT OR Apache-2.0`. It is currently unpublished
+//! pending the SDK's go-public timing; the stability commitment above
+//! applies to the types defined here and will be anchored at first publish.
 
 // `proptest` is used only in the `tests/determinism.rs` integration test, not
 // in any inline `#[cfg(test)]` module. The lib crate's test target still sees

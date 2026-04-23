@@ -10,12 +10,6 @@ ignore = []
 
 [licenses]
 version = 2
-# Skip license checks on our own workspace crates. We intentionally omit
-# `license = "..."` from `[workspace.package]` because the project is
-# private-repo-first and the final license is not yet decided (see plan's
-# "Design decisions" section). When we go public, we'll pick a license, add
-# LICENSE file(s), and remove this block.
-private = { ignore = true }
 unused-allowed-license = "warn"
 allow = [
     "Apache-2.0",

@@ -15,8 +15,43 @@ The crate exposes three core types plus their supporting newtypes:
 - `Index` / `IndexEntry` — parsed `index.json` with canonical serialization
 - `PluginId` — the `(source, name, version)` identity tuple
 
-All parsing is fail-fast; multi-error collection is handled by
-`influxdb3-plugin-sdk`.
+`Manifest::parse_toml` and `Index::parse_json` perform two-phase parsing:
+syntax/required-field decoding first, then field-level validation with
+multi-error collection. Structural syntax failures still come back as a
+single root-level `SchemaError::TomlParse` / `SchemaError::JsonParse`, but
+field-level defects in one document are returned together as
+`SchemaErrors`.
+
+## Parsing And Errors
+
+- `Manifest::parse_toml` returns `Result<Manifest, SchemaErrors>`.
+- `Index::parse_json` returns `Result<Index, SchemaErrors>`.
+- Each `SchemaErrors` contains one or more `ReportedError` values, each with:
+  - `path`: the field path where the error was detected
+  - `error`: the underlying `SchemaError` variant
+
+Direct callers that previously matched a single `SchemaError` should now
+iterate the collection:
+
+```rust
+use influxdb3_plugin_schemas::{Manifest, SchemaError};
+
+match Manifest::parse_toml(source) {
+    Ok(manifest) => { /* use manifest */ }
+    Err(errors) => {
+        for reported in &errors {
+            match &reported.error {
+                SchemaError::InvalidPluginName { .. } => {
+                    eprintln!("{}: invalid plugin name", reported.path);
+                }
+                other => {
+                    eprintln!("{}: {other}", reported.path);
+                }
+            }
+        }
+    }
+}
+```
 
 ## Stability
 
@@ -25,9 +60,9 @@ Schema formats evolve independently via `manifest_schema_version` and
 `index_schema_version` fields; this crate exposes those version types as
 first-class.
 
-The crate is currently unpublished pending the project's license decision.
-The stability commitment applies to the types defined here and will be
-anchored at first publish.
+The crate is licensed `MIT OR Apache-2.0`. It is currently unpublished
+pending the SDK's go-public timing; the stability commitment applies to
+the types defined here and will be anchored at first publish.
 
 ## Spec Coverage
 
@@ -64,18 +99,17 @@ when a deliberate decision lands or a deviation is reconciled.
 
 ### Error policy for invalid parsed fields
 
-- **Approved policy:** preserve dedicated `SchemaError` variants where
-  defined (`InvalidPluginName`, `InvalidVersion`, `InvalidDatabaseVersion`,
-  `InvalidPythonRequirement`, `InvalidUrl`, `InvalidUrlScheme`,
-  `InvalidHash`, etc.). For fields validated through serde
-  (newtype `Deserialize` impls calling `Error::custom`), the inner variant
-  is wrapped in `SchemaError::TomlParse` / `JsonParse` — a known limitation
-  inherited from serde's error model.
-- **Remaining gaps:** structured-error preservation through serde would
-  require two-phase parsing (TOML/JSON → Value → validation). Tracked as
-  a post-v1 refactor in Plan 2's deferred section. Tests assert on the
-  wrapper variant for serde-routed errors, on the dedicated variant for
-  validator-method-routed errors.
+- **Approved policy:** the parser entry points preserve dedicated
+  `SchemaError` variants where defined (`InvalidPluginName`,
+  `InvalidVersion`, `InvalidDatabaseVersion`, `InvalidPythonRequirement`,
+  `InvalidUrl`, `InvalidUrlScheme`, `InvalidHash`, etc.) and attach field
+  paths via `ReportedError`.
+- **Boundary:** syntax-level and required-field decode failures still
+  surface as root-level `SchemaError::TomlParse` / `JsonParse`.
+- **Remaining gaps:** callers that bypass `parse_toml` / `parse_json` and
+  deserialize public schema types directly through serde still inherit
+  serde's wrapper-style error model rather than field-path-aware
+  `ReportedError`s.
 
 ### SemVer precedence in canonical ordering
 

@@ -4,7 +4,10 @@ version.workspace = true
 authors.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+license.workspace = true
 description = "InfluxDB 3 plugin SDK CLI — placeholder; to be implemented in Plan 3."
+# publish = false until SDK ships to a public registry. License declared via
+# [workspace.package]; no deny.toml carve-out required.
 publish = false
 
 [[bin]]
