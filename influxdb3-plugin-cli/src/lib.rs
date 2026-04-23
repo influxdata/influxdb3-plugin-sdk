@@ -1,0 +1,39 @@
+//! Public embedding surface for the InfluxDB 3 plugin CLI.
+//!
+//! [`PluginConfig`] is a clap-derived, semver-stable type. A future
+//! phase-2 embedding of this CLI into `influxdb_pro` mounts `PluginConfig`
+//! as a variant of the host's top-level `Command` enum.
+//!
+//! # Stability
+//!
+//! Semver-stable per the plugin SDK's Spec 2 Stability policy. Schema-type
+//! re-exports route through this crate so phase-2 embedding consumers
+//! depend only on `influxdb3-plugin-cli`, satisfying S2-10 and preventing
+//! parser drift from a parallel direct dependency on
+//! `influxdb3-plugin-schemas`.
+
+// `tokio` is a bin-only dep (main.rs's `#[tokio::main]`); the lib surface
+// itself awaits without spawning. `unused_crate_dependencies` fires on the
+// lib target unless we acknowledge the dep here. Same pattern as the
+// `schemas` crate's `proptest` guard.
+use tokio as _;
+
+// `sdk` becomes a real lib-side dep once D30+ wires command implementations.
+// Acknowledged here so D27's lib target compiles cleanly.
+use influxdb3_plugin_sdk as _;
+
+pub use config::PluginConfig;
+
+// Schema-type re-exports — phase-2 embedding consumers import from `cli`,
+// never directly from `schemas`, satisfying S2-10. Includes the multi-error
+// parsing types (`SchemaErrors`, `ReportedError`, `FieldPath`) introduced
+// after the plan was first drafted: `Manifest::parse_toml` and
+// `Index::parse_json` return `Result<_, SchemaErrors>`, so consumers
+// handling parse results need them.
+pub use influxdb3_plugin_schemas::{
+    ArtifactHash, ArtifactsUrl, Dependencies, Description, FieldPath, Index, IndexEntry,
+    IndexSchemaVersion, Manifest, ManifestSchemaVersion, PluginId, PluginMetadata, PluginName,
+    PythonRequirement, ReportedError, SchemaError, SchemaErrors, TriggerType,
+};
+
+mod config;
