@@ -216,14 +216,14 @@ mod tests {
         );
     }
 
+    /// `package_plugin` takes `input_index` by value, so the caller cannot
+    /// directly observe post-call state. This test verifies a weaker but
+    /// structurally-important property: a `Clone` of the input made before the
+    /// call remains byte-identical after the call fails. This rules out any
+    /// interior-mutability sharing pattern; it does *not* prove "input is
+    /// preserved" (which is tautological for a move).
     #[test]
-    fn input_index_preserved_on_error() {
-        // S2-2 rejection must not mutate the caller's index. Because we take
-        // `input_index` by value, the caller gets back nothing on error; but
-        // mutate_index::add_entry is called on the derived clone, so if a
-        // duplicate is found, no intermediate state is observable.
-        // This test verifies the second package_plugin call does NOT add
-        // to the index passed in (the first call's derived_index).
+    fn duplicate_error_does_not_mutate_clone_before_return() {
         let td = tempfile::tempdir().unwrap();
         let dir = td.path().join("p");
         write_valid_plugin(&dir);
@@ -231,9 +231,18 @@ mod tests {
         let first = package_plugin(&dir, empty_index()).unwrap();
         let len_before = first.derived_index.plugins.len();
         let snapshot = first.derived_index.clone();
+        let first_clone_for_compare = first.derived_index.clone();
         let err = package_plugin(&dir, first.derived_index).unwrap_err();
         assert!(matches!(err, SdkError::AlreadyPublished { .. }));
-        // Snapshot still reflects the pre-error state.
+        // If `Index` had interior mutability, the clone's structural state
+        // could drift despite `package_plugin` taking ownership of the
+        // original. Pinning the full value (not just plugins.len()) catches
+        // that class of regression.
+        assert_eq!(
+            snapshot, first_clone_for_compare,
+            "snapshot must remain byte-identical; interior mutability would break this"
+        );
+        // Redundant length check retained for a more specific failure diagnostic.
         assert_eq!(snapshot.plugins.len(), len_before);
     }
 }
