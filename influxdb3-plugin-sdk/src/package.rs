@@ -10,7 +10,9 @@
 //! 3. [`crate::hash::sha256_of_bytes`] — SHA-256 of the archive bytes.
 //! 4. [`crate::mutate_index::add_entry`] — append the new `IndexEntry` to a
 //!    clone of the input index. Duplicate `(name, version)` returns
-//!    [`SdkError::AlreadyPublished`].
+//!    [`SdkError::AlreadyPublished`]; a name that canonicalizes to an
+//!    existing entry's form but spells differently returns
+//!    [`SdkError::CanonicalCollision`].
 //!
 //! # I/O scope
 //!
@@ -50,6 +52,8 @@ pub struct PackageOutput {
 /// - [`SdkError::ValidationErrors`] — manifest or cross-file checks failed.
 /// - [`SdkError::Archive`] — archive construction failed (e.g. path overflow).
 /// - [`SdkError::AlreadyPublished`] — `(name, version)` already in the index.
+/// - [`SdkError::CanonicalCollision`] — `name` canonicalizes to an existing
+///   entry's form but spellings differ (e.g., `my-plugin` vs `my_plugin`).
 pub fn package_plugin(plugin_dir: &Path, input_index: Index) -> Result<PackageOutput, SdkError> {
     let manifest = validate::plugin_dir(plugin_dir)?;
 

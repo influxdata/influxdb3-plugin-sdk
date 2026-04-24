@@ -59,6 +59,23 @@ pub enum SdkError {
         existing_versions: Vec<String>,
     },
 
+    /// Surfaces from [`crate::mutate_index::add_entry`] when the incoming
+    /// plugin name canonicalizes to an existing entry's canonical form but
+    /// spellings differ (e.g., `my-plugin` vs `my_plugin`, or `MyPlugin`
+    /// vs `myplugin`). `existing` enumerates every `(spelling, version)`
+    /// already in the index under that canonical form, preserving index
+    /// order.
+    #[error(
+        "canonical collision: plugin name {name:?} conflicts with existing \
+         entries sharing canonical form {canonical:?}: {existing:?}. \
+         Rename to one of the existing spellings or choose a distinct name."
+    )]
+    CanonicalCollision {
+        name: String,
+        canonical: String,
+        existing: Vec<(String, semver::Version)>,
+    },
+
     #[error("plugin ({name:?}, {version:?}) is not present in the target index")]
     EntryNotFound { name: String, version: String },
 
@@ -81,6 +98,7 @@ impl SdkError {
             Self::PathTooLong { .. } => "PathTooLong",
             Self::Hash { .. } => "Hash",
             Self::AlreadyPublished { .. } => "AlreadyPublished",
+            Self::CanonicalCollision { .. } => "CanonicalCollision",
             Self::EntryNotFound { .. } => "EntryNotFound",
             Self::PathOverlap { .. } => "PathOverlap",
         }
@@ -235,6 +253,14 @@ mod tests {
                 name: "downsampler".into(),
                 version: "1.2.0".into(),
                 existing_versions: vec!["1.0.0".into(), "1.1.0".into(), "1.2.0".into()],
+            },
+            SdkError::CanonicalCollision {
+                name: "my-plugin".into(),
+                canonical: "my_plugin".into(),
+                existing: vec![
+                    ("my_plugin".into(), semver::Version::new(1, 0, 0)),
+                    ("my_plugin".into(), semver::Version::new(1, 1, 0)),
+                ],
             },
             SdkError::EntryNotFound {
                 name: "downsampler".into(),

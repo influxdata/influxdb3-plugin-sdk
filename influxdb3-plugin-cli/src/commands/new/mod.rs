@@ -127,6 +127,11 @@ fn run_plugin_with_env(
         )));
     }
 
+    // path.parent() is "" for a bare relative name (e.g. `my-plugin`);
+    // read_dir("") is implementation-defined — fall back to "." explicitly.
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    check_sibling_canonical_collision(parent, &name)?;
+
     scaffold::plugin(
         &path,
         &name,
@@ -235,6 +240,59 @@ fn resolve_plugin_name(dir: &Path, name_arg: Option<String>) -> anyhow::Result<S
 const PLUGIN_NAME_RULE: &str =
     "plugin names must match `[a-zA-Z][a-zA-Z0-9_-]*` (1-64 chars, ASCII \
      alphanumerics / `-` / `_`, starting with a letter)";
+
+/// Scans `parent` for sibling directories whose basenames canonicalize to
+/// the same form as `resolved_name`. Returns an error if any sibling's
+/// basename is a valid `PluginName` that canonical-collides with
+/// `resolved_name` *and* spells the name differently.
+///
+/// Siblings whose basenames are not valid `PluginName`s (`.hidden`, files,
+/// invalid characters, non-UTF8 bytes) are ignored — they can never be
+/// published and thus cannot collide at the registry layer.
+///
+/// Identical spellings are *not* errors here: they're handled by
+/// `scaffold::plugin`'s existing `check_no_existing` path (different error,
+/// different fix — `--force` or pick another path).
+///
+/// A non-existent or unreadable `parent` is treated as "no siblings" — the
+/// check is a no-op rather than a hard error.
+fn check_sibling_canonical_collision(
+    parent: &Path,
+    resolved_name: &str,
+) -> Result<(), anyhow::Error> {
+    let Ok(target_canonical) = PluginName::from_str(resolved_name).map(|p| p.canonical()) else {
+        return Ok(());
+    };
+
+    let read_dir = match std::fs::read_dir(parent) {
+        Ok(rd) => rd,
+        Err(_) => return Ok(()),
+    };
+
+    for entry in read_dir.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let Some(basename) = path.file_name().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        let Ok(sibling_name) = PluginName::from_str(basename) else {
+            continue;
+        };
+        if sibling_name.canonical() == target_canonical
+            && sibling_name.as_str() != resolved_name
+        {
+            return Err(crate::cli_error::CliError::usage(anyhow::anyhow!(
+                "plugin name {resolved_name:?} canonically collides with existing \
+                 sibling directory {basename:?} (both normalize to {target_canonical:?}). \
+                 Rename the new plugin or use the existing spelling."
+            )));
+        }
+    }
+
+    Ok(())
+}
 
 #[derive(Debug)]
 struct Summary {

@@ -87,6 +87,17 @@ pub enum SchemaError {
     DuplicateIndexEntry { name: String, version: String },
 
     #[error(
+        "canonical collision: plugin name {name:?} conflicts with existing \
+         entries sharing canonical form {canonical:?}: {existing:?}. \
+         Rename to one of the existing spellings or choose a distinct name."
+    )]
+    CanonicalCollision {
+        name: String,
+        canonical: String,
+        existing: Vec<(String, String)>,
+    },
+
+    #[error(
         "manifest_schema_version {found:?} has unsupported major; \
          this library supports major {supported}"
     )]
@@ -142,6 +153,7 @@ impl SchemaError {
             Self::UnsupportedArtifactScheme { .. } => "UnsupportedArtifactScheme",
             Self::InvalidHash { .. } => "InvalidHash",
             Self::DuplicateIndexEntry { .. } => "DuplicateIndexEntry",
+            Self::CanonicalCollision { .. } => "CanonicalCollision",
             Self::UnsupportedManifestMajor { .. } => "UnsupportedManifestMajor",
             Self::UnsupportedIndexMajor { .. } => "UnsupportedIndexMajor",
             Self::MalformedSchemaVersion { .. } => "MalformedSchemaVersion",
@@ -341,6 +353,11 @@ mod tests {
             SchemaError::DuplicateIndexEntry {
                 name: "dup".into(),
                 version: "1.0.0".into(),
+            },
+            SchemaError::CanonicalCollision {
+                name: "my-plugin".into(),
+                canonical: "my_plugin".into(),
+                existing: vec![("my_plugin".into(), "1.0.0".into())],
             },
             SchemaError::UnsupportedManifestMajor {
                 found: "2.0".into(),

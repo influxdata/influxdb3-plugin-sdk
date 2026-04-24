@@ -627,6 +627,7 @@ dependencies = [
  "insta",
  "pretty_assertions",
  "proptest",
+ "rstest",
  "semver",
  "sha2",
  "tar",

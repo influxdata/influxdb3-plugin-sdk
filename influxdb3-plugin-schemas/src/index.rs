@@ -236,7 +236,7 @@ impl Index {
     pub fn parse_json(input: &str) -> Result<Self, crate::SchemaErrors> {
         use crate::raw::RawIndex;
         use crate::{FieldPath, ReportedError, SchemaErrors};
-        use std::collections::HashSet;
+        use std::collections::HashMap;
         use std::str::FromStr;
 
         let raw: RawIndex = serde_json::from_str(input)
@@ -262,22 +262,25 @@ impl Index {
         };
 
         let mut entries_ok: Vec<IndexEntry> = Vec::with_capacity(raw.plugins.len());
-        let mut seen: HashSet<(String, String)> = HashSet::new();
+
+        // Canonical-keyed index of prior entries: lets us distinguish exact
+        // (spelling, version) duplicates (DuplicateIndexEntry) from
+        // different-spelling canonical collisions (CanonicalCollision) while
+        // reporting accurate payloads. Canonical form folds case and `-`/`_`
+        // per Cargo's canon_crate_name.
+        let mut seen_by_canonical: HashMap<String, Vec<(String, String)>> = HashMap::new();
 
         for (i, raw_entry) in raw.plugins.iter().enumerate() {
             let entry_path = root.field("plugins").index(i);
             let validated = validate_raw_entry(raw_entry, &entry_path, &mut errors);
 
-            // Duplicate check uses the canonical form of the raw name so
-            // it still fires when the entry has other validation errors.
-            // `-`/`_` are equivalent and case is folded — matches Cargo's
-            // `canon_crate_name`. The reported error payload uses the
-            // rejected entry's original spelling, not the canonical.
-            let key = (
-                crate::identity::canonical_name(&raw_entry.name),
-                raw_entry.version.clone(),
-            );
-            if !seen.insert(key) {
+            let canonical = crate::identity::canonical_name(&raw_entry.name);
+            let existing = seen_by_canonical.entry(canonical.clone()).or_default();
+
+            let exact_dup = existing
+                .iter()
+                .any(|(n, v)| n == &raw_entry.name && v == &raw_entry.version);
+            if exact_dup {
                 errors.push(ReportedError::new(
                     entry_path.clone(),
                     SchemaError::DuplicateIndexEntry {
@@ -285,7 +288,21 @@ impl Index {
                         version: raw_entry.version.clone(),
                     },
                 ));
+            } else if existing.iter().any(|(n, _)| n != &raw_entry.name) {
+                // Different spelling, canonical-equal → CanonicalCollision.
+                // Same spelling + new version is allowed (a new release of
+                // the same plugin) and falls through to the append below.
+                errors.push(ReportedError::new(
+                    entry_path.clone(),
+                    SchemaError::CanonicalCollision {
+                        name: raw_entry.name.clone(),
+                        canonical: canonical.clone(),
+                        existing: existing.clone(),
+                    },
+                ));
             }
+
+            existing.push((raw_entry.name.clone(), raw_entry.version.clone()));
 
             if let Some(entry) = validated {
                 entries_ok.push(entry);
@@ -660,8 +677,10 @@ mod index_tests {
         assert_eq!(errors.errors().len(), 1);
         assert_matches!(
             errors.errors()[0].error,
-            SchemaError::DuplicateIndexEntry { ref name, ref version }
-                if name == "foo_bar" && version == "1.0.0"
+            SchemaError::CanonicalCollision { ref name, ref canonical, ref existing }
+                if name == "foo_bar"
+                    && canonical == "foo_bar"
+                    && existing == &vec![("foo-bar".to_owned(), "1.0.0".to_owned())]
         );
         assert_eq!(errors.errors()[0].path.as_str(), "plugins[1]");
     }
@@ -685,28 +704,12 @@ mod index_tests {
         assert_eq!(errors.errors().len(), 1);
         assert_matches!(
             errors.errors()[0].error,
-            SchemaError::DuplicateIndexEntry { ref name, ref version }
-                if name == "myplugin" && version == "1.0.0"
+            SchemaError::CanonicalCollision { ref name, ref canonical, ref existing }
+                if name == "myplugin"
+                    && canonical == "myplugin"
+                    && existing == &vec![("MyPlugin".to_owned(), "1.0.0".to_owned())]
         );
         assert_eq!(errors.errors()[0].path.as_str(), "plugins[1]");
-    }
-
-    #[test]
-    fn index_accepts_different_versions_of_same_canonical_name() {
-        // Distinct versions keep the (canonical_name, version) key unique.
-        let json = r#"{
-  "index_schema_version": "1.0",
-  "artifacts_url": "https://plugins.example.com/artifacts",
-  "plugins": [
-    { "name": "foo-bar", "version": "1.0.0", "description": "x", "triggers": ["process_writes"],
-      "dependencies": {"database_version":">=3.0.0","python":[]},
-      "hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000" },
-    { "name": "foo-bar", "version": "1.0.1", "description": "x2", "triggers": ["process_writes"],
-      "dependencies": {"database_version":">=3.0.0","python":[]},
-      "hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111" }
-  ]
-}"#;
-        assert!(Index::parse_json(json).is_ok());
     }
 
     #[test]
@@ -739,16 +742,52 @@ mod index_tests {
         );
         assert_matches!(
             e[0].error,
-            SchemaError::DuplicateIndexEntry { ref name, ref version }
-                if name == "foo_bar" && version == "1.0.0"
+            SchemaError::CanonicalCollision { ref name, ref canonical, ref existing }
+                if name == "foo_bar"
+                    && canonical == "foo_bar"
+                    && existing == &vec![("foo-bar".to_owned(), "1.0.0".to_owned())]
         );
         assert_eq!(e[0].path.as_str(), "plugins[1]");
         assert_matches!(
             e[1].error,
-            SchemaError::DuplicateIndexEntry { ref name, ref version }
-                if name == "FOO-BAR" && version == "1.0.0"
+            SchemaError::CanonicalCollision { ref name, ref canonical, ref existing }
+                if name == "FOO-BAR"
+                    && canonical == "foo_bar"
+                    && existing == &vec![
+                        ("foo-bar".to_owned(), "1.0.0".to_owned()),
+                        ("foo_bar".to_owned(), "1.0.0".to_owned()),
+                    ]
         );
         assert_eq!(e[1].path.as_str(), "plugins[2]");
+    }
+
+    #[test]
+    fn index_rejects_canonical_collision_across_versions() {
+        // Previously allowed; now rejected. Different spellings that canonicalize
+        // equal must collide regardless of version.
+        let json = r#"{
+  "index_schema_version": "1.0",
+  "artifacts_url": "https://plugins.example.com/artifacts",
+  "plugins": [
+    { "name": "foo-bar", "version": "1.0.0", "description": "x", "triggers": ["process_writes"],
+      "dependencies": {"database_version":">=3.0.0","python":[]},
+      "hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000" },
+    { "name": "foo_bar", "version": "1.0.1", "description": "x2", "triggers": ["process_writes"],
+      "dependencies": {"database_version":">=3.0.0","python":[]},
+      "hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111" }
+  ]
+}"#;
+        let errors =
+            Index::parse_json(json).expect_err("should reject canonical collision across versions");
+        assert_eq!(errors.errors().len(), 1);
+        assert_matches!(
+            errors.errors()[0].error,
+            SchemaError::CanonicalCollision { ref name, ref canonical, ref existing }
+                if name == "foo_bar"
+                    && canonical == "foo_bar"
+                    && existing == &vec![("foo-bar".to_owned(), "1.0.0".to_owned())]
+        );
+        assert_eq!(errors.errors()[0].path.as_str(), "plugins[1]");
     }
 
     #[test]

@@ -223,12 +223,20 @@ fn package_rejects_hyphen_underscore_collision() {
         .code(1);
     let stderr = String::from_utf8_lossy(&assert.get_output().stderr).into_owned();
     assert!(
-        stderr.contains("\"1.0.0\""),
-        "stderr must list the existing version (S2-2), got: {stderr}"
+        stderr.contains("canonical collision"),
+        "stderr must name the collision class, got: {stderr}"
     );
     assert!(
-        stderr.contains("yank"),
-        "stderr must direct the author to `yank` per S2-2, got: {stderr}"
+        stderr.contains("\"my_plugin\""),
+        "stderr must name the rejected spelling, got: {stderr}"
+    );
+    assert!(
+        stderr.contains("\"my-plugin\""),
+        "stderr must name the existing spelling, got: {stderr}"
+    );
+    assert!(
+        stderr.contains("Rename"),
+        "stderr must direct the author to rename, got: {stderr}"
     );
 
     assert!(!out_dir.join("my_plugin-1.0.0.tar.gz").exists());
@@ -251,12 +259,20 @@ fn package_rejects_case_collision() {
         .code(1);
     let stderr = String::from_utf8_lossy(&assert.get_output().stderr).into_owned();
     assert!(
-        stderr.contains("\"1.0.0\""),
-        "stderr must list the existing version (S2-2), got: {stderr}"
+        stderr.contains("canonical collision"),
+        "stderr must name the collision class, got: {stderr}"
     );
     assert!(
-        stderr.contains("yank"),
-        "stderr must direct the author to `yank` per S2-2, got: {stderr}"
+        stderr.contains("\"MyPlugin\""),
+        "stderr must name the rejected spelling, got: {stderr}"
+    );
+    assert!(
+        stderr.contains("\"myplugin\""),
+        "stderr must name the existing spelling, got: {stderr}"
+    );
+    assert!(
+        stderr.contains("Rename"),
+        "stderr must direct the author to rename, got: {stderr}"
     );
 
     assert!(!out_dir.join("MyPlugin-1.0.0.tar.gz").exists());

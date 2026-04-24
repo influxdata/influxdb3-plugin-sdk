@@ -1,6 +1,6 @@
 ---
 source: influxdb3-plugin-schemas/src/error.rs
-assertion_line: 381
+assertion_line: 399
 expression: tags
 ---
 - InvalidPluginName
@@ -17,6 +17,7 @@ expression: tags
 - UnsupportedArtifactScheme
 - InvalidHash
 - DuplicateIndexEntry
+- CanonicalCollision
 - UnsupportedManifestMajor
 - UnsupportedIndexMajor
 - MalformedSchemaVersion

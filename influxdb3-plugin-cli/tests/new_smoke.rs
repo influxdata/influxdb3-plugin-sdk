@@ -868,3 +868,145 @@ fn new_registry_rejects_unsupported_artifacts_url_scheme() {
         );
     }
 }
+
+/// Sibling canonical collision at new time: `my_plugin/` already exists,
+/// `new process_writes .../my-plugin` is rejected (usage-error path,
+/// exit 2 via CliError::usage).
+#[test]
+fn new_rejects_sibling_canonical_collision_hyphen_underscore() {
+    let td = tempfile::tempdir().unwrap();
+    std::fs::create_dir(td.path().join("my_plugin")).unwrap();
+    let target = td.path().join("my-plugin");
+
+    let assert = spawn_new(&target, &["process_writes"]).failure().code(2);
+
+    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
+    assert!(
+        stderr.contains("my-plugin"),
+        "stderr should name requested: {stderr}"
+    );
+    assert!(
+        stderr.contains("my_plugin"),
+        "stderr should name existing sibling: {stderr}"
+    );
+    assert!(!target.exists(), "no files/dirs written under target on rejection");
+}
+
+/// Exercises the lowercase branch of canonicalization. `My-Plugin` and
+/// `my_plugin` both canonicalize to `my_plugin`; both directory spellings
+/// coexist on case-insensitive filesystems (APFS default on macOS).
+#[test]
+fn new_rejects_sibling_canonical_collision_case_and_separator() {
+    let td = tempfile::tempdir().unwrap();
+    std::fs::create_dir(td.path().join("My-Plugin")).unwrap();
+    let target = td.path().join("my_plugin");
+
+    let assert = spawn_new(&target, &["process_writes"]).failure().code(2);
+    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
+    assert!(stderr.contains("my_plugin"), "stderr: {stderr}");
+    assert!(stderr.contains("My-Plugin"), "stderr: {stderr}");
+    assert!(!target.exists());
+}
+
+#[test]
+fn new_accepts_non_colliding_sibling() {
+    let td = tempfile::tempdir().unwrap();
+    std::fs::create_dir(td.path().join("downsampler")).unwrap();
+    let target = td.path().join("my-plugin");
+
+    spawn_new(&target, &["process_writes"]).success();
+
+    assert!(target.join("manifest.toml").exists());
+}
+
+/// Sibling *directories* whose basenames fail `PluginName::from_str` are
+/// skipped by the canonical scan. `.hidden` and `123-leading-digit` exercise
+/// the two common rejection branches (dot-leading and digit-leading) of the
+/// name rule. Non-directory siblings are separately filtered by `is_dir()`;
+/// a later test can extend this fixture if that branch needs its own anchor.
+#[test]
+fn new_accepts_when_sibling_has_invalid_plugin_basename() {
+    let td = tempfile::tempdir().unwrap();
+    std::fs::create_dir(td.path().join(".hidden")).unwrap();
+    std::fs::create_dir(td.path().join("123-leading-digit")).unwrap();
+    let target = td.path().join("my-plugin");
+
+    spawn_new(&target, &["process_writes"]).success();
+    assert!(target.join("manifest.toml").exists());
+}
+
+/// The sibling scan uses the resolved plugin name (--name if supplied),
+/// not the target basename.
+#[test]
+fn new_sibling_check_uses_resolved_name_not_basename() {
+    let td = tempfile::tempdir().unwrap();
+    std::fs::create_dir(td.path().join("my_plugin")).unwrap();
+    let target = td.path().join("unrelated-dir");
+
+    let assert = spawn_new(&target, &["process_writes", "--name", "my-plugin"])
+        .failure()
+        .code(2);
+
+    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
+    assert!(
+        stderr.contains("my-plugin"),
+        "stderr cites resolved name: {stderr}"
+    );
+    assert!(
+        !stderr.contains("unrelated-dir"),
+        "stderr must not cite the target basename: {stderr}"
+    );
+    assert!(!target.exists());
+}
+
+/// Paired asymmetry with `new_force_allows_overwrite_of_same_spelling_target`:
+/// `--force` bypasses `check_no_existing` (same-spelling target) but NOT the
+/// sibling canonical check. Rewriting either test silently rots the contract;
+/// keep both in lockstep.
+#[test]
+fn new_force_does_not_bypass_sibling_canonical_collision() {
+    let td = tempfile::tempdir().unwrap();
+    std::fs::create_dir(td.path().join("my_plugin")).unwrap();
+    let target = td.path().join("my-plugin");
+
+    let assert = spawn_new(&target, &["process_writes", "--force"])
+        .failure()
+        .code(2);
+    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
+    assert!(
+        stderr.contains("canonically collides"),
+        "must reject with the canonical-collision error, not some other exit-2 path: {stderr}"
+    );
+    assert!(!target.exists(), "--force must not bypass canonical check");
+}
+
+/// Paired asymmetry with `new_force_does_not_bypass_sibling_canonical_collision`:
+/// `--force` bypasses `check_no_existing` for same-spelling targets (the target
+/// path itself is excluded from the sibling scan) but does NOT bypass the
+/// sibling canonical check. Keep both in lockstep.
+#[test]
+fn new_force_allows_overwrite_of_same_spelling_target() {
+    let td = tempfile::tempdir().unwrap();
+    let target = td.path().join("my-plugin");
+    std::fs::create_dir(&target).unwrap();
+    std::fs::write(target.join("manifest.toml"), "pre-existing").unwrap();
+
+    spawn_new(&target, &["process_writes", "--force"]).success();
+
+    let manifest = std::fs::read_to_string(target.join("manifest.toml")).unwrap();
+    assert!(
+        !manifest.contains("pre-existing"),
+        "template should overwrite"
+    );
+    assert!(manifest.contains("name = \"my-plugin\""));
+}
+
+#[test]
+fn new_succeeds_when_parent_dir_does_not_yet_exist() {
+    let td = tempfile::tempdir().unwrap();
+    let target = td.path().join("fresh-repo").join("my-plugin");
+
+    spawn_new(&target, &["process_writes"]).success();
+
+    assert!(target.join("manifest.toml").exists());
+}
