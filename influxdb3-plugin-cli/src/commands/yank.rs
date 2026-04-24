@@ -2,14 +2,13 @@
 //!
 //! Wraps [`influxdb3_plugin_sdk::mutate_index::yank`] /
 //! [`influxdb3_plugin_sdk::mutate_index::unyank`] and carries the same
-//! S2-11 / S2-12 input-immutability + non-overlap rails as `package`.
+//! input-immutability + non-overlap rails as `package`.
 //!
 //! # Idempotency
 //!
-//! Per Spec 2 § yank, re-yanking an already-yanked entry (or `--undo`-ing
-//! a not-yanked entry) is a successful no-op. The SDK distinguishes the
-//! two cases via [`mutate_index::YankOutcome`]; we surface that signal in
-//! `--output json`
+//! Re-yanking an already-yanked entry (or `--undo`-ing a not-yanked entry)
+//! is a successful no-op. The SDK distinguishes the two cases via
+//! [`mutate_index::YankOutcome`]; we surface that signal in `--output json`
 //! as `"transitioned"` vs `"already_in_desired_state"` and in human mode
 //! as a printed informational marker.
 
@@ -36,17 +35,16 @@ pub(crate) struct Args {
     target: NameAtVersion,
 
     /// Output format. Auto-detected from stdout's TTY status and `CI`
-    /// when omitted (Spec 2 § S2-14).
+    /// when omitted.
     #[arg(long, value_enum)]
     output: Option<OutputMode>,
 
-    /// Input registry index (read-only per S2-11).
+    /// Input registry index (read-only).
     #[arg(long)]
     index: PathBuf,
 
     /// Output directory. Receives the derived `index.json`. Created if
-    /// missing. Must NOT resolve to the directory containing `--index`
-    /// (S2-12).
+    /// missing. Must NOT resolve to the directory containing `--index`.
     #[arg(long)]
     out: PathBuf,
 
@@ -125,9 +123,9 @@ fn outcome_label(outcome: mutate_index::YankOutcome) -> &'static str {
 ///
 /// Parsing is driven through the clap [`TypedValueParser`] below so that
 /// malformed inputs surface as clap usage errors (exit 2) rather than
-/// runtime errors (exit 1) — per Spec 2 § S2-18 and spec F-1. The
-/// [`CliError`] classification in `cli_error.rs` continues to handle
-/// S2-12 path-overlap and other runtime-path usage errors.
+/// runtime errors (exit 1). The [`CliError`] classification in
+/// `cli_error.rs` continues to handle path-overlap and other runtime-path
+/// usage errors.
 #[derive(Debug, Clone)]
 pub(crate) struct NameAtVersion {
     pub(crate) name: PluginName,
@@ -156,7 +154,7 @@ impl FromStr for NameAtVersion {
 ///
 /// Surfacing the error as [`ErrorKind::ValueValidation`] produces clap's
 /// standard `invalid value '<v>' for '<ARG>'` message and gives an exit
-/// status of 2, matching spec F-1.
+/// status of 2, matching the usage-error exit-code contract.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct NameAtVersionParser;
 
@@ -190,7 +188,7 @@ impl TypedValueParser for NameAtVersionParser {
     }
 }
 
-/// S2-12 helper — same shape as `commands::package`.
+// Same shape as the helper in `commands::package`.
 fn paths_overlap(index_path: &Path, out_dir: &Path) -> anyhow::Result<bool> {
     let idx = std::fs::canonicalize(index_path).map_err(|e| {
         anyhow::anyhow!(

@@ -1,34 +1,27 @@
 //! SHA-256 hashing of archive bytes.
 //!
-//! Per Spec 1 S1-3, every published artifact's hash is SHA-256 of the tar.gz
-//! archive bytes, rendered in the canonical form
-//! `sha256:<64 lowercase hex chars>`. This module computes that hash from
-//! an in-memory byte slice and returns an [`ArtifactHash`] — the schemas-crate
-//! newtype that enforces the canonical string form.
+//! Every published artifact's hash is SHA-256 of the tar.gz bytes, rendered
+//! as `sha256:<64 lowercase hex chars>`. Returned as [`ArtifactHash`], the
+//! schemas-crate newtype that enforces this canonical string form.
 
 use influxdb3_plugin_schemas::ArtifactHash;
 use sha2::{Digest, Sha256};
 
 use crate::SdkError;
 
-/// Returns the SHA-256 hash of `bytes` as an [`ArtifactHash`].
-///
-/// The returned [`ArtifactHash`]'s string form is always
-/// `sha256:<64 lowercase hex chars>`. Consumers can call `.as_str()` to get
-/// the wire format expected by the index schema.
+/// Returns the SHA-256 hash of `bytes` as an [`ArtifactHash`] in the
+/// canonical `sha256:<64 lowercase hex chars>` form.
 pub fn sha256_of_bytes(bytes: &[u8]) -> ArtifactHash {
     let digest = Sha256::digest(bytes);
     let hex = encode_lowercase_hex(&digest);
     let raw = format!("sha256:{hex}");
-    // `ArtifactHash::try_new` validates format; we construct format-correct
-    // input above, so this cannot fail. Panic branch would indicate a bug in
-    // this module, not a consumer error — hence unwrap over `?`.
+    // Format is constructed correctly above; a failure here is a bug in
+    // this module, not a caller error.
     ArtifactHash::try_new(&raw).expect("sha256 digest is always canonical form")
 }
 
-/// Same as [`sha256_of_bytes`] but reads from a buffered reader in 8 KiB
-/// chunks — useful when the archive is large enough that materializing the
-/// whole buffer in memory is wasteful.
+/// Streaming variant of [`sha256_of_bytes`]; reads 8 KiB at a time for
+/// archives too large to keep fully in memory.
 ///
 /// Returns `Err(SdkError::Hash { source })` on read failure.
 pub fn sha256_of_reader<R: std::io::Read>(mut reader: R) -> Result<ArtifactHash, SdkError> {
@@ -50,8 +43,7 @@ pub fn sha256_of_reader<R: std::io::Read>(mut reader: R) -> Result<ArtifactHash,
 }
 
 fn encode_lowercase_hex(bytes: &[u8]) -> String {
-    // 64 hex chars for a 32-byte SHA-256 output. Inline format-loop keeps the
-    // dep surface minimal (no `hex` crate).
+    // Inline loop avoids pulling in the `hex` crate.
     let mut out = String::with_capacity(bytes.len() * 2);
     for byte in bytes {
         out.push(nibble_to_hex(byte >> 4));
@@ -75,7 +67,6 @@ mod tests {
 
     #[test]
     fn empty_bytes_hash() {
-        // Known SHA-256 of empty input.
         let h = sha256_of_bytes(b"");
         assert_eq!(
             h.as_str(),
@@ -94,7 +85,6 @@ mod tests {
 
     #[test]
     fn deterministic_across_calls() {
-        // Not strictly a property test — but small enough to just check twice.
         let sample = b"InfluxDB 3 plugin SDK canonical test vector";
         let first = sha256_of_bytes(sample);
         let second = sha256_of_bytes(sample);

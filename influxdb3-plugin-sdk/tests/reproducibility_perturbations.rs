@@ -1,9 +1,9 @@
 //! Per-non-input perturbation tests for `canonical_tar_gz`.
 //!
-//! Spec 2 §Reproducibility enumerates what does NOT count as an input. Each
-//! `#[test]` here picks one such item, varies it between two invocations
-//! with otherwise-identical logical inputs, and asserts the archive bytes
-//! are identical.
+//! Canonical output must be invariant under perturbation of the listed
+//! non-inputs. Each `#[test]` here picks one such item, varies it between
+//! two invocations with otherwise-identical logical inputs, and asserts
+//! the archive bytes are identical.
 //!
 //! See `archive_determinism.rs` for the in-process purity test (proptest-
 //! generated inputs, two calls on same dir). That file catches a different
@@ -62,7 +62,7 @@ fn invariant_under_source_mtime() {
 
 #[test]
 fn invariant_under_source_date_epoch_env_var() {
-    // The spec §Reproducibility deliberately does NOT honor SOURCE_DATE_EPOCH;
+    // The canonicalization rules deliberately do NOT honor SOURCE_DATE_EPOCH;
     // every clock-bearing field is pinned to zero unconditionally. Verify that
     // perturbing the env var has no effect on output bytes.
     let td_a = tempfile::tempdir().unwrap();

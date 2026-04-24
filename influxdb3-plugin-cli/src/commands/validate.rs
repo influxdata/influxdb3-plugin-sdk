@@ -3,11 +3,10 @@
 //! Wraps [`influxdb3_plugin_sdk::validate::plugin_dir`] and, when
 //! `--index <path>` is supplied, [`influxdb3_plugin_sdk::validate::plugin_dir_with_index`].
 //!
-//! Per Spec 2 § S2-15 validator idiom: in `--output json` mode, stdout
-//! emits a single `{ "diagnostics": [...] }` document on BOTH pass and
-//! fail paths. Empty array signals a clean pass; populated array signals
-//! failure. The exit code redundantly signals the outcome (0 / 1) per
-//! S2-18.
+//! Validator idiom: in `--output json` mode, stdout emits a single
+//! `{ "diagnostics": [...] }` document on both pass and fail paths. Empty
+//! array signals a clean pass; populated array signals failure. The exit
+//! code redundantly signals the outcome (0 / 1).
 //!
 //! Runtime errors that aren't validation diagnostics (I/O permission
 //! failures, malformed `--index` JSON, etc.) bubble up as
@@ -36,12 +35,12 @@ pub(crate) struct Args {
     plugin_dir: PathBuf,
 
     /// Output format. Auto-detected from stdout's TTY status and `CI`
-    /// when omitted (Spec 2 § S2-14).
+    /// when omitted.
     #[arg(long, value_enum)]
     output: Option<OutputMode>,
 
-    /// Optional index JSON to check `(name, version)` uniqueness against
-    /// (S2-2). When omitted, uniqueness is not checked.
+    /// Optional index JSON to check `(name, version)` uniqueness against.
+    /// When omitted, uniqueness is not checked.
     #[arg(long)]
     index: Option<PathBuf>,
 }
@@ -75,10 +74,10 @@ fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
         outcome.diagnostics.len()
     );
     match mode {
-        // JSON mode: stdout already carries the diagnostics document per
-        // S2-15 validator idiom. main.rs must keep stderr silent.
+        // JSON mode: stdout already carries the diagnostics document, so
+        // main.rs must keep stderr silent.
         OutputMode::Json => Err(crate::cli_error::CliError::silent(inner)),
-        // Human mode: stderr carries the summary line, same as today.
+        // Human mode: stderr carries the summary line.
         OutputMode::Human => Err(inner),
     }
 }

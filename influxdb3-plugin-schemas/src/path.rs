@@ -3,21 +3,17 @@
 use std::fmt;
 
 /// A dotted-and-indexed path identifying a field inside a parsed manifest or
-/// index (e.g., `plugin.name`, `plugins[3].dependencies.python[0]`).
-///
-/// Constructed via method chaining from a root: `FieldPath::root().field("plugin").field("name")`.
-/// The result is a cheap `String` wrapper suitable for embedding in error
-/// messages and structured error bodies.
+/// index (e.g., `plugin.name`, `plugins[3].dependencies.python[0]`). Build by
+/// chaining from `FieldPath::root()`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FieldPath(String);
 
 impl FieldPath {
-    /// The empty root path. Used as the starting point for every parse.
     pub fn root() -> Self {
         Self(String::new())
     }
 
-    /// Returns a new path with `.name` appended (or just `name` if self is the root).
+    /// Appends `.name`, or just `name` when self is root.
     pub fn field(&self, name: &str) -> Self {
         if self.0.is_empty() {
             Self(name.to_owned())
@@ -26,12 +22,11 @@ impl FieldPath {
         }
     }
 
-    /// Returns a new path with `[i]` appended.
+    /// Appends `[i]`.
     pub fn index(&self, i: usize) -> Self {
         Self(format!("{}[{i}]", self.0))
     }
 
-    /// Returns the path as a string slice.
     pub fn as_str(&self) -> &str {
         &self.0
     }

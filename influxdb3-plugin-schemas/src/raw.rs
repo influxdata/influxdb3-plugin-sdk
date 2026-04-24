@@ -1,13 +1,11 @@
 //! Crate-private raw deserialization types for two-phase parsing.
 //!
-//! These structs accept any TOML/JSON document that conforms to the *shape*
-//! of a manifest or index — field presence and field types, nothing else.
-//! Structured validation (name regex, SemVer, URL scheme, PEP 508, etc.) runs
-//! in a separate pass on the raw values, collecting errors into `SchemaErrors`
-//! with field-path context. See `Manifest::parse_toml` and `Index::parse_json`.
-//!
-//! These types are not re-exported from the crate. The public API presents only
-//! the validated `Manifest` / `Index` / `IndexEntry` types.
+//! Phase 1 accepts any document that matches the *shape* (field presence and
+//! types). Phase 2 runs structured validation (name regex, SemVer, URL scheme,
+//! PEP 508, etc.) over the raw values and collects errors with field-path
+//! context into `SchemaErrors` — this is what lets a parse report every defect
+//! at once instead of stopping at the first. See `Manifest::parse_toml` and
+//! `Index::parse_json`.
 //!
 #[derive(Debug, serde::Deserialize)]
 pub(crate) struct RawManifest {

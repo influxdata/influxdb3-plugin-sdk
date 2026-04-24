@@ -1,17 +1,12 @@
 //! Canonical tar.gz archive construction.
 //!
-//! Implements the Spec 2 Reproducibility rules for derived-artifact bytes.
 //! Given identical inputs and the same SDK version, [`canonical_tar_gz`]
 //! produces byte-identical output on every machine and every run.
 //!
 //! # Canonicalization rules implemented
 //!
-//! Per Spec 2 Reproducibility → "Archive canonicalization (tar.gz)":
-//!
-//! 1. **Tar format**: `ustar` (via [`tar::Header::new_ustar`]). Explicitly not
-//!    GNU.
-//! 2. **Entry ordering**: every entry sorted by archive path in lexicographic
-//!    UTF-8 byte order.
+//! 1. **Tar format**: `ustar` (via [`tar::Header::new_ustar`]). Explicitly not GNU.
+//! 2. **Entry ordering**: sorted by archive path in lexicographic UTF-8 byte order.
 //! 3. **mtime**: `0` on every entry.
 //! 4. **UID / GID**: `0` / `0`. Owner and group name fields: empty strings.
 //! 5. **File mode**: regular files → `0644`; exec-bit-on-disk files → `0755`.
@@ -20,48 +15,40 @@
 //! 6. **PAX extended headers**: none. Paths whose archive representation
 //!    exceeds ustar's 255-byte split-path limit are rejected at package
 //!    time with [`SdkError::PathTooLong`] (distinct from the catch-all
-//!    [`SdkError::Archive`] variant so callers can pattern-match spec F-4
-//!    failures without string-scraping).
+//!    [`SdkError::Archive`] variant so callers can pattern-match without
+//!    string-scraping).
 //! 7. **Gzip header timestamp**: `0`.
-//! 8. **Original filename header**: omitted (FNAME flag not set; no
-//!    `GzBuilder::filename()` call).
+//! 8. **Original filename header**: omitted (FNAME flag not set).
 //!
 //! # File exclusion
 //!
-//! Per the plan's file-exclusion decision (v1 scope), these patterns are
-//! skipped during walk: `target/`, `.git/`, `__pycache__/`, `*.pyc`. A more
-//! configurable mechanism (`.pluginignore` or a manifest `plugin.files` list)
-//! is explicitly post-v1.
+//! These patterns are skipped during walk: `target/`, `.git/`, `__pycache__/`,
+//! `*.pyc`. A configurable mechanism (`.pluginignore` / manifest `plugin.files`)
+//! is out of scope for v1.
 //!
 //! # Compression
 //!
 //! `flate2` with the `rust_backend` feature pins `miniz_oxide` as the gzip
-//! encoder — different backends (system zlib, zlib-ng, cloudflare_zlib)
-//! produce byte-different gzip streams at the same compression level and
-//! would break determinism. Compression level is fixed at 6 via
-//! [`flate2::Compression::new`].
+//! encoder — different backends (system zlib, zlib-ng, cloudflare_zlib) produce
+//! byte-different gzip streams at the same compression level and would break
+//! determinism. Compression level is fixed at 6.
 //!
 //! # Cross-platform determinism caveat
 //!
-//! Spec 2 Reproducibility lists "filesystem executable bit" as an input
-//! contributing to output bytes. Unix filesystems report the exec bit;
-//! Windows has no Unix-style exec bit. A plugin directory containing a
-//! `chmod +x` file packaged on Unix produces an archive with a 0755 entry
-//! for that file; the same directory packaged on Windows produces a 0644
-//! entry. **Byte-identity across operating systems is not guaranteed for
-//! plugins that carry executable files.** Plugins that bundle no exec
-//! files are byte-identical across platforms.
+//! Unix filesystems report the exec bit; Windows has no Unix-style exec bit.
+//! A `chmod +x` file packaged on Unix produces an archive with a 0755 entry
+//! for that file; the same directory packaged on Windows produces 0644.
+//! **Byte-identity across operating systems is not guaranteed for plugins
+//! that carry executable files.** Plugins without exec files are
+//! byte-identical across platforms.
 //!
 //! # Directory entries
 //!
-//! Directories are intentionally omitted from the archive — tar extraction
-//! creates parent directories automatically when needed. Consequence:
-//! extracted directory modes are umask-dependent at `tar xf` time rather
-//! than pinned by the archive. Spec 2 Reproducibility's "directories →
-//! 0755" rule refers to dir-entry mode IF emitted; this implementation
-//! chooses not to emit them. Plugin-runtime install (Spec 4) creates
-//! `plugin_dir/<name>/<version>/` directly via the DB and does not rely
-//! on tar's extracted directory modes.
+//! Directories are intentionally omitted — tar extraction creates parents
+//! automatically. Consequence: extracted directory modes are umask-dependent
+//! at `tar xf` time rather than pinned by the archive. The plugin-runtime
+//! install path creates `plugin_dir/<name>/<version>/` directly via the DB
+//! and does not rely on tar's extracted directory modes.
 
 use flate2::{Compression, GzBuilder};
 use influxdb3_plugin_schemas::PluginName;
@@ -72,14 +59,10 @@ use crate::SdkError;
 
 /// Joins a relative path's components with `/` for use as a tar entry path.
 ///
-/// Tar archives canonically use `/` as the separator. On Windows,
-/// `Path::display()` emits `\` between components, which would produce
-/// malformed archive paths. This helper explicitly enumerates components
-/// and joins them with `/`, producing correct output on every platform.
-///
-/// Assumes the input is a normalized relative path — no root, no parent
-/// (`..`) components. The archive pipeline builds these from walkdir entries
-/// stripped of the plugin-dir prefix, so this precondition holds.
+/// Tar archives canonically use `/`. On Windows, `Path::display()` emits `\`,
+/// which produces malformed archive paths — so we iterate components and
+/// join explicitly. Input must be a normalized relative path (no root, no
+/// `..`); the archive pipeline strips the plugin-dir prefix before calling.
 fn to_archive_path(relative: &Path) -> String {
     let mut parts: Vec<String> = Vec::new();
     for component in relative.components() {
@@ -103,17 +86,14 @@ pub fn canonical_tar_gz(
     name: &PluginName,
     version: &Version,
 ) -> Result<Vec<u8>, SdkError> {
-    // Collect + sort relative paths of files to include.
     let entries = collect_entries(plugin_dir)?;
 
-    // Archive root prefix: `{name}-{version}/`.
     let archive_root = format!("{}-{}", name.as_str(), version);
 
-    // Reject any archive path that exceeds ustar's 255-byte limit (100 name +
-    // 155 prefix, with a split required at a '/'). tar::Header::set_path also
-    // errors in this case but we surface a domain-typed error earlier via
-    // the dedicated `SdkError::PathTooLong` variant so callers can
-    // pattern-match on this spec F-4 failure without string-scraping.
+    // Reject paths over ustar's 255-byte limit (100 name + 155 prefix, split
+    // required at a `/`). `tar::Header::set_path` also errors here, but we
+    // surface a domain-typed `SdkError::PathTooLong` earlier so callers
+    // can pattern-match without string-scraping.
     const USTAR_PATH_LIMIT: usize = 255;
     for entry in &entries {
         let archive_path = format!("{}/{}", archive_root, to_archive_path(&entry.relative));
@@ -125,7 +105,6 @@ pub fn canonical_tar_gz(
         }
     }
 
-    // Build the compressed tar in memory.
     let mut buf: Vec<u8> = Vec::with_capacity(4096);
     let gz = GzBuilder::new()
         .mtime(0) // canonical: gzip MTIME = 0
@@ -152,8 +131,8 @@ pub fn canonical_tar_gz(
             message: e.to_string(),
         })?;
         header.set_entry_type(tar::EntryType::Regular);
-        // `append_data` calls `set_path` (which invalidates any prior
-        // checksum) then `set_cksum` itself, so we don't precompute here.
+        // `append_data` invokes `set_path` (invalidating any prior checksum)
+        // then `set_cksum`, so we don't precompute the checksum.
 
         tarball
             .append_data(&mut header, &archive_path, std::io::Cursor::new(data))
@@ -162,8 +141,7 @@ pub fn canonical_tar_gz(
             })?;
     }
 
-    // Finalize the tar stream inside the gz encoder, then the gz encoder
-    // itself. Both must finish for the bytes to be complete.
+    // Finalize tar first, then gz — both must finish for the bytes to be complete.
     let gz_encoder = tarball.into_inner().map_err(|e| SdkError::Archive {
         message: e.to_string(),
     })?;
@@ -186,12 +164,10 @@ fn collect_entries(plugin_dir: &Path) -> Result<Vec<Entry>, SdkError> {
     })?;
 
     let mut entries = Vec::new();
-    // `follow_links(false)` makes walkdir report symlinks with their own
-    // file_type (is_symlink, not is_file/is_dir). The filter below skips
-    // anything that isn't a regular file, so symlinks are excluded from
-    // the archive — plugins shouldn't rely on them.
+    // `follow_links(false)` makes walkdir report symlinks as themselves
+    // (not files/dirs); the is_file filter below then excludes them.
     let walk = walkdir::WalkDir::new(&plugin_dir)
-        .sort_by_file_name() // stable walk order (we re-sort by archive path below regardless)
+        .sort_by_file_name()
         .follow_links(false);
 
     for result in walk {
@@ -199,13 +175,10 @@ fn collect_entries(plugin_dir: &Path) -> Result<Vec<Entry>, SdkError> {
             message: format!("walkdir error: {e}"),
         })?;
         let absolute = entry.path().to_path_buf();
-        // Skip directories — we only archive files. Tar extraction
-        // auto-creates parent directories.
         if entry.file_type().is_dir() {
             continue;
         }
-        // Skip non-files (symlinks, sockets, etc.). Plugins are source code
-        // directories; unusual file types are suspicious and excluded.
+        // Skip symlinks, sockets, and other non-regular files.
         if !entry.file_type().is_file() {
             continue;
         }
@@ -230,11 +203,10 @@ fn collect_entries(plugin_dir: &Path) -> Result<Vec<Entry>, SdkError> {
     }
 
     // Canonical order: lexicographic byte order on the archive path.
-    // `as_encoded_bytes()` returns WTF-8 on Windows and UTF-8 on Unix; for
-    // ASCII paths — which plugin files always are in practice — the two are
-    // byte-identical. Sorting by relative paths (rather than full archive
-    // paths) is equivalent because the `archive_root` prefix is identical
-    // for every entry.
+    // `as_encoded_bytes()` is WTF-8 on Windows and UTF-8 on Unix; for ASCII
+    // paths (plugin files in practice) the two are byte-identical. Sorting
+    // by relative path is equivalent to sorting by full archive path because
+    // the `archive_root` prefix is shared by every entry.
     entries.sort_by(|a, b| {
         a.relative
             .as_os_str()
@@ -246,9 +218,8 @@ fn collect_entries(plugin_dir: &Path) -> Result<Vec<Entry>, SdkError> {
 }
 
 fn should_exclude(relative: &Path) -> bool {
-    // Exclude: any path component named `target`, `.git`, or `__pycache__`;
-    // any filename ending in `.pyc`. These match the author-dev-detritus
-    // patterns called out in the plan.
+    // Exclude any component named `target`, `.git`, or `__pycache__`, plus
+    // any `.pyc` file — standard author-side dev detritus.
     for component in relative.components() {
         if let Some("target" | ".git" | "__pycache__") = component.as_os_str().to_str() {
             return true;
@@ -268,7 +239,7 @@ fn is_executable(path: &Path) -> std::io::Result<bool> {
 
 #[cfg(not(unix))]
 fn is_executable(_path: &Path) -> std::io::Result<bool> {
-    // Windows has no Unix-style exec bit. Every file ships as 0644.
+    // No Unix-style exec bit on non-Unix; every file ships as 0644.
     Ok(false)
 }
 
@@ -298,17 +269,12 @@ mod archive_path_tests {
 
     /// Even a path component containing a literal backslash byte (which is a
     /// valid filename byte on Unix) must produce a forward-slash-separated
-    /// archive path. `to_archive_path` operates on normalized components and
-    /// must not special-case any byte value.
-    ///
-    /// Unix-only: Windows parses `\` as a path separator, so the same input
-    /// would split into different components and this test would spuriously
-    /// fail against a correctly-behaving `to_archive_path`.
+    /// archive path. Unix-only: Windows parses `\` as a path separator, so
+    /// the same input would split into different components.
     #[cfg(unix)]
     #[test]
     fn backslash_byte_in_component_does_not_leak_into_archive_path() {
-        // Unix: `PathBuf::from("sub\\leaf")` is one component whose name
-        // contains a literal `\` byte.
+        // Single component whose name contains a literal `\` byte.
         let p = PathBuf::from("sub\\leaf");
         let result = to_archive_path(&p);
         assert_eq!(result, "sub\\leaf", "single component preserved verbatim");
@@ -396,7 +362,7 @@ mod tests {
         let td = tempfile::tempdir().unwrap();
         let dir = td.path().join("plugin");
         fs::create_dir_all(&dir).unwrap();
-        // Create in out-of-order sequence; the archive must still be sorted.
+        // Write in out-of-order sequence; archive output must still be sorted.
         fs::write(
             dir.join("manifest.toml"),
             "manifest_schema_version = \"1.0\"\n\n[plugin]\nname = \"p\"\nversion = \"0.1.0\"\ndescription = \"x\"\ntriggers = [\"process_writes\"]\n\n[dependencies]\ndatabase_version = \">=3.0.0\"\n",
@@ -426,8 +392,7 @@ mod tests {
         let dir = minimal_plugin_dir(td.path());
         let bytes = canonical_tar_gz(&dir, &name(), &version()).unwrap();
         let tar_bytes = gunzip(&bytes);
-        // ustar magic is at offset 257 in the first header block: "ustar\0"
-        // followed by version "00".
+        // ustar magic at offset 257 ("ustar\0"), version "00" at 263.
         let magic = &tar_bytes[257..263];
         assert_eq!(magic, b"ustar\0", "expected ustar magic; got {magic:?}");
         let version = &tar_bytes[263..265];
@@ -474,7 +439,6 @@ mod tests {
         for entry in archive.entries_with_seek().unwrap() {
             let entry = entry.unwrap();
             let mode = entry.header().mode().unwrap();
-            // Files written by `fs::write` have no exec bit on modern systems.
             assert_eq!(
                 mode,
                 0o644,
@@ -520,11 +484,9 @@ mod tests {
         .unwrap();
         fs::write(dir.join("__init__.py"), "def process_writes():\n    pass\n").unwrap();
 
-        // Force a long archive path via nested directories. Each component
-        // stays under the filesystem's single-component limit (~255 bytes on
-        // macOS/Linux), but the total relative path exceeds 255 bytes, which
-        // pushes the archive path past ustar's split-path limit.
-        // Component "a".repeat(50) + "/" = 51 bytes × 6 = 306 bytes relative.
+        // Nested components keep each segment under the filesystem's
+        // single-component limit but push the total relative path past
+        // ustar's split-path limit. 51 bytes × 6 = 306 bytes relative.
         let component = "a".repeat(50);
         let mut nested = dir.clone();
         for _ in 0..6 {
@@ -562,8 +524,7 @@ mod tests {
 
     #[test]
     fn round_trip_archive_contents() {
-        // Not a canonicalization rule per se — sanity check that the archive
-        // we produce is actually extractable and contains the expected files.
+        // Sanity check: the archive is extractable and carries expected files.
         let td = tempfile::tempdir().unwrap();
         let dir = minimal_plugin_dir(td.path());
         let bytes = canonical_tar_gz(&dir, &name(), &version()).unwrap();
@@ -571,8 +532,6 @@ mod tests {
         assert!(listing.contains(&"p-0.1.0/manifest.toml".to_owned()));
         assert!(listing.contains(&"p-0.1.0/__init__.py".to_owned()));
     }
-
-    // Test helpers.
 
     fn gunzip(bytes: &[u8]) -> Vec<u8> {
         use flate2::read::GzDecoder;

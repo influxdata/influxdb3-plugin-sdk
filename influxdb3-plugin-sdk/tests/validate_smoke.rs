@@ -42,8 +42,8 @@ fn missing_init_reports_missing_required_file() {
     }
 }
 
-/// Spec 2 Validation groups `manifest.toml` and `__init__.py` under the same
-/// "required files exist" rule. Both missing-file cases must surface as
+/// `manifest.toml` and `__init__.py` share the same "required files exist"
+/// rule. Both missing-file cases must surface as
 /// `ValidationError::MissingRequiredFile`, not as a raw `SdkError::Io`.
 #[test]
 fn missing_manifest_reports_missing_required_file() {
@@ -115,8 +115,7 @@ fn bad_python_syntax_reports_python_parse() {
 /// plus a uniqueness check against the supplied index. Collisions surface
 /// as `ValidationError::NameVersionConflict` — the collectible variant the
 /// CLI's `validate --index` flag uses to render uniqueness failures in the
-/// same diagnostics array as other validation errors per Spec 2 S2-15's
-/// validator-idiom contract.
+/// same diagnostics array as other validation errors.
 #[test]
 fn validate_with_index_reports_name_version_conflict() {
     use influxdb3_plugin_schemas::{

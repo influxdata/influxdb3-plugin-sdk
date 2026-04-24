@@ -1,34 +1,33 @@
-# Enforces Spec 2 requirements S2-7 (no direct process exit) and S2-8 (no
-# global-state installation) at the SDK library surface. The standalone CLI
-# binary (influxdb3-plugin-cli/src/main.rs) is exempt and will opt out via
-# #[allow(clippy::disallowed_methods)] or module-local attribute when needed.
+# These entries enforce the SDK-surface policies that the library must not call
+# std::process::exit and must not install global state the embedding host should
+# own (logging/tracing subscribers, OpenTelemetry providers, panic hooks, signal
+# handlers). The standalone CLI binary (influxdb3-plugin-cli/src/main.rs) is
+# exempt and opts out via #[allow(clippy::disallowed_methods)] where needed.
 #
-# The entry list below is the MINIMUM required by testing spec Section 1 gate
-# #1. A unit test (added in Plan 3's CLI work) will parse clippy.toml and
-# assert these entries are present. Adding more entries is fine; removing any
-# listed below is a contract regression.
+# This entry list is a contract; adding more entries is fine, but removing any
+# listed below should require a deliberate policy decision.
 disallowed-methods = [
-    # S2-7: no direct process exit
-    { path = "std::process::exit", reason = "violates S2-7", replacement = "return an error through Result" },
+    # No direct process exit
+    { path = "std::process::exit", reason = "bypasses Result-based error surface; SDK libraries must propagate errors, not terminate the process", replacement = "return an error through Result" },
 
-    # S2-8: no global-state installation — logging / tracing
-    { path = "tracing::subscriber::set_global_default", reason = "violates S2-8", replacement = "let the embedding host install the subscriber" },
-    { path = "tracing_subscriber::fmt::init", reason = "violates S2-8" },
-    { path = "tracing_subscriber::util::SubscriberInitExt::init", reason = "violates S2-8" },
-    { path = "tracing_subscriber::util::SubscriberInitExt::try_init", reason = "violates S2-8" },
-    { path = "env_logger::init", reason = "violates S2-8" },
-    { path = "log::set_boxed_logger", reason = "violates S2-8" },
-    { path = "console_subscriber::init", reason = "violates S2-8" },
+    # No global tracing/logging installation
+    { path = "tracing::subscriber::set_global_default", reason = "installs a global tracing subscriber; the embedding host must own subscriber installation", replacement = "let the embedding host install the subscriber" },
+    { path = "tracing_subscriber::fmt::init", reason = "installs a global tracing subscriber; the embedding host must own subscriber installation" },
+    { path = "tracing_subscriber::util::SubscriberInitExt::init", reason = "installs a global tracing subscriber; the embedding host must own subscriber installation" },
+    { path = "tracing_subscriber::util::SubscriberInitExt::try_init", reason = "installs a global tracing subscriber; the embedding host must own subscriber installation" },
+    { path = "env_logger::init", reason = "installs a global log implementation; the embedding host must own logger installation" },
+    { path = "log::set_boxed_logger", reason = "installs a global log implementation; the embedding host must own logger installation" },
+    { path = "console_subscriber::init", reason = "installs a global tracing subscriber; the embedding host must own subscriber installation" },
 
-    # S2-8: no global-state installation — OpenTelemetry providers
-    { path = "opentelemetry::global::set_tracer_provider", reason = "violates S2-8" },
-    { path = "opentelemetry::global::set_meter_provider", reason = "violates S2-8" },
-    { path = "opentelemetry::global::set_logger_provider", reason = "violates S2-8" },
+    # No global OpenTelemetry provider installation
+    { path = "opentelemetry::global::set_tracer_provider", reason = "installs a global OpenTelemetry tracer provider; the embedding host must own provider installation" },
+    { path = "opentelemetry::global::set_meter_provider", reason = "installs a global OpenTelemetry meter provider; the embedding host must own provider installation" },
+    { path = "opentelemetry::global::set_logger_provider", reason = "installs a global OpenTelemetry logger provider; the embedding host must own provider installation" },
 
-    # S2-8: no global-state installation — panic hooks and signal handlers
-    { path = "std::panic::set_hook", reason = "violates S2-8" },
-    { path = "ctrlc::set_handler", reason = "violates S2-8" },
-    { path = "signal_hook::iterator::Signals::new", reason = "violates S2-8" },
-    { path = "signal_hook::flag::register", reason = "violates S2-8" },
-    { path = "signal_hook_registry::register", reason = "violates S2-8" },
+    # No global panic-hook or signal-handler installation
+    { path = "std::panic::set_hook", reason = "replaces the global panic hook; the embedding host must own panic handling" },
+    { path = "ctrlc::set_handler", reason = "registers a global signal handler; the embedding host must own signal handling" },
+    { path = "signal_hook::iterator::Signals::new", reason = "registers a global signal handler; the embedding host must own signal handling" },
+    { path = "signal_hook::flag::register", reason = "registers a global signal handler; the embedding host must own signal handling" },
+    { path = "signal_hook_registry::register", reason = "registers a global signal handler; the embedding host must own signal handling" },
 ]

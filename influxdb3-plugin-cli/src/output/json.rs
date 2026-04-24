@@ -1,19 +1,19 @@
 //! JSON-mode output schemas per command.
 //!
 //! Every struct here is part of `influxdb3-plugin-cli`'s semver-stable
-//! contract (Spec 2 § S2-16). Adding fields is a minor bump; renaming,
-//! removing, repurposing, or narrowing the type of an existing field is
-//! a major bump. Consumers must ignore unknown fields.
+//! contract. Adding fields is a minor bump; renaming, removing, repurposing,
+//! or narrowing the type of an existing field is a major bump. Consumers
+//! must ignore unknown fields.
 //!
-//! Per Spec 2 § S2-16, no `output_schema_version` field is embedded —
-//! consumers pin via the crate's published version.
+//! No `output_schema_version` field is embedded — consumers pin via the
+//! crate's published version.
 
 use serde::Serialize;
 use std::path::PathBuf;
 
-/// `--output json` payload emitted by `validate` on BOTH pass and fail
-/// (validator idiom per S2-15: a single document on stdout always; the
-/// `diagnostics` array is empty on a clean pass, populated on failure).
+/// `--output json` payload emitted by `validate` on both pass and fail: a
+/// single document on stdout always, with `diagnostics` empty on a clean
+/// pass and populated on failure.
 #[derive(Debug, Serialize)]
 pub(crate) struct ValidateOutput {
     /// Validation diagnostics, ordered as the SDK collected them. Empty
@@ -34,7 +34,7 @@ pub(crate) struct Diagnostic {
     pub field: Option<String>,
 }
 
-/// `--output json` payload emitted by `yank` (data-tool idiom).
+/// `--output json` payload emitted by `yank`.
 /// `outcome` is the [`influxdb3_plugin_sdk::mutate_index::YankOutcome`]
 /// rendered as `"transitioned"` or `"already_in_desired_state"`.
 /// `target_state` is `true` after `yank`, `false` after `yank --undo`.
@@ -47,9 +47,9 @@ pub(crate) struct YankOutput {
     pub index_path: PathBuf,
 }
 
-/// `--output json` payload emitted by `package` on success (data-tool
-/// idiom). Carries the absolute paths of the artifact + derived index,
-/// the artifact's SHA-256 hash, and the new entry's identity.
+/// `--output json` payload emitted by `package` on success. Carries the
+/// absolute paths of the artifact + derived index, the artifact's SHA-256
+/// hash, and the new entry's identity.
 #[derive(Debug, Serialize)]
 pub(crate) struct PackageOutput {
     pub artifact_path: PathBuf,
@@ -59,9 +59,9 @@ pub(crate) struct PackageOutput {
     pub new_entry_version: String,
 }
 
-/// `--output json` payload emitted by `new` on success (data-tool idiom
-/// per S2-15: stdout carries this single document; failure paths leave
-/// stdout empty and write the error to stderr).
+/// `--output json` payload emitted by `new` on success: stdout carries this
+/// single document; failure paths leave stdout empty and write the error
+/// to stderr.
 #[derive(Debug, Serialize)]
 pub(crate) struct NewOutput {
     /// `"plugin"` for trigger templates, `"registry"` for the registry
@@ -72,9 +72,8 @@ pub(crate) struct NewOutput {
     pub template: &'static str,
     /// Absolute path of the directory the scaffold wrote into.
     pub target_dir: PathBuf,
-    /// Plugin name written into `manifest.toml` for plugin templates.
-    /// Omitted (per `serde(skip_serializing_if = ...)`) for registry
-    /// templates, which carry no plugin name.
+    /// Plugin name written into `manifest.toml` for plugin templates;
+    /// omitted for registry templates, which carry no plugin name.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     /// Files the scaffold wrote, relative to `target_dir`. Order matches

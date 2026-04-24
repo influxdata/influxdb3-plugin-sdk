@@ -1,34 +1,31 @@
-//! Output-mode plumbing per Spec 2 § Output Modes.
+//! Output-mode plumbing.
 //!
-//! - [`OutputMode`] — the `--output {human,json}` value type plus the
-//!   `clap::ValueEnum` impl that lets clap parse it.
+//! - [`OutputMode`] — the `--output {human,json}` value type.
 //! - [`Env`] — dependency-injectable env reader used by
-//!   [`resolve_output_mode`]. Unit tests pass fakes; the binary uses
-//!   [`RealEnv`].
-//! - [`resolve_output_mode`] — the S2-14 auto-detection precedence table.
+//!   [`resolve_output_mode`]; tests pass fakes, the binary uses [`RealEnv`].
+//! - [`resolve_output_mode`] — auto-detection precedence.
 //!
 //! Per-command rendering lives in [`human`] and [`json`].
 
 use std::io::IsTerminal;
 
-/// Output mode for an SDK command. Selected by `--output <mode>` or, when
-/// the flag is omitted, by [`resolve_output_mode`].
+/// Output mode for a command. Selected by `--output <mode>` or, when the
+/// flag is omitted, by [`resolve_output_mode`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 #[clap(rename_all = "lowercase")]
 pub(crate) enum OutputMode {
     /// Colorized, human-readable rendering. Default on TTY.
     Human,
-    /// Machine-readable JSON on stdout per Spec 2 S2-15. Default in CI / when
-    /// stdout is not a terminal.
+    /// Machine-readable JSON on stdout. Default in CI / when stdout is not a
+    /// terminal.
     Json,
 }
 
 /// Dependency-injectable env reader for [`resolve_output_mode`] and
 /// [`crate::color::decide_color`].
 ///
-/// The binary uses [`RealEnv`]; unit tests pass fake implementations to
-/// exercise every row of the S2-14 / S2-17 tables without mutating the
-/// process env (parallel-test safe, per Spec 2 testing convention).
+/// Tests pass fake implementations so they can exercise every row of the
+/// precedence tables without mutating the process env (parallel-test safe).
 pub(crate) trait Env {
     /// Returns the value of `name` in the environment, or `None` if unset.
     fn var(&self, name: &str) -> Option<String>;
@@ -36,7 +33,7 @@ pub(crate) trait Env {
     fn stdout_is_terminal(&self) -> bool;
     /// Returns whether stderr is attached to a terminal. Consulted by
     /// [`crate::style::Palette::for_stream`] so stderr-side colorization
-    /// respects its own isatty status independently of stdout (S2-17).
+    /// respects its own isatty status independently of stdout.
     fn stderr_is_terminal(&self) -> bool;
 }
 
@@ -56,7 +53,7 @@ impl Env for RealEnv {
     }
 }
 
-/// Resolves the effective [`OutputMode`] per Spec 2 S2-14:
+/// Resolves the effective [`OutputMode`]:
 ///
 /// 1. Explicit `--output <mode>` always wins.
 /// 2. `!isatty(stdout)` → [`OutputMode::Json`].
@@ -66,8 +63,7 @@ impl Env for RealEnv {
 /// Detection deliberately consults only `IsTerminal` and the `CI` variable.
 /// Platform-specific CI markers (`GITHUB_ACTIONS`, `GITLAB_CI`,
 /// `JENKINS_URL`, `BUILDKITE`, `CIRCLECI`) are **never** read — per-platform
-/// allowlists rot, and `CI=true` is the documented modern convention every
-/// runner sets.
+/// allowlists rot, and `CI=true` is the modern convention every runner sets.
 pub(crate) fn resolve_output_mode(explicit: Option<OutputMode>, env: &dyn Env) -> OutputMode {
     if let Some(m) = explicit {
         return m;
@@ -90,8 +86,6 @@ mod tests {
     use rstest::rstest;
     use std::collections::HashMap;
 
-    /// Fake [`Env`] for tests. `vars` lookups return owned `String`s when set;
-    /// `is_terminal` is fixed at construction.
     #[derive(Debug, Default)]
     struct FakeEnv {
         vars: HashMap<String, String>,
@@ -123,7 +117,6 @@ mod tests {
         }
     }
 
-    /// Explicit `--output` always wins, irrespective of `CI` and isatty.
     #[rstest]
     #[case(OutputMode::Human, true, None)]
     #[case(OutputMode::Human, false, Some("true"))]
@@ -141,7 +134,6 @@ mod tests {
         assert_eq!(resolve_output_mode(Some(explicit), &env), explicit);
     }
 
-    /// `!isatty(stdout)` → json, regardless of `CI`.
     #[rstest]
     #[case(None)]
     #[case(Some("true"))]
@@ -156,7 +148,6 @@ mod tests {
         assert_eq!(resolve_output_mode(None, &env), OutputMode::Json);
     }
 
-    /// `CI=true` and `CI=1` force json on a TTY; other `CI` values do not.
     #[rstest]
     #[case("true", OutputMode::Json)]
     #[case("1", OutputMode::Json)]
@@ -174,10 +165,8 @@ mod tests {
         assert_eq!(resolve_output_mode(None, &env), OutputMode::Human);
     }
 
-    /// Per-runner CI markers must NOT affect mode detection — only `CI=true|1`
-    /// counts. Locks the documented contract against drift toward a
-    /// per-platform allowlist (which would silently rot as runner names
-    /// shift).
+    // Per-runner CI markers must not affect mode detection — only `CI=true|1`
+    // counts. Locks the contract against drift toward a per-platform allowlist.
     #[rstest]
     #[case("GITHUB_ACTIONS", "true")]
     #[case("GITLAB_CI", "true")]

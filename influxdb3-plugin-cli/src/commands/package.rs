@@ -3,16 +3,15 @@
 //! Wraps [`influxdb3_plugin_sdk::package::package_plugin`]. CLI-side
 //! responsibilities:
 //!
-//! - Read + parse `--index` (S2-11: read-only; the file is never touched
-//!   on disk).
+//! - Read + parse `--index` (read-only; the file is never touched on disk).
 //! - Reject when `--out`'s canonical form equals the directory holding
-//!   `--index` (S2-12; safety rail for S2-11). The check fires before
-//!   any output bytes are written.
+//!   `--index` — a safety rail that prevents the derived-index write from
+//!   overwriting the input. Check fires before any output bytes are written.
 //! - Serialize the SDK's derived index via [`Index::to_canonical_json`]
 //!   and write to `<out>/index.json` plus the artifact bytes to
 //!   `<out>/<name>-<version>.tar.gz`.
-//! - Render the result via the data-tool idiom (single JSON document on
-//!   stdout for success; empty stdout + stderr error for failure).
+//! - Render the result: a single JSON document on stdout for success;
+//!   empty stdout + stderr error for failure.
 
 use clap::Args as ClapArgs;
 use influxdb3_plugin_schemas::Index;
@@ -32,18 +31,18 @@ pub(crate) struct Args {
     plugin_dir: PathBuf,
 
     /// Output format. Auto-detected from stdout's TTY status and `CI`
-    /// when omitted (Spec 2 § S2-14).
+    /// when omitted.
     #[arg(long, value_enum)]
     output: Option<OutputMode>,
 
-    /// Input registry index (read-only per S2-11). The derived index
-    /// (input + new entry appended) is written to `--out/index.json`.
+    /// Input registry index (read-only). The derived index (input + new
+    /// entry appended) is written to `--out/index.json`.
     #[arg(long)]
     index: PathBuf,
 
     /// Output directory. Receives the derived `index.json` and the new
     /// `<name>-<version>.tar.gz` artifact. Created if missing. Must NOT
-    /// resolve to the directory containing `--index` (S2-12).
+    /// resolve to the directory containing `--index`.
     #[arg(long)]
     out: PathBuf,
 }
@@ -61,7 +60,7 @@ fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
     let stderr_palette =
         Palette::for_stream(Stream::Stderr, mode, env, env.stderr_is_terminal());
 
-    // Read + parse the input index BEFORE creating --out so we don't
+    // Read + parse the input index before creating --out so we don't
     // leave an empty scratch dir on parse failure.
     let index_raw = std::fs::read_to_string(&args.index)
         .map_err(|e| anyhow::anyhow!("failed to read --index {}: {e}", args.index.display()))?;
@@ -72,9 +71,9 @@ fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
         )
     })?;
 
-    // Path-equivalence check (S2-11/S2-12). Must fire BEFORE any output
-    // write. We need both paths to exist for `canonicalize`, so create
-    // `--out` here even if we'll fail the check immediately after.
+    // Path-equivalence check must fire before any output write. Both
+    // paths need to exist for `canonicalize`, so create `--out` here even
+    // if the check fails immediately after.
     std::fs::create_dir_all(&args.out)
         .map_err(|e| anyhow::anyhow!("failed to create --out {}: {e}", args.out.display()))?;
     if paths_overlap(&args.index, &args.out)? {
@@ -94,7 +93,6 @@ fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
         Err(other) => return Err(other.into()),
     };
 
-    // Materialize bytes.
     let artifact_filename = format!(
         "{}-{}.tar.gz",
         outcome.new_entry.name.as_str(),
@@ -198,9 +196,9 @@ fn validation_errors_to_anyhow(
     match mode {
         OutputMode::Human => {
             // Render the full list to stderr so authors see every error
-            // in one pass (Spec 2 § Packaging). Use the same renderer as
+            // in one pass. Use the same renderer as
             // `validate` for visual consistency; the stderr palette here
-            // lets S2-17 colorization flow through `main.rs`'s eprintln.
+            // lets colorization flow through `main.rs`'s eprintln.
             let diagnostics: Vec<_> = errs
                 .iter()
                 .map(crate::diag_render::diagnostic_from)
@@ -211,9 +209,9 @@ fn validation_errors_to_anyhow(
             anyhow::anyhow!("{}", rendered.trim_end())
         }
         OutputMode::Json => {
-            // S2-15 for data-tool commands: "stdout must stay empty; the
-            // human-readable error line is written to stderr." Singular —
-            // the spec wants one line, not a multi-line diagnostic block
+            // For data-tool commands: stdout must stay empty; the
+            // human-readable error line is written to stderr. Singular —
+            // one line, not a multi-line diagnostic block
             // or a JSON document. We preserve today's summary shape to
             // keep JSON-mode consumers stable; human mode carries the
             // rich reporting.

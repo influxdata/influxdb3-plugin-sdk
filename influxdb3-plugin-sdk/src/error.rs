@@ -1,29 +1,18 @@
 //! Error types for the SDK.
 //!
 //! Two-layer design:
-//! - [`SdkError`] — crate-level error type returned by every public function.
-//!   Covers I/O, schema propagation, multi-error validation results,
-//!   archive/hash failures (including a distinct `PathTooLong` variant for
-//!   Spec 2 Reproducibility rule 6's ustar split-path limit), and two
-//!   specific policy-check failures (`AlreadyPublished` for S2-2,
-//!   `PathOverlap` for S2-12).
+//! - [`SdkError`] — crate-level error returned by every public function.
 //! - [`ValidationError`] — individual validation failures, collected into
 //!   [`ValidationReport`] and surfaced together via
-//!   [`SdkError::ValidationErrors`] per Spec 2 Validation's "all errors
-//!   reported together" contract.
+//!   [`SdkError::ValidationErrors`] so callers get every error in one pass.
 
 use influxdb3_plugin_schemas::{ReportedError, SchemaError, SchemaErrors, TriggerType};
 use std::path::PathBuf;
 
 /// Crate-level error type.
 ///
-/// Marked `#[non_exhaustive]`: variant additions are not breaking. Field
-/// additions to existing variants ARE breaking — follow the Plan 1 pattern
-/// (introduce a new variant, deprecate the old one).
-///
-/// This crate is internal per Spec 2 Stability, so the stability bar is
-/// softer than `influxdb3-plugin-schemas` — but the `#[non_exhaustive]`
-/// discipline still prevents accidental breaks for the CLI crate (Plan 3).
+/// `#[non_exhaustive]`: variant additions are not breaking; field additions
+/// to existing variants are — introduce a new variant and deprecate the old.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum SdkError {
@@ -56,12 +45,9 @@ pub enum SdkError {
     },
 
     /// Surfaces from [`crate::mutate_index::add_entry`] when
-    /// `(name, version)` already exists in the input index. Per Spec 2
-    /// § S2-2, the error must list the existing versions of the plugin
-    /// in the input index so first-time authors can act on the conflict
-    /// (increment to a new version, or `yank` the existing one).
-    /// `existing_versions` enumerates every version of `name` already
-    /// in the index, in the order they appear there.
+    /// `(name, version)` already exists in the input index. `existing_versions`
+    /// enumerates every version of `name` already in the index (in index order)
+    /// so the author can pick a higher version or `yank` the conflicting one.
     #[error(
         "plugin ({name:?}, {version:?}) already exists in the target index. \
          Existing versions of {name:?} in this index: {existing_versions:?}. \
@@ -84,9 +70,8 @@ pub enum SdkError {
 }
 
 impl SdkError {
-    /// Stable tag per variant — same semver-drift guard pattern as
-    /// `SchemaError::variant_name`. The exhaustive match forces new
-    /// variants to be registered with test fixtures.
+    /// Stable tag per variant. The exhaustive match forces new variants to
+    /// be registered with test fixtures (drift guard).
     pub fn variant_name(&self) -> &'static str {
         match self {
             Self::Io { .. } => "Io",
@@ -109,14 +94,11 @@ fn path_suffix(path: Option<&PathBuf>) -> String {
     }
 }
 
-/// Adapts a schemas-layer `SchemaErrors` into the SDK's single diagnostics
-/// container. Each `ReportedError` becomes one
-/// [`ValidationError::SchemaReported`] entry inside
-/// [`SdkError::ValidationErrors`] — preserving field paths and inner
-/// `SchemaError` variants without lossy string-squashing.
-///
-/// This is the canonical conversion path used by `?` at every site that
-/// calls `Manifest::parse_toml` or `Index::parse_json`.
+/// Adapts schemas-layer `SchemaErrors` into `SdkError::ValidationErrors`.
+/// Each `ReportedError` becomes one [`ValidationError::SchemaReported`],
+/// preserving field paths and inner `SchemaError` variants without lossy
+/// string-squashing. This is the canonical `?`-conversion path for callers
+/// of `Manifest::parse_toml` / `Index::parse_json`.
 impl From<SchemaErrors> for SdkError {
     fn from(errors: SchemaErrors) -> Self {
         let diagnostics = errors
@@ -129,21 +111,15 @@ impl From<SchemaErrors> for SdkError {
 
 /// An individual validation failure.
 ///
-/// Collected into [`ValidationReport`] during a validation pass, then
-/// surfaced together via [`SdkError::ValidationErrors`] per Spec 2
-/// Validation's multi-error contract.
+/// Collected into [`ValidationReport`] and surfaced together via
+/// [`SdkError::ValidationErrors`].
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum ValidationError {
     /// Wraps a structural [`ReportedError`] from the schemas crate's
-    /// two-phase parse (`Manifest::parse_toml` / `Index::parse_json`).
-    /// Preserves the schemas-level field path and inner `SchemaError`
-    /// variant losslessly so the CLI can render structural diagnostics
-    /// alongside cross-file diagnostics in one `--output json` array.
-    ///
-    /// The standard conversion path is via [`From<SchemaErrors> for
-    /// SdkError`], which spreads each `ReportedError` from a `SchemaErrors`
-    /// into one `SchemaReported` entry inside `SdkError::ValidationErrors`.
+    /// two-phase parse (`Manifest::parse_toml` / `Index::parse_json`),
+    /// preserving the field path and inner `SchemaError` losslessly so the
+    /// CLI can render structural and cross-file diagnostics in one array.
     #[error(transparent)]
     SchemaReported(ReportedError),
 
@@ -166,12 +142,11 @@ pub enum ValidationError {
     )]
     AsyncTriggerFn { trigger: TriggerType },
 
-    /// Plugin identified by `(name, version)` already exists in the target
-    /// index. Surfaces from [`crate::validate::plugin_dir_with_index`] so the
-    /// CLI's `validate --index` flag can collect uniqueness conflicts
-    /// alongside other validation errors per Spec 2 S2-15's validator-idiom
-    /// contract. `crate::mutate_index::add_entry` continues to enforce S2-2
-    /// at the mutation boundary by returning `SdkError::AlreadyPublished`.
+    /// Plugin `(name, version)` already exists in the target index. Surfaces
+    /// from [`crate::validate::plugin_dir_with_index`] so `validate --index`
+    /// can collect uniqueness conflicts alongside other validation errors.
+    /// The mutation-boundary check in `mutate_index::add_entry` returns the
+    /// distinct [`SdkError::AlreadyPublished`] instead.
     #[error(
         "plugin ({name:?}, {version:?}) already exists in the target index; \
          increment version or run `yank` instead"
@@ -180,8 +155,7 @@ pub enum ValidationError {
 }
 
 impl ValidationError {
-    /// Stable tag per variant. Same drift-guard role as
-    /// `SdkError::variant_name`.
+    /// Stable tag per variant (same drift-guard role as `SdkError::variant_name`).
     pub fn variant_name(&self) -> &'static str {
         match self {
             Self::SchemaReported(_) => "SchemaReported",
@@ -196,43 +170,33 @@ impl ValidationError {
 
 /// Multi-error accumulator for validation passes.
 ///
-/// Callers use [`push`](Self::push) to record failures as they're encountered,
-/// then [`into_result`](Self::into_result) to convert into the final
-/// `Result<(), SdkError>` — empty report becomes `Ok(())`, non-empty becomes
-/// `Err(SdkError::ValidationErrors(vec))`.
-///
-/// This encodes Spec 2 Validation's "All validation errors are collected and
-/// reported together rather than failing on the first" contract at the type
-/// level — callers can't forget to collect, because the builder is the only
-/// way to return validation results.
+/// Callers [`push`](Self::push) failures as they're encountered, then
+/// [`into_result`](Self::into_result) to get `Ok(())` (empty) or
+/// `Err(SdkError::ValidationErrors(errors))`. The type forces collect-all
+/// semantics: the builder is the only way to return validation results.
 #[derive(Debug, Default)]
 pub struct ValidationReport {
     errors: Vec<ValidationError>,
 }
 
 impl ValidationReport {
-    /// Creates an empty report.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Appends a single validation error.
     pub fn push(&mut self, err: ValidationError) {
         self.errors.push(err);
     }
 
-    /// Returns `true` if no errors have been recorded.
     pub fn is_empty(&self) -> bool {
         self.errors.is_empty()
     }
 
-    /// Number of recorded errors.
     pub fn len(&self) -> usize {
         self.errors.len()
     }
 
-    /// Consumes the report. Returns `Ok(())` if empty, else
-    /// `Err(SdkError::ValidationErrors(errors))`.
+    /// `Ok(())` if empty, else `Err(SdkError::ValidationErrors(errors))`.
     pub fn into_result(self) -> Result<(), SdkError> {
         if self.errors.is_empty() {
             Ok(())
@@ -368,7 +332,6 @@ mod tests {
 
     #[test]
     fn schema_error_auto_converts() {
-        // `#[from] SchemaError` lets `?` operator in callers convert cleanly.
         fn try_it() -> Result<(), SdkError> {
             Err(SchemaError::DescriptionEmpty)?;
             Ok(())
@@ -380,20 +343,14 @@ mod tests {
         ));
     }
 
-    /// Testing-spec S3 #7: schemas errors wrapped in `SdkError::Schema` must
-    /// preserve the structured payload so callers can pattern-match on the
-    /// inner `SchemaError` variant. With `#[error(transparent)]`, `.source()`
-    /// delegates through — so the correct propagation test is
-    /// pattern-matching on the wrapper variant.
-    ///
-    /// Additionally, for schemas variants that themselves carry a
-    /// `#[source]` (e.g., `InvalidVersion` wraps `semver::Error`), the full
-    /// `Error::source()` chain reaches the bottom.
+    /// Schemas errors wrapped in `SdkError::Schema` must preserve the
+    /// structured payload. With `#[error(transparent)]`, pattern-matching
+    /// on the wrapper variant is the correct propagation test, and
+    /// `Error::source()` still reaches any nested `#[source]` at the bottom.
     #[test]
     fn schemas_error_structured_payload_preserved_via_sdk_schema() {
         use std::error::Error as _;
 
-        // 1. Field-carrying variant: pattern-matching recovers the fields.
         let wrapped = SdkError::from(SchemaError::InvalidPluginName {
             name: "Bad-Name".into(),
         });
@@ -403,13 +360,8 @@ mod tests {
             }
             other => panic!("expected SdkError::Schema(InvalidPluginName), got {other:?}"),
         }
-        // `#[error(transparent)]`: Display passes through unchanged.
         assert!(wrapped.to_string().contains("Bad-Name"));
 
-        // 2. Nested `#[source]`: schemas variant wraps `semver::Error`.
-        //    `Error::source()` on `SdkError::Schema` delegates through
-        //    `transparent` to the SchemaError's own `#[source]`, reaching
-        //    the underlying semver::Error at the bottom.
         let sem_err = semver::Version::parse("1.2").unwrap_err();
         let wrapped = SdkError::from(SchemaError::InvalidVersion {
             version: "1.2".into(),
@@ -421,10 +373,9 @@ mod tests {
         assert!(bottom.downcast_ref::<semver::Error>().is_some());
     }
 
-    /// Testing-spec S3 #7 mirror: `ValidationError::SchemaReported` wraps
-    /// the schemas-layer `ReportedError` losslessly (path + inner variant),
-    /// so pattern-matching downstream callers can inspect the original
-    /// `SchemaError` variant and the field path that surfaced it.
+    /// `ValidationError::SchemaReported` wraps `ReportedError` losslessly
+    /// (path + inner variant), so downstream callers can pattern-match on
+    /// the original `SchemaError` variant and field path.
     #[test]
     fn schemas_error_structured_payload_preserved_via_validation_schema_reported() {
         use influxdb3_plugin_schemas::FieldPath;

@@ -7,11 +7,11 @@ use std::fmt;
 use std::str::FromStr;
 use unicode_normalization::UnicodeNormalization;
 
-/// Supported major version of the index schema.
+/// Supported major for the index schema.
 pub(crate) const SUPPORTED_INDEX_MAJOR: u32 = 1;
 
-/// The `index_schema_version` top-level field. Same structure and major-gate
-/// semantics as `ManifestSchemaVersion` but for the registry index.
+/// The `index_schema_version` top-level field. Mirrors `ManifestSchemaVersion`:
+/// format `<major>.<minor>`, unsupported majors rejected.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct IndexSchemaVersion {
     major: u32,
@@ -77,7 +77,8 @@ impl serde::Serialize for IndexSchemaVersion {
     }
 }
 
-/// Registry artifact-base URL. Scheme-validated per Spec 1 S1-7 invariant.
+/// Registry artifact-base URL. Scheme is restricted to `https`, `http`, or
+/// `file`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ArtifactsUrl(url::Url);
 
@@ -212,13 +213,11 @@ fn is_false(b: &bool) -> bool {
 }
 
 impl Index {
-    /// Parses an index from a JSON string.
+    /// Parses an index from JSON, collecting every field-level defect from
+    /// every entry in one pass (including duplicate `(name, version)` pairs).
     ///
-    /// Two-phase: raw JSON deserialize → schema-version short-circuit →
-    /// per-entry field validation with error collection (including
-    /// duplicate `(name, version)` detection). All field-level errors from
-    /// a single document are collected into `SchemaErrors` with field-path
-    /// context.
+    /// Syntax errors and an unsupported/malformed `index_schema_version`
+    /// short-circuit with a single error.
     ///
     /// # Examples
     ///
@@ -240,11 +239,9 @@ impl Index {
         use std::collections::HashSet;
         use std::str::FromStr;
 
-        // Phase 1: raw deserialize.
         let raw: RawIndex = serde_json::from_str(input)
             .map_err(|source| SchemaErrors::single_at_root(SchemaError::JsonParse { source }))?;
 
-        // Phase 2a: schema-version short-circuit.
         let schema_version =
             IndexSchemaVersion::from_str(&raw.index_schema_version).map_err(|e| {
                 SchemaErrors::new(vec![ReportedError::new(
@@ -253,7 +250,6 @@ impl Index {
                 )])
             })?;
 
-        // Phase 2b: collect field-level errors.
         let mut errors = Vec::new();
         let root = FieldPath::root();
 
@@ -272,8 +268,8 @@ impl Index {
             let entry_path = root.field("plugins").index(i);
             let validated = validate_raw_entry(raw_entry, &entry_path, &mut errors);
 
-            // Duplicate check uses the raw name/version strings — catches
-            // duplicates even if the entry itself has other validation errors.
+            // Duplicate check uses raw strings so it still fires when the
+            // entry has other validation errors.
             let key = (raw_entry.name.clone(), raw_entry.version.clone());
             if !seen.insert(key) {
                 errors.push(ReportedError::new(
@@ -301,36 +297,27 @@ impl Index {
         })
     }
 
-    /// Serializes this index to the canonical JSON form defined by Spec 2
-    /// Reproducibility (derived index canonicalization):
+    /// Serializes this index to its canonical JSON form:
     ///
     /// - Field ordering matches struct declaration order.
-    /// - `plugins[]` sorted by `name` ascending, then `version` ascending
-    ///   (SemVer precedence). Yank status does not affect ordering.
-    /// - 2-space indent, pretty-printed.
-    /// - Trailing newline.
-    /// - NFC Unicode normalization applied to free-text `description` fields.
-    ///   `PluginName`, `ArtifactHash`, schema versions, and trigger identifiers
-    ///   are constrained to NFC-safe subsets (ASCII) by their validators. URL
-    ///   fields are validated via `url::Url` parse which produces a
-    ///   deterministic serialized form independent of input normalization.
+    /// - `plugins[]` sorted by `name` ascending, then `version` ascending by
+    ///   SemVer precedence. Yank status does not affect ordering.
+    /// - 2-space indent, pretty-printed, trailing newline.
+    /// - NFC Unicode normalization on free-text `description` fields. Other
+    ///   string fields are already ASCII-constrained by their validators; URL
+    ///   fields normalize via `url::Url` parse.
     pub fn to_canonical_json(&self) -> Result<String, SchemaError> {
-        // Clone so we can sort without mutating `self`.
         let mut normalized = self.clone();
-        // Per Spec 1 Reproducibility: "sorted by `name` ascending, then
-        // `version` ascending per SemVer 2.0.0 precedence."
-        // `Version::cmp_precedence` implements the SemVer 2.0.0 precedence
-        // rule (build metadata is ignored). The plain `Version::cmp` would
-        // include build metadata and violate that contract.
+        // `cmp_precedence` ignores build metadata (SemVer 2.0.0 rule); plain
+        // `Version::cmp` would lexically order build strings, violating that.
         normalized.plugins.sort_by(|a, b| {
             a.name
                 .as_str()
                 .cmp(b.name.as_str())
                 .then_with(|| a.version.cmp_precedence(&b.version))
         });
-        // Apply NFC to description fields. Returns a structured error if NFC
-        // pushes the string past the length bound (rare but possible — NFC can
-        // add combining-mark sequences that cross 200 chars).
+        // NFC may grow the string past the 200-char bound via combining-mark
+        // sequences; surface that as a structured error rather than panic.
         for entry in &mut normalized.plugins {
             let nfc = normalize_nfc(entry.description.as_str());
             entry.description = Description::try_new(&nfc)?;
@@ -353,10 +340,8 @@ fn normalize_nfc(s: &str) -> String {
     s.nfc().collect()
 }
 
-/// Validates a single `RawIndexEntry`, pushing any errors into the supplied
-/// `errors` Vec with paths relative to `path`. Returns `Some(IndexEntry)` on
-/// success, `None` if any error was pushed for this entry (so the caller
-/// can skip it when assembling the final `Index::plugins`).
+/// Validates a `RawIndexEntry`, pushing errors into `errors` with paths
+/// relative to `path`. Returns `None` if any error was pushed for this entry.
 fn validate_raw_entry(
     raw: &crate::raw::RawIndexEntry,
     path: &crate::FieldPath,
@@ -655,9 +640,8 @@ mod index_tests {
         assert!(Index::parse_json(&with_unknown).is_ok());
     }
 
-    /// Per the core design doc's "Index-entry validation mirrors manifest
-    /// validation" subsection, every IndexEntry must satisfy the same
-    /// trigger / URL-scheme rules as the manifest.
+    /// Index-entry validation mirrors manifest validation: same trigger and
+    /// URL-scheme rules apply per entry.
     #[test]
     fn empty_triggers_rejected_per_entry() {
         let src = MINIMAL.replace(r#""triggers": ["process_writes"]"#, r#""triggers": []"#);
@@ -724,15 +708,12 @@ mod index_tests {
         assert!(Index::parse_json(&src).is_ok());
     }
 
-    /// Two-phase parse collects per-entry defects across multiple entries
-    /// AND duplicate-(name, version) detection — all in a single pass.
+    /// Per-entry defects and duplicate-(name, version) detection collect in
+    /// a single pass.
     #[test]
     fn collects_multiple_entry_defects_and_duplicate() {
-        // plugins[0] has a valid entry.
-        // plugins[1] has a bad hash.
-        // plugins[2] duplicates plugins[0] (name + version).
-        // plugins[3] has a bad description (too long).
-        // Expect 3 errors: hash, duplicate, description.
+        // plugins[0] valid; plugins[1] bad hash; plugins[2] duplicates
+        // plugins[0]; plugins[3] description too long. Expect 3 errors.
         let long_desc = "a".repeat(201);
         let json = format!(
             r#"{{
@@ -772,8 +753,6 @@ mod index_tests {
             paths.contains(&"plugins[1].hash"),
             "missing hash path: {paths:?}"
         );
-        // `starts_with` predicate doesn't have a `contains` equivalent, so
-        // `iter().any` stays here.
         assert!(
             paths.iter().any(|p| p.starts_with("plugins[2]")),
             "missing duplicate path: {paths:?}"
@@ -919,11 +898,9 @@ mod canonical_serialization_tests {
 
     #[test]
     fn nfc_normalization_makes_precomposed_equal_decomposed() {
-        // Testing-spec S2 #9: "NFC test uses a precomposed-vs-decomposed pair
-        // and asserts byte-identical output."
-        //
-        // Input A uses precomposed "é" (U+00E9). Input B uses "e" + combining
-        // acute "\u{0301}" (U+0065 U+0301). NFC collapses both to U+00E9.
+        // A uses precomposed "é" (U+00E9); B uses "e" + combining acute
+        // (U+0065 U+0301). NFC collapses both to U+00E9, so canonical output
+        // is byte-identical.
         let precomposed = Description::try_new("caf\u{00E9}").unwrap();
         let decomposed = Description::try_new("cafe\u{0301}").unwrap();
         let entry_a = IndexEntry {
@@ -960,7 +937,7 @@ mod canonical_serialization_tests {
             artifacts_url: ArtifactsUrl::try_new("https://example.com/artifacts").unwrap(),
             plugins: vec![
                 make_entry("beta", semver::Version::new(1, 0, 0)),
-                yanked_alpha, // yanked but sorts first by name
+                yanked_alpha,
             ],
         };
         let out = idx.to_canonical_json().unwrap();
@@ -972,10 +949,9 @@ mod canonical_serialization_tests {
         );
     }
 
-    /// SemVer 2.0.0 precedence rule: a prerelease has lower precedence than
-    /// the corresponding normal version (`1.0.0-alpha < 1.0.0`). Canonical
-    /// ordering must respect this; otherwise yank-history queries and
-    /// "latest version" selection would surface wrong results.
+    /// SemVer 2.0.0: a prerelease has lower precedence than the corresponding
+    /// release (`1.0.0-alpha < 1.0.0`), so canonical ordering must put it
+    /// first — otherwise "latest version" queries would be wrong.
     #[test]
     fn prerelease_sorts_before_release_at_same_major_minor_patch() {
         let prerelease = make_entry("p", "1.0.0-alpha".parse().unwrap());
@@ -983,42 +959,36 @@ mod canonical_serialization_tests {
         let idx = Index {
             index_schema_version: IndexSchemaVersion::new(1, 0),
             artifacts_url: ArtifactsUrl::try_new("https://example.com/artifacts").unwrap(),
-            // Provide in reverse-of-expected order to force the sort.
+            // Reverse-of-expected order forces the sort.
             plugins: vec![release, prerelease],
         };
         let out = idx.to_canonical_json().unwrap();
         let alpha_pos = out.find(r#""1.0.0-alpha""#).unwrap();
         let release_pos = out.find(r#""1.0.0""#).unwrap();
-        // Both substrings exist; `1.0.0-alpha` appears in the prerelease's
-        // `version` field. The release's `1.0.0` appears later because
-        // SemVer puts prereleases before the release.
         assert!(
             alpha_pos < release_pos,
             "prerelease 1.0.0-alpha must sort before release 1.0.0"
         );
     }
 
-    /// SemVer 2.0.0 precedence rule: build metadata is ignored when
-    /// determining version precedence. Two entries differing only by build
-    /// metadata have equal precedence per `Version::cmp_precedence` (which
-    /// is what `to_canonical_json` uses). The plain `Version::cmp` would
-    /// produce a lexical ordering of the build string — wrong per spec.
+    /// SemVer 2.0.0: build metadata is ignored for precedence, so entries
+    /// differing only in build metadata must compare equal via
+    /// `cmp_precedence`. Plain `Version::cmp` would order them lexically on
+    /// the build string, so `to_canonical_json` must use `cmp_precedence`.
     #[test]
     fn build_metadata_does_not_affect_precedence() {
         let v_a: semver::Version = "1.0.0+build.1".parse().unwrap();
         let v_b: semver::Version = "1.0.0+build.2".parse().unwrap();
 
-        // SemVer 2.0.0: build metadata ignored for precedence.
         assert_eq!(v_a.cmp_precedence(&v_b), std::cmp::Ordering::Equal);
-        // Sanity: plain Version::cmp DOES distinguish them, which is why
-        // to_canonical_json must use cmp_precedence (not cmp) per Spec 1.
+        // Sanity: plain `cmp` distinguishes them, which is why the sort
+        // cannot use `cmp` here.
         assert_ne!(v_a.cmp(&v_b), std::cmp::Ordering::Equal);
 
         let idx = Index {
             index_schema_version: IndexSchemaVersion::new(1, 0),
             artifacts_url: ArtifactsUrl::try_new("https://example.com/artifacts").unwrap(),
-            // Provide in deliberate order; equal-precedence entries should
-            // preserve insertion order via stable sort.
+            // Equal-precedence entries preserve input order via stable sort.
             plugins: vec![make_entry("p", v_a.clone()), make_entry("p", v_b.clone())],
         };
         let out = idx.to_canonical_json().unwrap();

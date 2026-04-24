@@ -1,10 +1,8 @@
-//! Integration tests for Spec 2 Reproducibility archive-canonicalization
-//! rules, driven through the `influxdb3_plugin_sdk::archive::canonical_tar_gz`
-//! public API. These complement the crate-internal inline tests in
-//! `src/archive.rs` by exercising the function from an external test crate,
-//! which catches drift in the public signature that inline tests cannot see.
-//!
-//! One test per rule, matching the plan's D23 enumeration.
+//! Integration tests for archive-canonicalization rules, driven through the
+//! `influxdb3_plugin_sdk::archive::canonical_tar_gz` public API. These
+//! complement the crate-internal inline tests in `src/archive.rs` by
+//! exercising the function from an external test crate, which catches drift
+//! in the public signature that inline tests cannot see.
 //!
 //! See `validate_smoke.rs` for the rationale behind the crate-root allow.
 
@@ -16,8 +14,6 @@ use std::fs;
 
 mod common;
 use common::{VALID_INIT, VALID_MANIFEST, minimal_plugin_dir};
-
-// ─── Fixture helpers ─────────────────────────────────────────────────────────
 
 fn plugin_name() -> influxdb3_plugin_schemas::PluginName {
     "p".parse().unwrap()
@@ -35,8 +31,7 @@ fn gunzip(bytes: &[u8]) -> Vec<u8> {
     out
 }
 
-// ─── Rule 1: tar format is ustar ─────────────────────────────────────────────
-
+// Rule 1: tar format is ustar.
 #[test]
 fn rule1_tar_format_is_ustar() {
     let td = tempfile::tempdir().unwrap();
@@ -48,8 +43,7 @@ fn rule1_tar_format_is_ustar() {
     assert_eq!(&tar_bytes[263..265], b"00", "expected ustar version 00");
 }
 
-// ─── Rule 2: entries sorted by archive path ──────────────────────────────────
-
+// Rule 2: entries sorted by archive path.
 #[test]
 fn rule2_entries_sorted_by_path() {
     let td = tempfile::tempdir().unwrap();
@@ -77,8 +71,7 @@ fn rule2_entries_sorted_by_path() {
     );
 }
 
-// ─── Rule 3: every entry's mtime = 0 ─────────────────────────────────────────
-
+// Rule 3: every entry's mtime = 0.
 #[test]
 fn rule3_every_entry_mtime_zero() {
     let td = tempfile::tempdir().unwrap();
@@ -91,8 +84,7 @@ fn rule3_every_entry_mtime_zero() {
     }
 }
 
-// ─── Rule 4: UID = 0, GID = 0, owner/group names empty ───────────────────────
-
+// Rule 4: UID = 0, GID = 0, owner/group names empty.
 #[test]
 fn rule4_uid_gid_and_names_canonical() {
     let td = tempfile::tempdir().unwrap();
@@ -109,8 +101,7 @@ fn rule4_uid_gid_and_names_canonical() {
     }
 }
 
-// ─── Rule 5: file mode canonicalization ──────────────────────────────────────
-
+// Rule 5: file mode canonicalization.
 #[test]
 fn rule5_non_exec_files_are_0644() {
     let td = tempfile::tempdir().unwrap();
@@ -126,9 +117,9 @@ fn rule5_non_exec_files_are_0644() {
     }
 }
 
-/// Spec 2 §Reproducibility rule 5 lists `directories → 0755`, but the
-/// canonical archive is flat-files-only: no directory-entry records are
-/// emitted. This test locks that stance.
+/// The canonical archive is flat-files-only: no directory-entry records
+/// are emitted (even though any per-directory mode would be `0755`). This
+/// test locks that stance.
 ///
 /// If this test ever starts failing, the implementation has begun emitting
 /// directory entries, and the reproducibility story must be reassessed
@@ -185,8 +176,7 @@ fn rule5_exec_files_are_0755() {
     assert!(seen_exec, "run.sh entry not found in archive");
 }
 
-// ─── Rule 6: path-overflow rejection (no PAX) ────────────────────────────────
-
+// Rule 6: path-overflow rejection (no PAX).
 #[test]
 fn rule6_rejects_archive_path_over_ustar_limit() {
     use influxdb3_plugin_sdk::SdkError;
@@ -219,8 +209,7 @@ fn rule6_rejects_archive_path_over_ustar_limit() {
     );
 }
 
-// ─── Rule 7: gzip header MTIME = 0 ───────────────────────────────────────────
-
+// Rule 7: gzip header MTIME = 0.
 #[test]
 fn rule7_gzip_mtime_zero() {
     let td = tempfile::tempdir().unwrap();
@@ -231,8 +220,7 @@ fn rule7_gzip_mtime_zero() {
     assert_eq!(mtime, 0, "expected gzip MTIME=0; got {mtime}");
 }
 
-// ─── Rule 8: gzip FNAME flag clear ───────────────────────────────────────────
-
+// Rule 8: gzip FNAME flag clear.
 #[test]
 fn rule8_gzip_fname_flag_clear() {
     let td = tempfile::tempdir().unwrap();
@@ -242,8 +230,6 @@ fn rule8_gzip_fname_flag_clear() {
     let flg = bytes[3];
     assert_eq!(flg & 0x08, 0, "expected FNAME bit clear; FLG={flg:08b}");
 }
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
 
 fn list_paths(bytes: &[u8]) -> Vec<String> {
     let tar_bytes = gunzip(bytes);

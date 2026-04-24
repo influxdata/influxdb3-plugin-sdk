@@ -1,6 +1,6 @@
 //! Integration tests for the `influxdb3-plugin --version` flag.
 //!
-//! Pins the Spec 2 § S2-21 output shape:
+//! Pins the output shape:
 //! ```text
 //! influxdb3-plugin <version> (<short-sha> <build-date>)
 //! ```
@@ -39,7 +39,7 @@ fn version_output_shape_matches_spec() {
         "version output {stdout:?} does not match regex {VERSION_RE}"
     );
 
-    // S2-5: version portion MUST match the cli crate's CARGO_PKG_VERSION.
+    // Version portion MUST match the cli crate's CARGO_PKG_VERSION.
     let expected_prefix = format!("influxdb3-plugin {} ", env!("CARGO_PKG_VERSION"));
     assert!(
         stdout.starts_with(&expected_prefix),
@@ -53,11 +53,11 @@ fn version_output_shape_matches_spec() {
     );
 }
 
-/// Spec 2 § S2-21 makes `--version` exempt from `--output`. clap treats
-/// `--output` at the top level as an unknown argument (the flag lives on
-/// subcommands), so the spawn fails at parse time with exit 2 — and the
-/// stdout invariant for `--version` (plain text, not JSON) still holds:
-/// stdout must NOT contain a JSON document.
+/// `--version` is exempt from `--output`. clap treats `--output` at the top
+/// level as an unknown argument (the flag lives on subcommands), so the
+/// spawn fails at parse time with exit 2 — and the stdout invariant for
+/// `--version` (plain text, not JSON) still holds: stdout must NOT contain
+/// a JSON document.
 #[test]
 fn version_output_flag_does_not_emit_json_on_stdout() {
     let output = Command::cargo_bin("influxdb3-plugin")
@@ -76,8 +76,8 @@ fn version_output_flag_does_not_emit_json_on_stdout() {
             "stdout {stdout:?} must match plain-text version regex even with --output json"
         );
     } else {
-        // clap rejected `--output` at the top level → exit 2 (usage error)
-        // per S2-18; stdout must be empty (no partial JSON).
+        // clap rejected `--output` at the top level → exit 2 (usage error);
+        // stdout must be empty (no partial JSON).
         assert_eq!(
             output.status.code(),
             Some(2),

@@ -1,31 +1,14 @@
 //! Schema types for InfluxDB 3 plugin manifests and indexes.
 //!
-//! This crate defines the canonical Rust types for parsing and serializing
-//! plugin manifests (`manifest.toml`), registry indexes (`index.json`), and
-//! the `(index_url, name, version)` plugin-identity tuple that ties them
-//! together.
+//! Defines the canonical Rust types for parsing and serializing plugin
+//! manifests (`manifest.toml`), registry indexes (`index.json`), and the
+//! `(index_url, name, version)` plugin-identity tuple.
 //!
-//! The crate is consumed by:
-//! - `influxdb3-plugin-sdk` — the author-side packaging library
-//! - `influxdb3-plugin-cli` — the `influxdb3-plugin` binary's CLI surface
-//! - the future database runtime — for install-time manifest parsing and
-//!   resolve-time index reads
-//!
-//! # Stability
-//!
-//! This crate targets a semver-stable public API. Schema evolution follows
-//! the rules in Spec 1's Schema Versioning Strategy: additive fields within
-//! a schema major are minor bumps; breaking schema changes bump the crate's
-//! major.
-//!
-//! The crate is licensed `MIT OR Apache-2.0`. It is currently unpublished
-//! pending the SDK's go-public timing; the stability commitment above
-//! applies to the types defined here and will be anchored at first publish.
+//! Schema evolution: additive fields within a schema major are minor bumps;
+//! breaking schema changes bump the crate's major.
 
-// `proptest` is used only in the `tests/determinism.rs` integration test, not
-// in any inline `#[cfg(test)]` module. The lib crate's test target still sees
-// it as a declared dev-dep, so this guard keeps `unused_crate_dependencies`
-// satisfied on the lib test build.
+// `proptest` is used only in the `tests/determinism.rs` integration test;
+// this guard keeps `unused_crate_dependencies` satisfied on the lib test build.
 #[cfg(test)]
 use proptest as _;
 

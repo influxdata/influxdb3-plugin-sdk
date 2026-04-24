@@ -90,10 +90,10 @@ fn snapshot_new_template(template: &str, target: &str, snapshot_name: &str) {
     insta::assert_json_snapshot!(snapshot_name, payload);
 }
 
-/// Spec 2 § S2-16: every per-template JSON output is a stable schema
-/// commitment. One snapshot per template locks that contract.
-/// `process_writes` is covered by `new_process_writes_happy_path_json_mode`
-/// above; this group covers the remaining three.
+/// Every per-template JSON output is a stable schema commitment. One
+/// snapshot per template locks that contract. `process_writes` is covered
+/// by `new_process_writes_happy_path_json_mode` above; this group covers
+/// the remaining three.
 
 #[test]
 fn new_process_scheduled_call_json_snapshot() {
@@ -193,7 +193,7 @@ fn new_plugin_with_explicit_database_version() {
 }
 
 /// `new` errors and writes nothing when any target file already exists
-/// (Spec 2 § new "writes full file set or nothing").
+/// (writes full file set or nothing).
 #[test]
 fn new_errors_on_pre_existing_file() {
     let td = tempfile::tempdir().unwrap();
@@ -274,7 +274,7 @@ fn new_rejects_name_on_registry_template() {
         .code(2);
 }
 
-/// Unknown template → clap parse error → exit code 2 (S2-18 usage error).
+/// Unknown template → clap parse error → exit code 2 (usage error).
 #[test]
 fn new_unknown_template_exits_two() {
     let td = tempfile::tempdir().unwrap();
@@ -292,7 +292,7 @@ fn new_unknown_template_exits_two() {
     );
 }
 
-/// Data-tool failure path: stdout empty, error on stderr (S2-15).
+/// Data-tool failure path: stdout empty, error on stderr.
 #[test]
 fn new_failure_in_json_mode_keeps_stdout_empty() {
     let td = tempfile::tempdir().unwrap();

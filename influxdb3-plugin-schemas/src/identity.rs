@@ -4,24 +4,17 @@ use crate::SchemaError;
 use std::fmt;
 use std::str::FromStr;
 
-/// Validated plugin name. Conforms to the regex `[a-z0-9][a-z0-9-]{0,63}`
-/// (1 to 64 characters, starting with lowercase alphanumeric, containing only
-/// lowercase alphanumerics and hyphens).
-///
-/// Spec 1 defines this as the plugin identity's second element within a
-/// registry. The 1-to-64 character bound (length-1 names accepted) matches
-/// the core design doc's `[a-z0-9][a-z0-9-]{0,63}` rule and the testing
-/// spec's S2 #2 boundary cases.
+/// Validated plugin name matching `[a-z0-9][a-z0-9-]{0,63}` (1-64 chars,
+/// starting with a lowercase alphanumeric, then lowercase alphanumerics or
+/// hyphens).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PluginName(String);
 
 impl PluginName {
-    /// Returns the underlying string reference.
     pub fn as_str(&self) -> &str {
         &self.0
     }
 
-    /// Consumes the newtype and returns the owned string.
     pub fn into_inner(self) -> String {
         self.0
     }
@@ -82,20 +75,13 @@ impl serde::Serialize for PluginName {
     }
 }
 
-/// Global plugin identity.
+/// Global plugin identity: the tuple `(source, name, version)` where `source`
+/// is either a registry URL or a local directory. Two `PluginId`s are equal
+/// when all three components match.
 ///
-/// Per Spec 1 S1-5, plugin identity is the tuple `(source, name, version)`
-/// where `source` is either a registry URL (`Registry` variant) or a local
-/// directory path (`Local` variant). Two `PluginId`s compare equal when all
-/// three components match.
-///
-/// # Serde impls deferred
-///
-/// `PluginId` intentionally does not derive `Serialize`/`Deserialize`. The
-/// SDK itself does not need them — manifests and indexes use their own
-/// types. If a downstream consumer (e.g., the database lockfile in Spec 4)
-/// needs to persist `PluginId`, serde impls should be added at that point
-/// under a dedicated task, with a snapshot test pinning the JSON shape.
+/// No serde impls: the SDK itself doesn't need them (manifests and indexes
+/// use their own types). Add later with a snapshot test pinning the JSON shape
+/// if a downstream consumer needs to persist `PluginId`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum PluginId {
     Registry {
@@ -111,7 +97,6 @@ pub enum PluginId {
 }
 
 impl PluginId {
-    /// Constructs a registry-sourced `PluginId`.
     pub fn registry(index_url: url::Url, name: PluginName, version: semver::Version) -> Self {
         Self::Registry {
             index_url,
@@ -120,7 +105,6 @@ impl PluginId {
         }
     }
 
-    /// Constructs a locally-sourced `PluginId`.
     pub fn local(path: std::path::PathBuf, name: PluginName, version: semver::Version) -> Self {
         Self::Local {
             path,
@@ -129,14 +113,12 @@ impl PluginId {
         }
     }
 
-    /// Returns the plugin's name regardless of source.
     pub fn name(&self) -> &PluginName {
         match self {
             Self::Registry { name, .. } | Self::Local { name, .. } => name,
         }
     }
 
-    /// Returns the plugin's version regardless of source.
     pub fn version(&self) -> &semver::Version {
         match self {
             Self::Registry { version, .. } | Self::Local { version, .. } => version,
@@ -191,16 +173,13 @@ mod tests {
         assert_matches!(err, SchemaError::InvalidPluginName { .. });
     }
 
-    /// Length boundaries cannot be expressed as `#[rstest::case]` arguments
-    /// (those require const-evaluable expressions), so they live in a
-    /// dedicated test. Covers length 1 (valid), 64 (valid), 65 (rejected) —
-    /// the approved 1-64-character rule per the core design doc's
-    /// `[a-z0-9][a-z0-9-]{0,63}` regex.
+    /// Length boundaries 1, 64, 65. Dedicated test because `#[rstest::case]`
+    /// arguments must be const-evaluable.
     #[test]
     fn length_boundaries() {
-        assert!(PluginName::from_str("a").is_ok()); // length 1
-        assert!(PluginName::from_str(&"a".repeat(64)).is_ok()); // length 64
-        assert!(PluginName::from_str(&"a".repeat(65)).is_err()); // length 65 rejected
+        assert!(PluginName::from_str("a").is_ok());
+        assert!(PluginName::from_str(&"a".repeat(64)).is_ok());
+        assert!(PluginName::from_str(&"a".repeat(65)).is_err());
     }
 
     #[test]

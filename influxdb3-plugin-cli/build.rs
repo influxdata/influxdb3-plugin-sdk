@@ -1,5 +1,4 @@
-//! Composes the parenthesized fragment of the `--version` output per
-//! Spec 2 § S2-21:
+//! Composes the parenthesized fragment of the `--version` output:
 //!
 //! - When git + `date` succeed → `"(<short-sha> <yyyy-mm-dd>)"`
 //! - Otherwise → `"(unknown)"`
@@ -14,8 +13,8 @@
 //!
 //! Watching `.git/HEAD` would force rebuilds on every commit / branch
 //! switch during active development. Release builds get a fresh build
-//! anyway (CI checks out the tag and starts from an empty cache); v1
-//! does not need per-build SHA precision in dev cycles.
+//! anyway (CI checks out the tag and starts from an empty cache), so
+//! per-build SHA precision isn't needed in dev cycles.
 
 use std::{env, fs, path::PathBuf, process::Command};
 

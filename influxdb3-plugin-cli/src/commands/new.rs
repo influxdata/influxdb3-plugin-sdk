@@ -9,8 +9,8 @@
 //!   `--name` (mirrors `cargo new`).
 //! - Resolve `--database-version` (plugin templates) and `--artifacts-url`
 //!   (registry template); pass through to the SDK as `Option<&str>`.
-//! - Render the result as either a one-line human confirmation or a
-//!   single JSON document on stdout per Spec 2 § S2-15 data-tool idiom.
+//! - Render the result as either a one-line human confirmation or a single
+//!   JSON document on stdout.
 
 use clap::{Args as ClapArgs, ValueEnum};
 use influxdb3_plugin_schemas::{PluginName, TriggerType};
@@ -23,7 +23,7 @@ use crate::output::{Env, OutputMode, RealEnv, json::NewOutput, resolve_output_mo
 use crate::style::Palette;
 
 /// Built-in template identifiers. Adding a variant is a minor bump of
-/// `influxdb3-plugin-cli`; renaming is a major bump per Spec 2 § Stability.
+/// `influxdb3-plugin-cli`; renaming is a major bump.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 #[clap(rename_all = "snake_case")]
 pub(crate) enum Template {
@@ -65,7 +65,7 @@ pub(crate) struct Args {
     path: PathBuf,
 
     /// Output format. Auto-detected from stdout's TTY status and `CI`
-    /// when omitted (Spec 2 § S2-14).
+    /// when omitted.
     #[arg(long, value_enum)]
     output: Option<OutputMode>,
 
@@ -90,7 +90,7 @@ pub(crate) struct Args {
 impl Args {
     /// Runs `new` per the parsed args. Errors propagate as
     /// [`anyhow::Error`]; `main.rs` renders them via `{e:#}` and maps to
-    /// exit code 1 per S2-7 / S2-18.
+    /// exit code 1.
     pub(crate) fn run(self) -> anyhow::Result<()> {
         run_with_env(self, &RealEnv)
     }
@@ -118,12 +118,11 @@ fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
     render(&summary, mode, stdout_palette)
 }
 
-/// Rejects template/flag combinations the spec doesn't permit.
+/// Rejects template/flag combinations that aren't meaningful.
 ///
-/// Spec 2 § `new` scopes `--name` and `--database-version` to plugin
-/// templates and `--artifacts-url` to the registry template. Silent
-/// ignore would let CI scripts pass nonsense flags and never learn about
-/// it; we surface the mismatch at parse-validation time.
+/// `--name` and `--database-version` apply only to plugin templates;
+/// `--artifacts-url` only to the registry template. Silently ignoring
+/// mismatches would let CI scripts pass nonsense flags unnoticed.
 fn reject_unsupported_flags(args: &Args) -> anyhow::Result<()> {
     if args.template == Template::Registry {
         if args.name.is_some() {

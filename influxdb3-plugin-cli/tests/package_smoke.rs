@@ -1,9 +1,9 @@
 //! Integration tests for `influxdb3-plugin package`.
 //!
-//! Covers happy-path artifact + derived-index emission, S2-2 duplicate
-//! rejection, S2-11 input-immutability, S2-12 input/output non-overlap
-//! across equivalence forms (same path, trailing slash, `.` segment,
-//! parent traversal, symlink), and the data-tool JSON idiom.
+//! Covers happy-path artifact + derived-index emission, duplicate
+//! rejection, input-immutability, input/output non-overlap across
+//! equivalence forms (same path, trailing slash, `.` segment, parent
+//! traversal, symlink), and the data-tool JSON idiom.
 //!
 //! See `version_smoke.rs` for the rationale behind the crate-root allow.
 
@@ -63,7 +63,7 @@ fn package_happy_path_writes_artifact_and_derived_index() {
     assert!(plugins[0]["hash"].as_str().unwrap().starts_with("sha256:"));
 }
 
-/// S2-11: the input `--index` file's bytes are byte-identical pre/post.
+/// The input `--index` file's bytes are byte-identical pre/post.
 /// Hashing here is by string equality — the index file is small enough.
 #[test]
 fn package_does_not_modify_input_index() {
@@ -83,11 +83,10 @@ fn package_does_not_modify_input_index() {
     assert_eq!(before, after, "input --index file must be byte-identical");
 }
 
-/// S2-2: duplicate `(name, version)` in the input index → exit 1, no
-/// outputs created. The error message must enumerate every existing
-/// version of the plugin and direct the author to either increment
-/// `plugin.version` or run `yank` (Spec 2 § S2-2 rejection-payload
-/// contract).
+/// Duplicate `(name, version)` in the input index → exit 1, no outputs
+/// created. The error message must enumerate every existing version of
+/// the plugin and direct the author to either increment `plugin.version`
+/// or run `yank`.
 #[test]
 fn package_rejects_duplicate_name_version() {
     let td = tempfile::tempdir().unwrap();
@@ -133,9 +132,9 @@ fn package_rejects_duplicate_name_version() {
         .failure()
         .code(1);
 
-    // S2-2 payload contract: stderr must enumerate the existing
-    // versions of `downsampler` AND direct the author to the actionable
-    // remediation. The unrelated `other@9.9.9` must NOT appear.
+    // Payload contract: stderr must enumerate the existing versions of
+    // `downsampler` AND direct the author to the actionable remediation.
+    // The unrelated `other@9.9.9` must NOT appear.
     let stderr = String::from_utf8_lossy(&assert.get_output().stderr).into_owned();
     assert!(
         stderr.contains("\"1.0.0\"") && stderr.contains("\"1.2.0\""),
@@ -157,7 +156,7 @@ fn package_rejects_duplicate_name_version() {
     assert!(!out_dir.join("index.json").exists());
 }
 
-/// S2-12 input/output non-overlap: every equivalence form for
+/// Input/output non-overlap: every equivalence form for
 /// `--out == dirname(--index)` must be rejected.
 #[rstest]
 #[case::same_path("eq")]
@@ -195,7 +194,7 @@ fn package_rejects_out_overlapping_index_dir(#[case] mode: &str) {
         "stderr should reference the S2-12 contract by identifier, got: {stderr}"
     );
 
-    // Critical S2-11 corollary: the input index file is unchanged.
+    // Critical corollary: the input index file is unchanged.
     assert_eq!(
         std::fs::read_to_string(&index_path).unwrap(),
         EMPTY_INDEX,

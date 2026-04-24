@@ -32,8 +32,8 @@ exceptions = [
 [bans]
 multiple-versions = "allow"
 deny = [
-    # S2-1: the SDK is network-unaware. Ban every HTTP client crate at the
-    # dependency graph so transitive additions fail the audit step.
+    # The SDK is network-unaware. Ban every HTTP client crate so transitive
+    # additions fail the audit step.
     { name = "reqwest" },
     { name = "hyper" },
     { name = "hyper-util" },

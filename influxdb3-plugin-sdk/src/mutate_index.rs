@@ -1,49 +1,39 @@
 //! Index mutation helpers: append an entry, yank/unyank by `(name, version)`.
 //!
-//! The mutations operate on an owned [`Index`] (callers pass `&mut Index`).
-//! No file I/O — callers serialize via [`Index::to_canonical_json`] and write
-//! the bytes themselves. That separation lets these functions be pure,
-//! deterministic, and testable without disk access.
+//! Operates on a caller-owned `&mut Index`; no file I/O. Callers serialize
+//! via [`Index::to_canonical_json`] and write bytes themselves.
 //!
 //! # Policy checks
 //!
-//! - [`add_entry`] enforces Spec 1 S1-4 / Spec 2 S2-2 immutability: if the
-//!   target `(name, version)` already exists in `idx.plugins[]`, returns
-//!   [`SdkError::AlreadyPublished`]. The caller must either bump the version
-//!   or explicitly call [`yank`] to retract the conflicting entry.
-//! - [`yank`] and [`unyank`] return [`SdkError::EntryNotFound`] if the
-//!   target entry is absent. Callers who want "no-op on absent" can match
-//!   on that variant and discard it.
+//! - [`add_entry`] enforces `(name, version)` immutability: duplicates
+//!   return [`SdkError::AlreadyPublished`]. The caller must bump the version
+//!   or [`yank`] the conflicting entry.
+//! - [`yank`] / [`unyank`] return [`SdkError::EntryNotFound`] if the target
+//!   entry is absent.
 //!
-//! Yank idempotency: [`yank`] on an already-yanked entry is a successful
-//! no-op (same for [`unyank`] on an already-unyanked entry). This matches
-//! the Spec 2 `yank --undo` semantics.
+//! Yank idempotency: yanking an already-yanked entry is a successful no-op
+//! (likewise for unyank).
 
 use influxdb3_plugin_schemas::{Index, IndexEntry};
 use semver::Version;
 
 use crate::SdkError;
 
-/// Outcome of a [`yank`] or [`unyank`] call.
-///
-/// The CLI uses this signal to distinguish "I toggled a flag" from "I did
-/// nothing because the target was already in the desired state" — the
-/// latter gets an informational message per Spec 2's `yank` / `yank --undo`
-/// idempotency contract.
+/// Outcome of a [`yank`] or [`unyank`] call. Lets the CLI distinguish a
+/// real state change from an idempotent no-op and emit a different message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum YankOutcome {
-    /// The entry's `yanked` flag changed as a result of the call.
+    /// The entry's `yanked` flag changed.
     Transitioned,
-    /// The entry was already in the desired state; no change was made.
+    /// The entry was already in the desired state; no change.
     AlreadyInDesiredState,
 }
 
-/// Appends `entry` to `idx.plugins[]`, rejecting duplicates per S2-2.
+/// Appends `entry` to `idx.plugins[]`, rejecting duplicate `(name, version)`.
 ///
-/// Returns [`SdkError::AlreadyPublished`] if `(name, version)` already
-/// exists. The error carries every version of `entry.name` already in
-/// the index (in input order) so the CLI can surface the actionable
-/// "increment version or yank one of these" message Spec 2 S2-2 requires.
+/// On conflict returns [`SdkError::AlreadyPublished`] with every existing
+/// version of `entry.name` in input order, so the CLI can render the
+/// actionable "increment version or yank one of these" message.
 pub fn add_entry(idx: &mut Index, entry: IndexEntry) -> Result<(), SdkError> {
     let new_version_str = entry.version.to_string();
     let existing_versions: Vec<String> = idx
@@ -64,19 +54,13 @@ pub fn add_entry(idx: &mut Index, entry: IndexEntry) -> Result<(), SdkError> {
 }
 
 /// Sets `yanked = true` on the entry identified by `(name, version)`.
-///
-/// Returns [`SdkError::EntryNotFound`] if no such entry exists. Idempotent:
-/// calling on an already-yanked entry returns
-/// [`YankOutcome::AlreadyInDesiredState`] without modification.
+/// Idempotent; returns [`SdkError::EntryNotFound`] if no such entry exists.
 pub fn yank(idx: &mut Index, name: &str, version: &Version) -> Result<YankOutcome, SdkError> {
     set_yanked(idx, name, version, true)
 }
 
 /// Sets `yanked = false` on the entry identified by `(name, version)`.
-///
-/// Returns [`SdkError::EntryNotFound`] if no such entry exists. Idempotent:
-/// calling on an already-unyanked entry returns
-/// [`YankOutcome::AlreadyInDesiredState`] without modification.
+/// Idempotent; returns [`SdkError::EntryNotFound`] if no such entry exists.
 pub fn unyank(idx: &mut Index, name: &str, version: &Version) -> Result<YankOutcome, SdkError> {
     set_yanked(idx, name, version, false)
 }
@@ -163,15 +147,14 @@ mod tests {
         assert_eq!(idx.plugins.len(), 1);
     }
 
-    /// Spec 2 § S2-2: the duplicate-rejection error must carry every
-    /// version of the plugin in the input index so the CLI can render
-    /// the actionable "increment version or yank one of these" message.
+    /// Duplicate-rejection error must list every existing version of the
+    /// plugin so the CLI can render actionable guidance.
     #[test]
     fn add_entry_duplicate_error_lists_every_existing_version() {
         let mut idx = empty_index();
         add_entry(&mut idx, make_entry("a", Version::new(1, 0, 0))).unwrap();
         add_entry(&mut idx, make_entry("a", Version::new(1, 1, 0))).unwrap();
-        // Different name should not appear in the list.
+        // Different name must not appear in the list.
         add_entry(&mut idx, make_entry("b", Version::new(2, 0, 0))).unwrap();
 
         let err = add_entry(&mut idx, make_entry("a", Version::new(1, 0, 0))).unwrap_err();
@@ -218,10 +201,8 @@ mod tests {
         assert!(idx.plugins[0].yanked);
     }
 
-    /// Yank signals whether the call transitioned state or was a no-op.
-    /// Spec 2's `yank` / `yank --undo` requires emitting an "informational
-    /// message" on the idempotent no-op case; the CLI needs this signal
-    /// to render that message correctly.
+    /// Yank signals whether the call transitioned state or was a no-op —
+    /// the CLI renders a different message in each case.
     #[test]
     fn yank_signals_transitioned_vs_already_in_desired_state() {
         let mut idx = empty_index();

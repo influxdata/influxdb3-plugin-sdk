@@ -2,7 +2,7 @@
 //! `validate` and (on validation-failure path) `package`.
 //!
 //! Keeping this in one place locks the "authors fix everything in one
-//! pass" shape (Spec 2 § Packaging) and avoids two independent text
+//! pass" shape and avoids two independent text
 //! formats drifting. Also houses the canonical
 //! `ValidationError -> Diagnostic` mapping so `validate` and `package`
 //! share one implementation.

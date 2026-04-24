@@ -1,11 +1,12 @@
 //! Color smoke — `FORCE_COLOR=1` on human mode emits ANSI; `NO_COLOR=1`
-//! on the same command path does not. Locks S2-17's table end-to-end.
+//! on the same command path does not. Locks the color-precedence table
+//! end-to-end.
 //!
 //! `assert_cmd` spawns without a real TTY, so the default (no env override)
 //! path yields no color. These tests therefore probe the `FORCE_COLOR`
 //! branch explicitly and pin the JSON-stdout absolute rule.
 //!
-//! Stream routing note (S2-15 / Task 4.1): in human mode, `validate`
+//! Stream routing note: in human mode, `validate`
 //! writes the diagnostics block to STDOUT and only the summary line to
 //! STDERR (via the anyhow error `main.rs` prints with `eprintln!("{e:#}")`).
 //! So `FORCE_COLOR=1` + `--output human` lands ANSI on stdout primarily;
@@ -73,8 +74,8 @@ fn force_color_emits_ansi_on_pipe() {
 
 #[test]
 fn no_color_suppresses_ansi_even_with_force() {
-    // NO_COLOR precedes FORCE_COLOR per no-color.org and S2-17. Neither
-    // stream may carry ANSI.
+    // NO_COLOR precedes FORCE_COLOR per no-color.org. Neither stream may
+    // carry ANSI.
     let tmp = bad_plugin();
     let assert = plugin()
         .env("NO_COLOR", "1")
@@ -101,9 +102,9 @@ fn no_color_suppresses_ansi_even_with_force() {
 
 #[test]
 fn json_mode_never_colorizes_stdout() {
-    // Absolute rule (S2-17): JSON on stdout is byte-stable; FORCE_COLOR
-    // must not override. stderr is stream-silent per S2-15 validator idiom
-    // so we only pin the stdout side here.
+    // Absolute rule: JSON on stdout is byte-stable; FORCE_COLOR must not
+    // override. stderr is stream-silent per the validator idiom so we only
+    // pin the stdout side here.
     let tmp = bad_plugin();
     plugin()
         .env("FORCE_COLOR", "1")

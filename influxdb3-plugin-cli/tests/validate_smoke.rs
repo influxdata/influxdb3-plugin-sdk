@@ -2,7 +2,7 @@
 //!
 //! Covers the validator-idiom contract (single JSON document on stdout
 //! on BOTH pass and fail), the cross-file failure categories, the
-//! `--index` uniqueness check, multi-error collection, and the S2-18
+//! `--index` uniqueness check, multi-error collection, and the
 //! exit-code mapping.
 //!
 //! Fixtures are synthesized inline into per-test `tempfile::TempDir`s so
@@ -158,7 +158,7 @@ fn validate_async_trigger_diagnostic_points_at_init() {
 /// `validate --index <path>` runs the same checks plus a uniqueness
 /// check against the supplied index. A `(name, version)` collision
 /// surfaces as a `NameVersionConflict` diagnostic, NOT a runtime error
-/// — same diagnostics array as other validation failures (S2-15).
+/// — same diagnostics array as other validation failures.
 #[test]
 fn validate_with_index_surfaces_uniqueness_collision() {
     let td = tempfile::tempdir().unwrap();
@@ -197,7 +197,7 @@ fn validate_with_index_surfaces_uniqueness_collision() {
 }
 
 /// Without `--index`, uniqueness is not checked even if a collision
-/// would exist on disk (S2-15 / Spec 2 § validate flag semantics).
+/// would exist on disk.
 #[test]
 fn validate_without_index_flag_passes() {
     let td = tempfile::tempdir().unwrap();

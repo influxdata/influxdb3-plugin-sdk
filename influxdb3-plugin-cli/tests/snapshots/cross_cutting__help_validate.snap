@@ -14,14 +14,14 @@ Arguments:
 
 Options:
       --output <OUTPUT>
-          Output format. Auto-detected from stdout's TTY status and `CI` when omitted (Spec 2 § S2-14)
+          Output format. Auto-detected from stdout's TTY status and `CI` when omitted
 
           Possible values:
           - human: Colorized, human-readable rendering. Default on TTY
-          - json:  Machine-readable JSON on stdout per Spec 2 S2-15. Default in CI / when stdout is not a terminal
+          - json:  Machine-readable JSON on stdout. Default in CI / when stdout is not a terminal
 
       --index <INDEX>
-          Optional index JSON to check `(name, version)` uniqueness against (S2-2). When omitted, uniqueness is not checked
+          Optional index JSON to check `(name, version)` uniqueness against. When omitted, uniqueness is not checked
 
   -h, --help
           Print help (see a summary with '-h')

@@ -1,8 +1,8 @@
 //! Integration tests for `influxdb3-plugin yank`.
 //!
 //! Covers happy-path yank/undo, idempotent paths (already-yanked /
-//! already-not-yanked), missing-target failure, S2-11 input
-//! immutability, and S2-12 input/output non-overlap.
+//! already-not-yanked), missing-target failure, input immutability,
+//! and input/output non-overlap.
 //!
 //! See `version_smoke.rs` for the rationale behind the crate-root allow.
 
@@ -123,8 +123,7 @@ fn yank_undo_clears_flag() {
 }
 
 /// Idempotency: re-yanking an already-yanked entry exits 0 with the
-/// `already_in_desired_state` marker. Spec 2 § yank "Idempotent when the
-/// target is already in the desired state."
+/// `already_in_desired_state` marker.
 #[test]
 fn yank_already_yanked_is_no_op_with_marker() {
     let td = tempfile::tempdir().unwrap();
@@ -181,8 +180,8 @@ fn yank_missing_entry_exits_one() {
     );
 }
 
-/// Malformed `<name>@<version>` → exit 2 (usage error per S2-18 /
-/// spec F-1). Clap's `ValueValidation` error kind surfaces the invalid
+/// Malformed `<name>@<version>` → exit 2 (usage error). Clap's
+/// `ValueValidation` error kind surfaces the invalid
 /// value verbatim; the parser folds the `FromStr::Err` detail into the
 /// `InvalidValue` field (clap's default renderer only emits
 /// `InvalidValue`, silently discarding `Suggested`), so stderr echoes
@@ -219,7 +218,7 @@ fn yank_malformed_target_exits_two() {
     );
 }
 
-/// S2-11: the input `--index` is byte-identical pre/post.
+/// The input `--index` is byte-identical pre/post.
 #[test]
 fn yank_does_not_modify_input_index() {
     let td = tempfile::tempdir().unwrap();
@@ -235,8 +234,8 @@ fn yank_does_not_modify_input_index() {
     assert_eq!(before, after, "input --index must be byte-identical");
 }
 
-/// S2-12: `--out == dirname(--index)` must be rejected (same contract
-/// as `package`). One representative form here; `package_smoke.rs`
+/// `--out == dirname(--index)` must be rejected (same contract as
+/// `package`). One representative form here; `package_smoke.rs`
 /// exercises the full equivalence matrix.
 #[test]
 fn yank_rejects_out_overlapping_index_dir() {

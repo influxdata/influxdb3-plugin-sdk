@@ -13,17 +13,17 @@ Arguments:
 
 Options:
       --output <OUTPUT>
-          Output format. Auto-detected from stdout's TTY status and `CI` when omitted (Spec 2 § S2-14)
+          Output format. Auto-detected from stdout's TTY status and `CI` when omitted
 
           Possible values:
           - human: Colorized, human-readable rendering. Default on TTY
-          - json:  Machine-readable JSON on stdout per Spec 2 S2-15. Default in CI / when stdout is not a terminal
+          - json:  Machine-readable JSON on stdout. Default in CI / when stdout is not a terminal
 
       --index <INDEX>
-          Input registry index (read-only per S2-11)
+          Input registry index (read-only)
 
       --out <OUT>
-          Output directory. Receives the derived `index.json`. Created if missing. Must NOT resolve to the directory containing `--index` (S2-12)
+          Output directory. Receives the derived `index.json`. Created if missing. Must NOT resolve to the directory containing `--index`
 
       --undo
           Clear `yanked` instead of setting it

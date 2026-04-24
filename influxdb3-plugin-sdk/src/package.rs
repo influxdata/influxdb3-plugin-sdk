@@ -1,29 +1,22 @@
 //! End-to-end packaging: validate → archive → hash → mutate_index.
 //!
-//! [`package_plugin`] composes the five author-side library operations
-//! specified in Spec 2 Packaging into a single pipeline:
+//! [`package_plugin`] composes the author-side library operations into one
+//! pipeline:
 //!
-//! 1. [`crate::validate::plugin_dir`] — manifest +
-//!    cross-file checks. Fails fast on structural parse errors; collected
-//!    validation failures short-circuit the pipeline via
-//!    [`SdkError::ValidationErrors`].
-//! 2. [`crate::archive::canonical_tar_gz`] —
-//!    canonical tar.gz bytes per Spec 2 Reproducibility.
-//! 3. [`crate::hash::sha256_of_bytes`] — SHA-256 of the
-//!    archive bytes, rendered as `sha256:<64 lowercase hex chars>`.
-//! 4. [`crate::mutate_index::add_entry`] — append
-//!    the new `IndexEntry` to a cloned copy of the input index. The S2-2
-//!    immutability check fires here: if `(name, version)` already exists,
-//!    the pipeline returns [`SdkError::AlreadyPublished`].
+//! 1. [`crate::validate::plugin_dir`] — manifest + cross-file checks. Fails
+//!    fast on structural parse errors; collected cross-file failures
+//!    short-circuit via [`SdkError::ValidationErrors`].
+//! 2. [`crate::archive::canonical_tar_gz`] — canonical tar.gz bytes.
+//! 3. [`crate::hash::sha256_of_bytes`] — SHA-256 of the archive bytes.
+//! 4. [`crate::mutate_index::add_entry`] — append the new `IndexEntry` to a
+//!    clone of the input index. Duplicate `(name, version)` returns
+//!    [`SdkError::AlreadyPublished`].
 //!
 //! # I/O scope
 //!
-//! [`package_plugin`] performs no output-side I/O. It reads the plugin
-//! directory (manifest + __init__.py + archive contents) but does not write
-//! the archive or index to disk — that's the caller's responsibility. This
-//! keeps S2-11 (immutable input) and S2-12 (input/output separation)
-//! enforcement at the CLI layer (Plan 3), where the command knows the
-//! `--out` target.
+//! [`package_plugin`] performs no output-side I/O — it reads the plugin
+//! directory but does not write the archive or index. The CLI owns the
+//! `--out` target so input/output separation can be enforced there.
 
 use influxdb3_plugin_schemas::{ArtifactHash, Index, IndexEntry, Manifest};
 use std::path::Path;
@@ -37,53 +30,37 @@ pub struct PackageOutput {
     pub archive_bytes: Vec<u8>,
     /// SHA-256 of [`Self::archive_bytes`].
     pub hash: ArtifactHash,
-    /// A copy of the input index with the new entry appended. Entries are
-    /// stored in insertion order; callers producing the final wire bytes
-    /// should serialize via [`Index::to_canonical_json`] which applies the
-    /// Spec 2 Reproducibility sort rules.
+    /// A copy of the input index with the new entry appended (insertion
+    /// order). Callers producing wire bytes should serialize via
+    /// [`Index::to_canonical_json`], which applies canonical sort.
     pub derived_index: Index,
-    /// The new [`IndexEntry`] that was appended to [`Self::derived_index`].
-    /// Exposed for callers that want to log, snapshot, or further inspect
-    /// the entry without re-searching the index.
+    /// The newly-appended [`IndexEntry`]. Exposed so callers can log or
+    /// snapshot it without re-searching the index.
     pub new_entry: IndexEntry,
 }
 
 /// Runs the full author-side packaging pipeline.
 ///
-/// Reads `plugin_dir/manifest.toml` to determine the plugin's identity,
-/// validates the directory, archives it, computes the artifact hash, and
-/// produces a derived index with the new entry appended.
-///
-/// `input_index` is consumed by value and the derived copy is returned in
-/// [`PackageOutput::derived_index`].
+/// Validates `plugin_dir`, archives it, hashes the archive, and returns the
+/// input index with a new entry appended (`input_index` is consumed).
 ///
 /// # Errors
 ///
-/// - [`SdkError::Io`] — failed to read `manifest.toml` or any source file.
-/// - [`SdkError::ValidationErrors`] — manifest did not parse structurally or
-///   one or more cross-file validation failures were collected (see
-///   [`validate::plugin_dir`]).
-/// - [`SdkError::Archive`] — archive construction failed (e.g.,
-///   path-overflow rejection).
-/// - [`SdkError::AlreadyPublished`] — `(name, version)` already present in
-///   the input index (S2-2 immutability).
+/// - [`SdkError::Io`] — read failure on `manifest.toml` or any source file.
+/// - [`SdkError::ValidationErrors`] — manifest or cross-file checks failed.
+/// - [`SdkError::Archive`] — archive construction failed (e.g. path overflow).
+/// - [`SdkError::AlreadyPublished`] — `(name, version)` already in the index.
 pub fn package_plugin(plugin_dir: &Path, input_index: Index) -> Result<PackageOutput, SdkError> {
-    // 1. Validate. Returns the parsed manifest on success, eliminating the
-    //    need to re-read and re-parse `manifest.toml` here.
     let manifest = validate::plugin_dir(plugin_dir)?;
 
-    // 2. Archive.
     let archive_bytes =
         archive::canonical_tar_gz(plugin_dir, &manifest.plugin.name, &manifest.plugin.version)?;
 
-    // 3. Hash.
     let hash_value = hash::sha256_of_bytes(&archive_bytes);
 
-    // 4. Compose the index entry from manifest fields + computed hash. We
-    //    consume the manifest by value since it won't be used again.
     let new_entry = entry_from_manifest(manifest, hash_value.clone());
 
-    // 5. Append to a clone of the input index; S2-2 fires here.
+    // Append to a clone; duplicate `(name, version)` fires here.
     let mut derived_index = input_index;
     mutate_index::add_entry(&mut derived_index, new_entry.clone())?;
 
@@ -185,8 +162,6 @@ mod tests {
         write_valid_plugin(&dir);
 
         let first = package_plugin(&dir, empty_index()).unwrap();
-        // Second packaging with the same manifest into an index that already
-        // has the entry must fail per S2-2.
         let err = package_plugin(&dir, first.derived_index).unwrap_err();
         assert!(
             matches!(err, SdkError::AlreadyPublished { .. }),
@@ -199,7 +174,7 @@ mod tests {
         let td = tempfile::tempdir().unwrap();
         let dir = td.path().join("p");
         fs::create_dir_all(&dir).unwrap();
-        // Declare process_writes but don't implement it.
+        // Declare `process_writes` but don't implement it.
         fs::write(
             dir.join("manifest.toml"),
             "manifest_schema_version = \"1.0\"\n\n\
@@ -235,9 +210,8 @@ mod tests {
         let err = package_plugin(&dir, first.derived_index).unwrap_err();
         assert!(matches!(err, SdkError::AlreadyPublished { .. }));
         // If `Index` had interior mutability, the clone's structural state
-        // could drift despite `package_plugin` taking ownership of the
-        // original. Pinning the full value (not just plugins.len()) catches
-        // that class of regression.
+        // could drift despite `package_plugin` taking ownership. Pinning the
+        // full value (not just plugins.len()) catches that class of regression.
         assert_eq!(
             snapshot, first_clone_for_compare,
             "snapshot must remain byte-identical; interior mutability would break this"

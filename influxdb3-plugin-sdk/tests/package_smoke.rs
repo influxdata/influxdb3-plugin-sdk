@@ -1,7 +1,7 @@
 //! End-to-end smoke test for `sdk::package::package_plugin` — the
 //! author-side pipeline composing validate → archive → hash → mutate_index.
 //!
-//! Covers the S2-2 happy path (append to a fresh index), the
+//! Covers the happy path (append to a fresh index), the
 //! `(name, version)` immutability check, and a round-trip through
 //! `Index::to_canonical_json` → `Index::parse_json` to verify the derived
 //! index is well-formed.
@@ -111,7 +111,6 @@ fn archive_is_extractable_and_contains_expected_entries() {
 /// End-to-end canary: the scaffold template's output must itself be
 /// valid and packageable. Catches "template produces something that won't
 /// validate" regressions — a bug class that single-layer tests miss.
-/// Testing-spec Section 5 #12.
 #[test]
 fn scaffold_then_validate_then_package_round_trips() {
     let td = tempfile::tempdir().unwrap();

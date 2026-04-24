@@ -6,7 +6,7 @@
 //! on monochrome environments.
 //!
 //! # Spec alignment
-//! - S2-17 color precedence table: fully delegated to `decide_color`.
+//! - color precedence table: fully delegated to `decide_color`.
 //! - Absolute JSON-stdout rule: caller passes `Stream::Stdout`/`Json`
 //!   combo and `decide_color` returns `false` — style fields collapse.
 

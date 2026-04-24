@@ -2,16 +2,11 @@
 
 /// Errors produced during schema parsing and validation.
 ///
-/// This enum is part of the `influxdb3-plugin-schemas` crate's semver-stable
-/// public API. Adding variants is a minor-version change; renaming, removing,
-/// or reshaping existing variants is a major-version change. Field additions
-/// to existing variants are also breaking changes — if a variant's payload
-/// must evolve, introduce a new variant and deprecate the old one rather
-/// than mutating the existing one.
+/// Adding variants is a minor-version change; renaming, removing, reshaping,
+/// or adding fields to existing variants is a major-version change. To evolve
+/// a variant's payload, introduce a new variant rather than mutating the old.
 ///
-/// Marked `#[non_exhaustive]` — downstream consumers must include a wildcard
-/// (`_ =>`) arm when matching on this enum, so future variant additions do not
-/// break their code.
+/// `#[non_exhaustive]`: downstream matches must include a `_ =>` arm.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum SchemaError {
@@ -61,14 +56,8 @@ pub enum SchemaError {
 
     /// A `dependencies.python` entry failed PEP 508 parsing.
     ///
-    /// # Semver note
-    ///
-    /// The `source` field's concrete type depends on `pep508_rs`, which is
-    /// pre-1.0 (v0.9 at time of writing). A minor bump of `pep508_rs` may
-    /// reshape `Pep508Error`, which would be a breaking change to this
-    /// variant's public field type. Consumers should prefer [`.source()`]
-    /// for type-erased access; pattern-matching the typed `source` field
-    /// couples your code to `pep508_rs`'s semver.
+    /// The `source` type comes from pre-1.0 `pep508_rs`; prefer [`.source()`]
+    /// over matching the typed field to avoid coupling to its semver.
     ///
     /// [`.source()`]: std::error::Error::source
     #[error("python requirement {requirement:?} is not PEP 508-parseable: {source}")]
@@ -125,19 +114,11 @@ pub enum SchemaError {
 }
 
 impl SchemaError {
-    /// Returns the variant's name as a stable string tag. Use for metrics
-    /// keys, log categorization, and error-category routing that should
-    /// survive field-level changes to variants.
+    /// Stable string tag for the variant. Use for metrics keys, log
+    /// categorization, and routing that must survive field-level changes.
     ///
-    /// Also anchors the `variant_tags_are_stable` snapshot test. The testing
-    /// design spec suggests `Debug` output for this check; we use
-    /// `variant_name()` instead because `Debug` would also capture field
-    /// values, which Rust's type system already catches via exhaustive
-    /// match — so `variant_name()` provides identical semver-tag coverage
-    /// with cleaner snapshot output. The exhaustive match below forces any
-    /// new enum variant to be registered with `every_variant()` in the test
-    /// module (adding a variant without updating this match fails to
-    /// compile).
+    /// The exhaustive match forces new variants to be registered in
+    /// `every_variant()` (compile error otherwise).
     pub fn variant_name(&self) -> &'static str {
         match self {
             Self::InvalidPluginName { .. } => "InvalidPluginName",
@@ -167,10 +148,8 @@ use crate::FieldPath;
 
 /// A `SchemaError` paired with the field path at which it was detected.
 ///
-/// Part of the `SchemaErrors` collection returned by `Manifest::parse_toml` and
-/// `Index::parse_json`. The `path` is empty for errors that apply to the whole
-/// document (e.g., TOML/JSON syntax errors); populated for field-level
-/// validation errors.
+/// `path` is empty for whole-document errors (TOML/JSON syntax); populated
+/// for field-level validation errors.
 #[derive(Debug)]
 pub struct ReportedError {
     pub path: FieldPath,
@@ -178,13 +157,12 @@ pub struct ReportedError {
 }
 
 impl ReportedError {
-    /// Constructs a new `ReportedError`.
     pub fn new(path: FieldPath, error: SchemaError) -> Self {
         Self { path, error }
     }
 
-    /// Constructs a `ReportedError` at the root path (for whole-document
-    /// errors like `TomlParse` and `JsonParse`).
+    /// Constructs a `ReportedError` at the root path, for whole-document
+    /// errors like `TomlParse` and `JsonParse`.
     pub fn at_root(error: SchemaError) -> Self {
         Self::new(FieldPath::root(), error)
     }
@@ -209,18 +187,14 @@ impl std::error::Error for ReportedError {
 /// Collection of `ReportedError`s returned by `Manifest::parse_toml` and
 /// `Index::parse_json`.
 ///
-/// The collection is always non-empty when returned as `Err(SchemaErrors)` —
-/// parse functions return `Ok(_)` if and only if no validation errors were
-/// found. Construction from an empty `Vec` is permitted but not produced by
-/// the crate's own code.
+/// Always non-empty when returned as `Err(SchemaErrors)` — parse functions
+/// return `Ok(_)` iff no validation errors were found.
 #[derive(Debug)]
 pub struct SchemaErrors(Vec<ReportedError>);
 
 impl SchemaErrors {
-    /// Constructs a `SchemaErrors` from a non-empty list of `ReportedError`s.
-    /// Panics in debug mode if `errors` is empty; passes through silently in
-    /// release mode because constructing an empty `SchemaErrors` is a
-    /// programming error rather than a data-driven case.
+    /// Debug-asserts `errors` is non-empty; constructing an empty
+    /// `SchemaErrors` is a programming error (use `Ok(_)` for no errors).
     pub fn new(errors: Vec<ReportedError>) -> Self {
         debug_assert!(
             !errors.is_empty(),
@@ -229,31 +203,24 @@ impl SchemaErrors {
         Self(errors)
     }
 
-    /// Constructs a `SchemaErrors` containing exactly one error at the root
-    /// path. Convenience for syntax-level errors (TomlParse / JsonParse) and
+    /// Convenience for syntax-level errors (TomlParse / JsonParse) and
     /// schema-version short-circuit errors.
     pub fn single_at_root(error: SchemaError) -> Self {
         Self(vec![ReportedError::at_root(error)])
     }
 
-    /// Returns the contained `ReportedError`s as a slice.
     pub fn errors(&self) -> &[ReportedError] {
         &self.0
     }
 
-    /// Consumes `self` and returns the inner `Vec`.
     pub fn into_vec(self) -> Vec<ReportedError> {
         self.0
     }
 
-    /// Number of errors collected.
     pub fn len(&self) -> usize {
         self.0.len()
     }
 
-    /// Never empty by construction; equivalent to `self.len() == 0` which
-    /// always returns false on well-formed instances. Provided for clippy
-    /// convenience.
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
@@ -277,9 +244,7 @@ impl std::fmt::Display for SchemaErrors {
 
 impl std::error::Error for SchemaErrors {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        // Return the first error's source; callers who want the full list
-        // use `.errors()`. Matches how other multi-error types expose their
-        // first error via source().
+        // First error's source; callers who want the full list use `.errors()`.
         self.0
             .first()
             .map(|r| &r.error as &(dyn std::error::Error + 'static))
@@ -315,11 +280,8 @@ mod tests {
     use super::*;
     use serde::ser::Error as _;
 
-    /// Returns one instance of every `SchemaError` variant for stability testing.
-    ///
-    /// Keep this in sync with the enum definition: every variant MUST appear here.
-    /// `variant_name()` lets the test assert the set is complete, and the snapshot
-    /// tests below lock both `Display` text and `Debug` variant tags.
+    /// Returns one instance of every `SchemaError` variant. Keep in sync with
+    /// the enum: every variant MUST appear here so snapshot tests cover them.
     fn every_variant() -> Vec<SchemaError> {
         vec![
             SchemaError::InvalidPluginName {
@@ -347,10 +309,9 @@ mod tests {
                 range: ">=bad".into(),
                 source: semver::VersionReq::parse(">=bad").unwrap_err(),
             },
-            // Note: constructing pep508_rs::Pep508Error requires a real parse failure.
-            // Use `requests>>=2.0` (double operator) because it is unambiguously
-            // rejected by PEP 508; many parsers accept surprisingly permissive
-            // inputs like `!!invalid!!`. Consistent with Chunk 9's fixture choice.
+            // Constructing Pep508Error needs a real parse failure.
+            // `requests>>=2.0` (double operator) is unambiguously rejected;
+            // inputs like `!!invalid!!` are accepted by some permissive paths.
             SchemaError::InvalidPythonRequirement {
                 requirement: "requests>>=2.0".into(),
                 source: Box::new(
@@ -393,36 +354,33 @@ mod tests {
         ]
     }
 
-    /// Locks the `Display` text of every error variant. Breaking this snapshot
-    /// means the user-facing error message changed — part of the crate's
-    /// semver-stable error contract per Spec 2 Stability.
+    /// Locks `Display` text of every variant — user-facing error messages are
+    /// part of the semver-stable contract.
     #[test]
     fn display_shape_is_stable() {
         let rendered: Vec<String> = every_variant().iter().map(|e| e.to_string()).collect();
         insta::assert_yaml_snapshot!("display_shape", rendered);
     }
 
-    /// Locks the variant-tag set of `SchemaError`. Breaking this snapshot means
-    /// a variant was renamed, added, or removed. Per testing-spec S2 #14 this
-    /// is the load-bearing stability contract — renaming a variant passes
-    /// `display_shape_is_stable` silently if only the text is unchanged, but
-    /// fails here.
+    /// Locks the variant-tag set. Breaking this means a variant was renamed,
+    /// added, or removed — the load-bearing stability contract, since renaming
+    /// can leave `display_shape_is_stable` untouched.
     #[test]
     fn variant_tags_are_stable() {
         let tags: Vec<&'static str> = every_variant().iter().map(|e| e.variant_name()).collect();
         insta::assert_yaml_snapshot!("variant_tags", tags);
     }
 
-    /// `SchemaErrors` Display rendering for the single-error case
-    /// (TomlParse / JsonParse / schema-version short-circuit shape).
+    /// `SchemaErrors` Display for the single-error case (TomlParse,
+    /// JsonParse, schema-version short-circuit).
     #[test]
     fn schema_errors_display_single_error() {
         let se = SchemaErrors::single_at_root(SchemaError::EmptyTriggers);
         insta::assert_snapshot!("schema_errors_single", se.to_string());
     }
 
-    /// `SchemaErrors` Display rendering for the multi-error case (the
-    /// dominant Option B output shape — every defect with field path).
+    /// `SchemaErrors` Display for the multi-error case (every defect with
+    /// its field path).
     #[test]
     fn schema_errors_display_multiple_errors() {
         let se = SchemaErrors::new(vec![
@@ -442,7 +400,7 @@ mod tests {
         insta::assert_snapshot!("schema_errors_multiple", se.to_string());
     }
 
-    /// `ReportedError::source()` walks back through the inner `SchemaError`,
+    /// `ReportedError::source()` walks back to the inner `SchemaError`,
     /// preserving the structural payload for downstream introspection.
     #[test]
     fn reported_error_source_chain_reaches_schema_error() {

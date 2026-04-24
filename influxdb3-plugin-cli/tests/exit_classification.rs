@@ -1,5 +1,5 @@
 //! Exit-code classification smoke — pins the mapping between
-//! `CliError` variants and process exit codes (S2-18).
+//! `CliError` variants and process exit codes.
 
 #![allow(unused_crate_dependencies, unused_imports)]
 
@@ -30,8 +30,8 @@ fn missing_required_flag_exits_two() {
 fn plain_runtime_failure_exits_one() {
     // Runtime failure path: `yank` against a nonexistent `--index` hits the
     // "failed to read --index" anyhow branch in commands/yank.rs, which
-    // surfaces as CliError::Runtime (exit 1) with stderr content. Avoids
-    // the silent JSON-mode validation path (S2-15) that `validate` would take.
+    // surfaces as CliError::Runtime (exit 1) with stderr content. Avoids the
+    // silent JSON-mode validation path that `validate` would take.
     let tmp = TempDir::new().unwrap();
     plugin()
         .args([
@@ -100,7 +100,7 @@ fn yank_self_overwrite_exits_two() {
         .args(["new", "registry", reg.to_str().unwrap()])
         .assert()
         .success();
-    // Empty index — `yank` will fail at entry lookup, but the S2-12
+    // Empty index — `yank` will fail at entry lookup, but the
     // path-overlap check must fire FIRST and return 2.
     plugin()
         .args([

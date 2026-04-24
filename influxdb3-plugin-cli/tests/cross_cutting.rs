@@ -1,17 +1,16 @@
-//! Cross-cutting CLI invariants from Spec 2:
+//! Cross-cutting CLI invariants:
 //!
-//! - **S2-9** — every clap `env = "..."` binding starts with the
-//!   `INFLUXDB3_PLUGIN_` prefix. v1 has no env-var-bound flags so the
-//!   walk passes trivially today; the test locks the contract for any
-//!   additive future flags.
-//! - **S2-6** — `clap` workspace pin meets the `>= 4.5.47` floor.
-//! - **S2-17 absolute rule** — `--output json` never emits ANSI escapes
-//!   on stdout, even with `FORCE_COLOR=1`.
-//! - **S2-14** — `CI=true` (per-spawn env) forces json mode end-to-end.
-//! - **S2-18** — observed exit codes are always in `{0, 1, 2}`.
-//! - **Help-text snapshots** — `--help` for top-level + each subcommand
-//!   pinned via insta. Spec 2 § Stability names the clap attribute
-//!   surface as part of the cli's stable contract.
+//! - Every clap `env = "..."` binding starts with the `INFLUXDB3_PLUGIN_`
+//!   prefix. v1 has no env-var-bound flags so the walk passes trivially
+//!   today; the test locks the contract for any additive future flags.
+//! - `clap` workspace pin meets the `>= 4.5.47` floor.
+//! - `--output json` never emits ANSI escapes on stdout, even with
+//!   `FORCE_COLOR=1`.
+//! - `CI=true` (per-spawn env) forces json mode end-to-end.
+//! - Observed exit codes are always in `{0, 1, 2}`.
+//! - `--help` for top-level + each subcommand pinned via insta — the
+//!   clap attribute surface is part of the cli's stable contract and
+//!   snapshots catch silent drift.
 //!
 //! See `version_smoke.rs` for the rationale behind the crate-root allow.
 
@@ -50,7 +49,7 @@ fn every_env_var_binding_uses_influxdb3_plugin_prefix() {
     );
 }
 
-/// S2-6: workspace pin for clap must be `>= 4.5.47`. Reads the workspace
+/// Workspace pin for clap must be `>= 4.5.47`. Reads the workspace
 /// root `Cargo.toml`, parses the `[workspace.dependencies]` clap entry,
 /// asserts the version meets the floor.
 #[test]
@@ -91,10 +90,10 @@ fn clap_workspace_pin_meets_floor() {
     );
 }
 
-/// S2-17 absolute rule: `--output json` on stdout NEVER emits ANSI
-/// escapes, even when `FORCE_COLOR=1` is set in the spawn env.
-/// Exercised against `validate` (which always emits a JSON document on
-/// stdout in the validator idiom).
+/// Absolute rule: `--output json` on stdout NEVER emits ANSI escapes,
+/// even when `FORCE_COLOR=1` is set in the spawn env. Exercised against
+/// `validate` (which always emits a JSON document on stdout in the
+/// validator idiom).
 #[test]
 fn json_stdout_emits_no_ansi_under_force_color() {
     let td = tempfile::tempdir().unwrap();
@@ -130,13 +129,11 @@ fn json_stdout_emits_no_ansi_under_force_color() {
     );
 }
 
-/// S2-14 end-to-end spot check: when `CI=true` is set (in addition to the
-/// non-TTY piped stdout that `assert_cmd` already produces), stdout is a
-/// single valid JSON document. This does NOT isolate CI=true as the sole
-/// trigger — `assert_cmd`'s pipe already forces non-TTY → json. A PTY-based
-/// test that would isolate CI=true's independent effect is a deferred
-/// follow-up (see the "Non-goals" section of plan
-/// 2026-04-23-test-audit-remediation).
+/// End-to-end spot check: when `CI=true` is set (in addition to the non-TTY
+/// piped stdout that `assert_cmd` already produces), stdout is a single valid
+/// JSON document. This does NOT isolate `CI=true` as the sole trigger —
+/// `assert_cmd`'s pipe already forces non-TTY → json. A PTY-based test that
+/// would isolate `CI=true`'s independent effect is a deferred follow-up.
 #[test]
 fn ci_env_plus_pipe_yields_json_stdout() {
     let td = tempfile::tempdir().unwrap();
@@ -155,8 +152,8 @@ fn ci_env_plus_pipe_yields_json_stdout() {
     });
 }
 
-/// S2-18: every observed exit code is in `{0, 1, 2}`. Spawns one
-/// command per code and asserts each result.
+/// Every observed exit code is in `{0, 1, 2}`. Spawns one command per
+/// code and asserts each result.
 #[test]
 fn observed_exit_codes_are_in_documented_set() {
     let td = tempfile::tempdir().unwrap();
@@ -191,10 +188,10 @@ fn observed_exit_codes_are_in_documented_set() {
 }
 
 /// Help-text snapshots for the top-level binary and each subcommand.
-/// Spec 2 § Stability names the clap attribute surface (arg names,
-/// env-var bindings, version declaration) as part of the cli's stable
-/// contract; pinning `--help` output catches silent drift in any
-/// externally-observable projection of that surface.
+/// The clap attribute surface (arg names, env-var bindings, version
+/// declaration) is part of the cli's stable contract; pinning `--help`
+/// output catches silent drift in any externally-observable projection
+/// of that surface.
 #[test]
 fn help_text_snapshots() {
     for (name, args) in [

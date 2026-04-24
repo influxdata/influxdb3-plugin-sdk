@@ -1,17 +1,17 @@
 //! CLI-layer error classification.
 //!
-//! `anyhow::Error` is the single return type per Spec 2 § S2-4 and § S2-7;
+//! `anyhow::Error` is the single return type;
 //! this type attaches semantic tags (`Usage`, `Silent`) so `main.rs` can
-//! pick the right exit code (S2-18) and the right stderr discipline
-//! (S2-15 / S2-17) without breaking the stable embedding surface.
+//! pick the right exit code and the right stderr discipline
+//! without breaking the stable embedding surface.
 //!
 //! - [`CliError::Usage`] — the command was invoked incorrectly (bad
-//!   `--name` value, flag/template mismatch, S2-12 aliasing, malformed
-//!   `<name>@<version>` target). Maps to exit code 2 per S2-18.
+//!   `--name` value, flag/template mismatch, aliasing, malformed
+//!   `<name>@<version>` target). Maps to exit code 2.
 //! - [`CliError::Silent`] — the command failed, but stdout has already
 //!   carried the primary signal (e.g. the `diagnostics` array in
 //!   `validate --output json`). `main.rs` suppresses the stderr
-//!   `eprintln!`; exit code stays 1 per S2-18.
+//!   `eprintln!`; exit code stays 1.
 //!
 //! Plain `anyhow::Error` — no wrapper — is the runtime-failure default;
 //! `main.rs` renders it on stderr and exits 1.

@@ -1,5 +1,5 @@
-//! Locks Spec 2 § Packaging "authors fix everything in one pass":
-//! package's failure path must emit each diagnostic, not just a count.
+//! Locks the "authors fix everything in one pass" invariant: package's
+//! failure path must emit each diagnostic, not just a count.
 
 #![allow(unused_crate_dependencies)]
 
@@ -87,10 +87,9 @@ fn package_json_failure_keeps_stdout_empty_and_stderr_is_one_line() {
         .assert()
         .code(1)
         .stdout(predicate::str::is_empty());
-    // Per Spec 2 § S2-15, `package`'s JSON failure path emits "the
-    // human-readable error line" on stderr — singular, definite article.
-    // Enforce one meaningful line and no JSON escape on stderr so the
-    // data-tool contract stays tight.
+    // `package`'s JSON failure path emits the human-readable error line
+    // on stderr — singular. Enforce one meaningful line and no JSON escape
+    // on stderr so the data-tool contract stays tight.
     let stderr = String::from_utf8_lossy(&assert.get_output().stderr);
     let lines: Vec<&str> = stderr
         .lines()

@@ -1,14 +1,13 @@
-//! Color decision per Spec 2 § S2-17.
+//! Color decision.
 //!
 //! [`decide_color`] is the single decision point each renderer consults
 //! before emitting ANSI escape sequences.
 //!
 //! # Absolute rule
 //!
-//! In [`OutputMode::Json`] on
-//! [`Stream::Stdout`], color is **never** emitted regardless of any env var.
-//! JSON on stdout must be byte-stable and parseable; ANSI escapes break
-//! `jq` and every other JSON consumer.
+//! In [`OutputMode::Json`] on [`Stream::Stdout`], color is **never** emitted
+//! regardless of any env var. JSON on stdout must be byte-stable and
+//! parseable; ANSI escapes break `jq` and every other JSON consumer.
 
 use crate::output::{Env, OutputMode};
 
@@ -40,7 +39,7 @@ pub(crate) fn decide_color(
     env: &dyn Env,
     is_terminal: bool,
 ) -> bool {
-    // Absolute rule: JSON on stdout must be byte-stable.
+    // JSON on stdout must be byte-stable; never emit ANSI there.
     if mode == OutputMode::Json && stream == Stream::Stdout {
         return false;
     }
@@ -82,9 +81,8 @@ mod tests {
             self.vars.get(name).cloned()
         }
         fn stdout_is_terminal(&self) -> bool {
-            // `decide_color` does not consult `stdout_is_terminal` — it takes
-            // `is_terminal` as a per-stream argument. Returning `false` here
-            // documents the intent.
+            // `decide_color` does not consult this — it takes `is_terminal`
+            // as a per-stream argument.
             false
         }
         fn stderr_is_terminal(&self) -> bool {
@@ -94,8 +92,6 @@ mod tests {
         }
     }
 
-    /// Absolute rule: JSON mode + stdout → no color, regardless of any env
-    /// or isatty signal. Locks the byte-stability invariant for piped JSON.
     #[rstest]
     #[case(true, FakeEnv::new())]
     #[case(false, FakeEnv::new())]
@@ -110,15 +106,12 @@ mod tests {
         ));
     }
 
-    /// JSON mode permits color on stderr — the absolute rule is stdout-only.
     #[test]
     fn json_stderr_follows_normal_rules() {
         let env = FakeEnv::new();
         assert!(decide_color(Stream::Stderr, OutputMode::Json, &env, true));
     }
 
-    /// `NO_COLOR` (any non-empty value) disables color on every stream and
-    /// overrides `FORCE_COLOR`.
     #[rstest]
     #[case(Stream::Stdout, OutputMode::Human)]
     #[case(Stream::Stderr, OutputMode::Human)]
@@ -131,7 +124,7 @@ mod tests {
         assert!(!decide_color(stream, mode, &env, true));
     }
 
-    /// `NO_COLOR=""` (empty) does NOT disable — only non-empty values do.
+    // `NO_COLOR=""` (empty) does not disable — only non-empty values do.
     #[test]
     fn no_color_empty_value_does_not_disable() {
         let env = FakeEnv::new().with("NO_COLOR", "");
@@ -144,8 +137,8 @@ mod tests {
         assert!(!decide_color(Stream::Stderr, OutputMode::Human, &env, true));
     }
 
-    /// `FORCE_COLOR` enables color on every stream regardless of isatty —
-    /// but does NOT bypass the JSON-stdout absolute rule (covered above).
+    // `FORCE_COLOR` enables color on every stream regardless of isatty —
+    // but does not bypass the JSON-stdout absolute rule (covered above).
     #[rstest]
     #[case(Stream::Stdout, OutputMode::Human, false)]
     #[case(Stream::Stderr, OutputMode::Human, false)]
@@ -159,7 +152,6 @@ mod tests {
         assert!(decide_color(stream, mode, &env, is_terminal));
     }
 
-    /// Default path: `is_terminal` decides when no env override fires.
     #[rstest]
     #[case(Stream::Stdout, OutputMode::Human, true, true)]
     #[case(Stream::Stdout, OutputMode::Human, false, false)]

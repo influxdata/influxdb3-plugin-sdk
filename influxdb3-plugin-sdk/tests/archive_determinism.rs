@@ -2,10 +2,10 @@
 //! materialized directory in the same process. This catches within-process
 //! sources of non-determinism (fresh `HashMap`/`HashSet` `RandomState`, etc.).
 //!
-//! The full S2-3 reproducibility contract — invariance under perturbation of
-//! the spec's listed non-inputs (abs path, source mtime, env vars, locale,
-//! UID/GID, executable bit) — is covered in `reproducibility_perturbations.rs`,
-//! one dedicated test per non-input.
+//! The full reproducibility contract — invariance under perturbation of the
+//! listed non-inputs (abs path, source mtime, env vars, locale, UID/GID,
+//! executable bit) — is covered in `reproducibility_perturbations.rs`, one
+//! dedicated test per non-input.
 //!
 //! # Reproducibility of proptest failures
 //!

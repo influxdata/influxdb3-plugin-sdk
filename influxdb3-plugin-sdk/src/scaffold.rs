@@ -1,13 +1,10 @@
-//! Template-driven scaffolding for new plugin directories and registry
-//! directories.
+//! Template-driven scaffolding for new plugin and registry directories.
 //!
-//! Templates are hardcoded module-level `&'static str` constants via
-//! `include_str!`. User-extensible templates are out of v1 scope.
+//! Templates are compiled-in via `include_str!`; user-extensible templates
+//! are out of v1 scope.
 //!
-//! Per Spec 2 Commands (`new`): both `plugin` and `registry` scaffolds
-//! create their output directory if missing, and reject if any file they
-//! would write already exists. No partial scaffolds — the command either
-//! writes its full file set or nothing.
+//! Both scaffolds create `dir` if missing and reject if any file they would
+//! write already exists — no partial scaffolds.
 
 use influxdb3_plugin_schemas::{PluginName, TriggerType};
 use std::path::{Path, PathBuf};
@@ -24,35 +21,31 @@ const PROCESS_REQUEST_INIT: &str = include_str!("templates/process_request_init.
 const REGISTRY_INDEX: &str = include_str!("templates/registry_index.json");
 const README: &str = include_str!("templates/readme.md");
 
-/// Default `database_version` written into a scaffolded manifest when the
-/// caller does not override it. Matches the SemVer floor every v1
+/// Default `database_version` baked into a scaffolded manifest when the
+/// caller doesn't override it. Matches the SemVer floor every v1
 /// processing-engine release supports; release engineering may inject a
-/// tighter pin via the CLI's `--database-version` flag (Spec 2 § Release
-/// Engineering's `SDK_KNOWN_LATEST_DB`).
+/// tighter pin via the CLI's `--database-version` flag.
 pub const DEFAULT_DATABASE_VERSION: &str = ">=3.0.0";
 
 /// Scaffolds a new plugin directory under `dir`.
 ///
-/// Writes three files at `dir/`:
-/// - `manifest.toml` — from the trigger-specific template, with `{{name}}`
-///   replaced by `name` and `{{database_version}}` replaced by
-///   `database_version` (or [`DEFAULT_DATABASE_VERSION`] if `None`).
-/// - `__init__.py` — from the trigger-specific template, containing a stub
-///   implementation of the declared trigger
-/// - `README.md` — generic stub with the plugin name
+/// Writes `manifest.toml`, `__init__.py`, and `README.md`. `{{name}}` and
+/// `{{database_version}}` placeholders in the manifest template are filled
+/// from `name` and `database_version` (defaulting to
+/// [`DEFAULT_DATABASE_VERSION`]). The init template carries a stub for the
+/// declared `trigger`.
 ///
 /// # Errors
 ///
-/// Returns `SdkError::Schema` if `name` doesn't satisfy the `PluginName`
-/// regex. Returns `SdkError::Io` if any of the three target paths already
-/// exist, or on any file-creation failure. Creates `dir` if missing.
+/// `SdkError::Schema` if `name` fails the `PluginName` check. `SdkError::Io`
+/// if any target path already exists or on file-write failure.
 pub fn plugin(
     dir: &Path,
     name: &str,
     trigger: TriggerType,
     database_version: Option<&str>,
 ) -> Result<(), SdkError> {
-    // Validate the name up-front. Fail fast before touching the filesystem.
+    // Fail fast on bad name, before touching the filesystem.
     let _validated: PluginName = name.parse()?;
 
     let manifest_template = match trigger {
@@ -85,18 +78,16 @@ pub fn plugin(
 
 /// Scaffolds a new registry directory under `dir`.
 ///
-/// Writes one file at `dir/index.json` with `index_schema_version = "1.0"`,
-/// an empty `plugins` array, and `artifacts_url` set to either the supplied
-/// value or — when `artifacts_url` is `None` — `file://<absolute dir>`. The
-/// auto-derived default makes a freshly scaffolded local registry
+/// Writes `dir/index.json` with `index_schema_version = "1.0"`, an empty
+/// `plugins` array, and `artifacts_url` set to either `artifacts_url` or,
+/// when `None`, `file://<absolute dir>` — making a fresh local registry
 /// immediately usable as a `file://` registry.
 ///
 /// # Errors
 ///
-/// Returns `SdkError::Io` if `dir/index.json` already exists, or on any
-/// file-creation failure. Creates `dir` if missing. Returns
-/// `SdkError::Archive` when an auto-derived `file://` URL cannot be
-/// constructed from `dir` (rare; mostly a Windows UNC-path edge case).
+/// `SdkError::Io` if `dir/index.json` already exists or on write failure.
+/// `SdkError::Archive` when an auto-derived `file://` URL cannot be built
+/// from `dir` (rare; Windows UNC-path edge case).
 pub fn registry(dir: &Path, artifacts_url: Option<&str>) -> Result<(), SdkError> {
     let index_path = dir.join("index.json");
 
@@ -110,9 +101,9 @@ pub fn registry(dir: &Path, artifacts_url: Option<&str>) -> Result<(), SdkError>
                 source,
                 path: Some(dir.to_path_buf()),
             })?;
-            // `Url::from_file_path` is the correct cross-platform way to build a
-            // `file://` URL. Naïve `format!("file://{}", path.display())` breaks on
-            // Windows UNC paths (`\\?\C:\...`) and mishandles non-UTF8 path bytes.
+            // `Url::from_file_path` handles Windows UNC paths and non-UTF8
+            // bytes correctly; naïve `format!("file://{}", path.display())`
+            // does not.
             url::Url::from_file_path(&absolute)
                 .map_err(|()| SdkError::Archive {
                     message: format!(
@@ -188,8 +179,6 @@ mod tests {
         assert_eq!(manifest.plugin.triggers, vec![TriggerType::ProcessWrites]);
     }
 
-    /// `database_version = None` falls back to [`DEFAULT_DATABASE_VERSION`];
-    /// passing `Some(...)` overrides the templated default end-to-end.
     #[test]
     fn scaffold_database_version_default_and_override() {
         let td = tempfile::tempdir().unwrap();
@@ -218,7 +207,6 @@ mod tests {
             override_raw.contains("database_version = \">=3.5,<4\""),
             "override should be substituted into the manifest, got:\n{override_raw}"
         );
-        // Override path should also still parse via schemas.
         Manifest::parse_toml(&override_raw)
             .expect("override-database-version manifest must round-trip via schemas");
     }
@@ -232,7 +220,6 @@ mod tests {
             err,
             SdkError::Schema(influxdb3_plugin_schemas::SchemaError::InvalidPluginName { .. })
         ));
-        // No files written on upfront-failure path.
         assert!(!dir.join("manifest.toml").exists());
     }
 
@@ -245,7 +232,6 @@ mod tests {
 
         let err = plugin(&dir, "plugin", TriggerType::ProcessWrites, None).unwrap_err();
         assert!(matches!(err, SdkError::Io { .. }));
-        // Original file unchanged.
         assert_eq!(
             fs::read_to_string(dir.join("manifest.toml")).unwrap(),
             "pre-existing"
@@ -263,7 +249,6 @@ mod tests {
             let dir = td.path().join("p");
             plugin(&dir, "p", trigger, None).unwrap();
             let init = fs::read_to_string(dir.join("__init__.py")).unwrap();
-            // The init stub should define the trigger function by name.
             let expected_def = format!("def {}(", trigger.as_str());
             assert!(
                 init.contains(&expected_def),
@@ -281,17 +266,15 @@ mod tests {
         let raw = fs::read_to_string(dir.join("index.json")).unwrap();
         let index = Index::parse_json(&raw).expect("scaffolded index must parse");
         assert!(index.plugins.is_empty());
-        // artifacts_url should be a file:// URL rooted in the scaffolded dir.
         let url = index.artifacts_url.to_string();
         assert!(url.starts_with("file://"), "got: {url}");
     }
 
-    /// Regression guard: the scaffolded artifacts_url must round-trip through
-    /// `url::Url::parse` + `.to_file_path()` back to the absolute scaffold
-    /// directory. The earlier `format!("file://{}", path.display())` impl
-    /// produced malformed URLs on Windows (UNC `\\?\C:\...` paths) — even on
-    /// Unix, formatting via `.display()` can emit non-canonical bytes for
-    /// non-UTF8 paths. `url::Url::from_file_path` is the correct API.
+    /// Regression guard against formatting `file://` URLs by hand: the
+    /// scaffolded `artifacts_url` must round-trip via `url::Url::parse` +
+    /// `.to_file_path()` back to the absolute scaffold directory. The
+    /// previous `format!("file://{}", path.display())` form produced
+    /// malformed URLs on Windows UNC paths and on non-UTF8 bytes.
     #[test]
     fn scaffold_registry_artifacts_url_is_valid_file_url() {
         let td = tempfile::tempdir().unwrap();
@@ -305,7 +288,6 @@ mod tests {
         let parsed = url::Url::parse(&url_str).expect("artifacts_url must be a valid URL");
         assert_eq!(parsed.scheme(), "file");
 
-        // Round-trip to a path and compare to the canonical scaffold dir.
         let recovered = parsed
             .to_file_path()
             .expect("file URL must convert back to a path");
@@ -313,9 +295,8 @@ mod tests {
         assert_eq!(recovered, expected);
     }
 
-    /// Explicit `artifacts_url` is written verbatim — no canonicalize, no
-    /// `file://` prefix. Lets the CLI surface its `--artifacts-url` flag
-    /// through unchanged, including https:// and http:// values.
+    /// Explicit `artifacts_url` is written verbatim (no canonicalize, no
+    /// `file://` prefix), so http/https values pass through unchanged.
     #[test]
     fn scaffold_registry_uses_explicit_artifacts_url() {
         let td = tempfile::tempdir().unwrap();

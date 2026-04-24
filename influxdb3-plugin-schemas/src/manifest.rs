@@ -4,14 +4,13 @@ use crate::{PluginName, SchemaError};
 use std::fmt;
 use std::str::FromStr;
 
-/// Supported major version of the manifest schema. Bumped when breaking changes
-/// are introduced; consumers refuse to parse unsupported majors per Spec 1.
+/// Supported major. Parsers refuse unsupported majors; bumped on breaking
+/// schema changes.
 pub(crate) const SUPPORTED_MANIFEST_MAJOR: u32 = 1;
 
-/// The `manifest_schema_version` top-level field.
+/// The `manifest_schema_version` top-level field, format `<major>.<minor>`.
 ///
-/// Format: `<major>.<minor>`. Consumers reject unsupported majors per Spec 1's
-/// Schema Versioning Strategy. Within a known major, unknown fields are
+/// Unsupported majors are rejected. Within a known major, unknown fields are
 /// tolerated by the structural parser.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ManifestSchemaVersion {
@@ -120,11 +119,11 @@ impl serde::Serialize for Description {
     }
 }
 
-/// Closed set of supported trigger types. See Spec 2 Validation: trigger
-/// identifiers must be drawn from this set or the manifest is rejected.
+/// Closed set of supported trigger types. Manifests are rejected if any
+/// trigger identifier is outside this set.
 ///
-/// Serde goes through `TryFrom<String>` / `Into<String>` (which delegate to
-/// `FromStr` / `as_str`), so a `rename_all` attribute would be a no-op.
+/// Serde goes through `TryFrom<String>` / `Into<String>`, so `rename_all`
+/// would be a no-op.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[serde(try_from = "String", into = "String")]
 pub enum TriggerType {
@@ -185,13 +184,9 @@ pub struct PythonRequirement(String);
 
 impl PythonRequirement {
     pub fn try_new(s: &str) -> Result<Self, SchemaError> {
-        // Parse for validation only; we store the original string.
-        //
-        // API note: `pep508_rs = "0.9"` has `Requirement` generic over URL type.
-        // If the installed version exposes `Requirement::from_str` without a
-        // type parameter, drop the turbofish. If `Pep508Error`'s path is
-        // different, update `SchemaError::InvalidPythonRequirement`'s `source`
-        // field type in `error.rs` to match.
+        // Parse for validation only; store the original string. The
+        // `<VerbatimUrl>` turbofish tracks pep508_rs's pre-1.0 generic
+        // Requirement; on upgrade, also review SchemaError::InvalidPythonRequirement.
         pep508_rs::Requirement::<pep508_rs::VerbatimUrl>::from_str(s).map_err(|e| {
             SchemaError::InvalidPythonRequirement {
                 requirement: s.to_owned(),
@@ -234,19 +229,15 @@ pub struct Manifest {
 }
 
 impl Manifest {
-    /// Parses a manifest from a TOML string.
-    ///
-    /// Uses two-phase parsing: raw deserialization (serde-level syntax +
-    /// shape) followed by collection-mode structured validation. Returns
-    /// every validation error in a single pass via `SchemaErrors`.
+    /// Parses a manifest from TOML, reporting every field-level defect in one
+    /// pass via `SchemaErrors`.
     ///
     /// # Errors
     ///
-    /// Returns `Err(SchemaErrors)` if TOML parsing fails (single `TomlParse`
-    /// error, short-circuit), if the `manifest_schema_version` is unsupported
-    /// or malformed (single short-circuit error), or if any field-level
-    /// validator rejects a value (one or more errors collected with
-    /// field-path context).
+    /// Returns `Err(SchemaErrors)` with a single `TomlParse` error if TOML
+    /// syntax fails; a single error if `manifest_schema_version` is malformed
+    /// or unsupported (short-circuit, no field-level validation); or one or
+    /// more field-level errors with field-path context.
     ///
     /// # Examples
     ///
@@ -278,7 +269,7 @@ impl Manifest {
         let raw: RawManifest = toml::from_str(input)
             .map_err(|source| SchemaErrors::single_at_root(SchemaError::TomlParse { source }))?;
 
-        // Phase 2a: schema-version short-circuit.
+        // Phase 2a: schema-version short-circuit — skips field-level validation.
         let schema_version = ManifestSchemaVersion::from_str(&raw.manifest_schema_version)
             .map_err(|e| {
                 SchemaErrors::new(vec![ReportedError::new(
@@ -334,7 +325,7 @@ impl Manifest {
             }
         }
 
-        // Optional URL fields: when present, must parse + use http/https scheme.
+        // Optional URL fields: must parse and use http/https scheme when present.
         let homepage = parse_optional_http_url_from_path(
             &raw.plugin.homepage,
             &mut errors,
@@ -354,7 +345,6 @@ impl Manifest {
             "documentation",
         );
 
-        // Database version range.
         let database_version = semver::VersionReq::parse(&raw.dependencies.database_version)
             .map_err(|source| SchemaError::InvalidDatabaseVersion {
                 range: raw.dependencies.database_version.clone(),
@@ -365,7 +355,6 @@ impl Manifest {
             errors.push(ReportedError::new(deps_path.field("database_version"), e));
         }
 
-        // Python requirements.
         let mut python_ok: Vec<PythonRequirement> =
             Vec::with_capacity(raw.dependencies.python.len());
         for (i, p) in raw.dependencies.python.iter().enumerate() {
@@ -379,8 +368,7 @@ impl Manifest {
             return Err(SchemaErrors::new(errors));
         }
 
-        // Safe unwraps: all `_ok` variables are `Some(_)` because no errors
-        // were pushed in their respective branches.
+        // Safe unwraps: each `_ok` is `Some(_)` whenever no error was pushed.
         Ok(Manifest {
             manifest_schema_version: schema_version,
             plugin: PluginMetadata {
@@ -400,12 +388,9 @@ impl Manifest {
     }
 }
 
-/// Parses an optional URL string field, requiring `http` or `https` scheme.
-///
-/// Returns `None` if the input is `None` (field absent). Returns `Some(url)`
-/// on success. Pushes a `ReportedError` and returns `None` on parse or
-/// scheme failure. `pub(crate)` so `index.rs` can reuse it for per-entry
-/// URL validation.
+/// Parses an optional URL field, requiring `http` or `https` scheme. Returns
+/// `None` when absent; on parse or scheme failure, pushes a `ReportedError`
+/// and returns `None`. Shared with `index.rs` for per-entry URL validation.
 pub(crate) fn parse_optional_http_url_from_path(
     raw: &Option<String>,
     errors: &mut Vec<crate::ReportedError>,
@@ -442,11 +427,10 @@ pub(crate) fn parse_optional_http_url_from_path(
     }
 }
 
-// Note: no `to_toml_string` method in Plan 1. Manifests are author-written TOML
-// files; the SDK parses them, never emits them. If a future plan needs TOML
-// serialization (e.g., scaffolding commands in the CLI), add it then with a
-// dedicated `SchemaError::TomlSerialize { source: toml::ser::Error }` variant
-// — do not cast serialize errors through `toml::de::Error::custom`.
+// No TOML serializer: manifests are author-written and the SDK never emits
+// them. If one is added later, introduce a dedicated
+// `SchemaError::TomlSerialize { source: toml::ser::Error }` variant rather
+// than casting through `toml::de::Error::custom`.
 
 /// `[plugin]` section of the manifest.
 #[derive(Debug, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
@@ -567,7 +551,7 @@ mod trigger_type_tests {
 
     #[rstest]
     #[case("on_startup")]
-    #[case("process_Writes")] // case sensitive
+    #[case("process_Writes")]
     #[case("")]
     fn invalid_triggers_rejected(#[case] input: &str) {
         use assert_matches::assert_matches;
@@ -614,7 +598,7 @@ mod python_requirement_tests {
 
     #[test]
     fn rejects_malformed() {
-        // Double-operator `>>=` is unambiguously rejected by PEP 508.
+        // `>>=` (double operator) is unambiguously rejected by PEP 508.
         assert_matches!(
             PythonRequirement::try_new("requests>>=2.0"),
             Err(SchemaError::InvalidPythonRequirement { .. })
@@ -720,10 +704,8 @@ database_version = ">=3.2.0"
 
     #[test]
     fn ignores_unknown_top_level_field() {
-        // Appending to MINIMAL would place the field inside `[dependencies]`
-        // (TOML treats subsequent key-value pairs as belonging to the most
-        // recently opened table). Build a fresh document with the unknown
-        // field above any table header so it's unambiguously top-level.
+        // Field is placed above any table header so it's unambiguously
+        // top-level (appending to MINIMAL would land it in `[dependencies]`).
         let with_unknown = r#"
 manifest_schema_version = "1.0"
 experimental_feature = true
@@ -742,8 +724,6 @@ database_version = ">=3.2.0,<4.0.0"
 
     #[test]
     fn parses_one_one_schema_version() {
-        // Spec 1's manifest example uses "1.1" — verify it parses under the
-        // current supported major (1).
         let src = MINIMAL.replace(
             r#"manifest_schema_version = "1.0""#,
             r#"manifest_schema_version = "1.1""#,
@@ -752,13 +732,12 @@ database_version = ">=3.2.0,<4.0.0"
         assert_eq!(m.manifest_schema_version.minor(), 1);
     }
 
-    /// Two-phase parse: a manifest with N distinct field-level defects
-    /// returns exactly N errors in one pass. Guards against accidental
-    /// short-circuiting in the validation phase.
+    /// N distinct field-level defects must produce exactly N errors in one
+    /// pass — guards against accidental short-circuiting in Phase 2.
     #[test]
     fn collects_multiple_defects_in_one_pass() {
-        // Bad: uppercase name, non-SemVer version, unknown trigger, ftp URL.
-        // All four should be reported in a single `SchemaErrors`.
+        // Four defects: uppercase name, non-SemVer version, unknown trigger,
+        // ftp URL.
         let input = r#"
 manifest_schema_version = "1.0"
 
@@ -801,9 +780,8 @@ database_version = ">=3.0.0"
         );
     }
 
-    /// Schema-version short-circuit: an unsupported major skips field-level
-    /// validation entirely. Returns exactly 1 error even when the rest of
-    /// the document has additional defects.
+    /// An unsupported major short-circuits before field-level validation,
+    /// returning exactly 1 error even when other defects exist.
     #[test]
     fn schema_version_mismatch_short_circuits_with_single_error() {
         let input = r#"
@@ -902,12 +880,9 @@ database_version = ">=3.0.0"
         assert_eq!(errors.errors()[0].path.as_str(), "plugin.triggers");
     }
 
-    /// Invalid `dependencies.database_version` now surfaces as
-    /// `SchemaError::InvalidDatabaseVersion` directly with the
-    /// `dependencies.database_version` path. The two-phase parser routes
-    /// the raw String through `semver::VersionReq::parse` and wraps any
-    /// failure into the dedicated structured variant — no more
-    /// `serde::Error::custom` flattening.
+    /// Invalid `dependencies.database_version` surfaces as
+    /// `InvalidDatabaseVersion` with the `dependencies.database_version`
+    /// path, not flattened through `serde::Error::custom`.
     #[test]
     fn rejects_invalid_database_version() {
         let input = r#"

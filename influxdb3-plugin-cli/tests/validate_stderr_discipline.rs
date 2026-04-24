@@ -1,4 +1,4 @@
-//! Locks Spec 2 § S2-15 "stderr stays quiet" for `validate --output json`.
+//! Locks the "stderr stays quiet" contract for `validate --output json`.
 //!
 //! See `version_smoke.rs` for the rationale behind the crate-root allow.
 
