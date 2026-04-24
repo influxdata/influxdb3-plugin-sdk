@@ -236,7 +236,7 @@ mod tests {
     fn scaffold_rejects_invalid_name_up_front() {
         let td = tempfile::tempdir().unwrap();
         let dir = td.path().join("bad-name-test");
-        let err = plugin(&dir, "BAD_NAME", TriggerType::ProcessWrites, None, false).unwrap_err();
+        let err = plugin(&dir, "1bad", TriggerType::ProcessWrites, None, false).unwrap_err();
         assert!(matches!(
             err,
             SdkError::Schema(influxdb3_plugin_schemas::SchemaError::InvalidPluginName { .. })

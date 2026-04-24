@@ -35,7 +35,7 @@ fn bad_plugin() -> TempDir {
         r#"manifest_schema_version = "1.0"
 
 [plugin]
-name = "Bad_Name"
+name = "Bad Name"
 version = "0.1.0"
 description = "x"
 triggers = ["process_writes"]

@@ -268,9 +268,15 @@ impl Index {
             let entry_path = root.field("plugins").index(i);
             let validated = validate_raw_entry(raw_entry, &entry_path, &mut errors);
 
-            // Duplicate check uses raw strings so it still fires when the
-            // entry has other validation errors.
-            let key = (raw_entry.name.clone(), raw_entry.version.clone());
+            // Duplicate check uses the canonical form of the raw name so
+            // it still fires when the entry has other validation errors.
+            // `-`/`_` are equivalent and case is folded — matches Cargo's
+            // `canon_crate_name`. The reported error payload uses the
+            // rejected entry's original spelling, not the canonical.
+            let key = (
+                crate::identity::canonical_name(&raw_entry.name),
+                raw_entry.version.clone(),
+            );
             if !seen.insert(key) {
                 errors.push(ReportedError::new(
                     entry_path.clone(),
@@ -632,6 +638,117 @@ mod index_tests {
             SchemaError::DuplicateIndexEntry { .. }
         );
         assert_eq!(errors.errors()[0].path.as_str(), "plugins[1]");
+    }
+
+    #[test]
+    fn index_rejects_hyphen_underscore_collision() {
+        // `foo-bar` and `foo_bar` share the same canonical form (`foo_bar`);
+        // the second entry is rejected even though the raw strings differ.
+        let json = r#"{
+  "index_schema_version": "1.0",
+  "artifacts_url": "https://plugins.example.com/artifacts",
+  "plugins": [
+    { "name": "foo-bar", "version": "1.0.0", "description": "x", "triggers": ["process_writes"],
+      "dependencies": {"database_version":">=3.0.0","python":[]},
+      "hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000" },
+    { "name": "foo_bar", "version": "1.0.0", "description": "x2", "triggers": ["process_writes"],
+      "dependencies": {"database_version":">=3.0.0","python":[]},
+      "hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111" }
+  ]
+}"#;
+        let errors = Index::parse_json(json).expect_err("should reject canonical collision");
+        assert_eq!(errors.errors().len(), 1);
+        assert_matches!(
+            errors.errors()[0].error,
+            SchemaError::DuplicateIndexEntry { ref name, ref version }
+                if name == "foo_bar" && version == "1.0.0"
+        );
+        assert_eq!(errors.errors()[0].path.as_str(), "plugins[1]");
+    }
+
+    #[test]
+    fn index_rejects_case_collision() {
+        // `MyPlugin` and `myplugin` share canonical form `myplugin`.
+        let json = r#"{
+  "index_schema_version": "1.0",
+  "artifacts_url": "https://plugins.example.com/artifacts",
+  "plugins": [
+    { "name": "MyPlugin", "version": "1.0.0", "description": "x", "triggers": ["process_writes"],
+      "dependencies": {"database_version":">=3.0.0","python":[]},
+      "hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000" },
+    { "name": "myplugin", "version": "1.0.0", "description": "x2", "triggers": ["process_writes"],
+      "dependencies": {"database_version":">=3.0.0","python":[]},
+      "hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111" }
+  ]
+}"#;
+        let errors = Index::parse_json(json).expect_err("should reject case collision");
+        assert_eq!(errors.errors().len(), 1);
+        assert_matches!(
+            errors.errors()[0].error,
+            SchemaError::DuplicateIndexEntry { ref name, ref version }
+                if name == "myplugin" && version == "1.0.0"
+        );
+        assert_eq!(errors.errors()[0].path.as_str(), "plugins[1]");
+    }
+
+    #[test]
+    fn index_accepts_different_versions_of_same_canonical_name() {
+        // Distinct versions keep the (canonical_name, version) key unique.
+        let json = r#"{
+  "index_schema_version": "1.0",
+  "artifacts_url": "https://plugins.example.com/artifacts",
+  "plugins": [
+    { "name": "foo-bar", "version": "1.0.0", "description": "x", "triggers": ["process_writes"],
+      "dependencies": {"database_version":">=3.0.0","python":[]},
+      "hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000" },
+    { "name": "foo-bar", "version": "1.0.1", "description": "x2", "triggers": ["process_writes"],
+      "dependencies": {"database_version":">=3.0.0","python":[]},
+      "hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111" }
+  ]
+}"#;
+        assert!(Index::parse_json(json).is_ok());
+    }
+
+    #[test]
+    fn index_rejects_three_way_canonical_collision() {
+        // Three entries collapse to canonical `foo_bar`; first is accepted,
+        // second and third each report with their original spelling.
+        let json = r#"{
+  "index_schema_version": "1.0",
+  "artifacts_url": "https://plugins.example.com/artifacts",
+  "plugins": [
+    { "name": "foo-bar", "version": "1.0.0", "description": "x", "triggers": ["process_writes"],
+      "dependencies": {"database_version":">=3.0.0","python":[]},
+      "hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000" },
+    { "name": "foo_bar", "version": "1.0.0", "description": "x2", "triggers": ["process_writes"],
+      "dependencies": {"database_version":">=3.0.0","python":[]},
+      "hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111" },
+    { "name": "FOO-BAR", "version": "1.0.0", "description": "x3", "triggers": ["process_writes"],
+      "dependencies": {"database_version":">=3.0.0","python":[]},
+      "hash": "sha256:2222222222222222222222222222222222222222222222222222222222222222" }
+  ]
+}"#;
+        let errors = Index::parse_json(json).expect_err("should reject two collisions");
+        let e = errors.errors();
+        assert_eq!(
+            e.len(),
+            2,
+            "expected 2 errors, got {}: {:?}",
+            e.len(),
+            e.iter().map(|r| (r.path.as_str(), &r.error)).collect::<Vec<_>>()
+        );
+        assert_matches!(
+            e[0].error,
+            SchemaError::DuplicateIndexEntry { ref name, ref version }
+                if name == "foo_bar" && version == "1.0.0"
+        );
+        assert_eq!(e[0].path.as_str(), "plugins[1]");
+        assert_matches!(
+            e[1].error,
+            SchemaError::DuplicateIndexEntry { ref name, ref version }
+                if name == "FOO-BAR" && version == "1.0.0"
+        );
+        assert_eq!(e[1].path.as_str(), "plugins[2]");
     }
 
     #[test]

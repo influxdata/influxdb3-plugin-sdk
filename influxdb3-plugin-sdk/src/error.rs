@@ -352,15 +352,15 @@ mod tests {
         use std::error::Error as _;
 
         let wrapped = SdkError::from(SchemaError::InvalidPluginName {
-            name: "Bad-Name".into(),
+            name: "Bad Name".into(),
         });
         match &wrapped {
             SdkError::Schema(SchemaError::InvalidPluginName { name }) => {
-                assert_eq!(name, "Bad-Name");
+                assert_eq!(name, "Bad Name");
             }
             other => panic!("expected SdkError::Schema(InvalidPluginName), got {other:?}"),
         }
-        assert!(wrapped.to_string().contains("Bad-Name"));
+        assert!(wrapped.to_string().contains("Bad Name"));
 
         let sem_err = semver::Version::parse("1.2").unwrap_err();
         let wrapped = SdkError::from(SchemaError::InvalidVersion {

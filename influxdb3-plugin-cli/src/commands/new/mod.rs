@@ -8,7 +8,7 @@ pub(crate) mod list;
 pub(crate) mod templates;
 
 use clap::{Args as ClapArgs, Subcommand};
-use influxdb3_plugin_schemas::{PluginName, TriggerType};
+use influxdb3_plugin_schemas::{PluginName, SchemaError, TriggerType};
 use influxdb3_plugin_sdk::scaffold;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -184,17 +184,34 @@ fn resolve_plugin_name(dir: &Path, name_arg: Option<String>) -> anyhow::Result<S
 
     match PluginName::from_str(&candidate) {
         Ok(_) => Ok(candidate),
+        Err(SchemaError::ReservedPluginName { .. }) if source_was_explicit => {
+            Err(crate::cli_error::CliError::usage(anyhow::anyhow!(
+                "--name {candidate:?} is a Windows reserved device name \
+                 (case-insensitive); pick a different name"
+            )))
+        }
         Err(_) if source_was_explicit => Err(crate::cli_error::CliError::usage(anyhow::anyhow!(
-            "--name {candidate:?} is not a valid plugin name; \
-                 must match `[a-z0-9][a-z0-9-]{{0,63}}` (1-64 chars)"
+            "--name {candidate:?} is not a valid plugin name; {PLUGIN_NAME_RULE}"
         ))),
+        Err(SchemaError::ReservedPluginName { .. }) => Err(anyhow::anyhow!(
+            "derived plugin name {candidate:?} (from path basename) is a \
+             Windows reserved device name; pass --name <name> explicitly"
+        )),
         Err(_) => Err(anyhow::anyhow!(
             "derived plugin name {candidate:?} (from path basename) is not a valid \
-             plugin name; pass --name <name> explicitly. Plugin names must match \
-             `[a-z0-9][a-z0-9-]{{0,63}}` (1-64 chars)"
+             plugin name; pass --name <name> explicitly. {PLUGIN_NAME_RULE}"
         )),
     }
 }
+
+/// Human-readable rendering of the character-level `PluginName` rule.
+/// The Windows-reserved check produces its own dedicated message, so this
+/// const is only the alphabet/length portion — kept as a single `const`
+/// so the explicit-`--name` and basename-derived error paths stay in
+/// lockstep if the rule ever changes.
+const PLUGIN_NAME_RULE: &str =
+    "plugin names must match `[a-zA-Z][a-zA-Z0-9_-]*` (1-64 chars, ASCII \
+     alphanumerics / `-` / `_`, starting with a letter)";
 
 #[derive(Debug)]
 struct Summary {

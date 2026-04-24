@@ -736,13 +736,13 @@ database_version = ">=3.2.0,<4.0.0"
     /// pass — guards against accidental short-circuiting in Phase 2.
     #[test]
     fn collects_multiple_defects_in_one_pass() {
-        // Four defects: uppercase name, non-SemVer version, unknown trigger,
-        // ftp URL.
+        // Four defects: name contains a space, non-SemVer version, unknown
+        // trigger, ftp URL.
         let input = r#"
 manifest_schema_version = "1.0"
 
 [plugin]
-name = "Bad_Name"
+name = "Bad Name"
 version = "1.2"
 description = "multi-defect fixture"
 triggers = ["on_startup"]
@@ -788,7 +788,7 @@ database_version = ">=3.0.0"
 manifest_schema_version = "99.0"
 
 [plugin]
-name = "Bad_Name"
+name = "Bad Name"
 version = "1.0.0"
 description = "x"
 triggers = ["process_writes"]

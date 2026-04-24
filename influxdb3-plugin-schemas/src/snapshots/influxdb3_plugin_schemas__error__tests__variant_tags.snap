@@ -1,9 +1,10 @@
 ---
 source: influxdb3-plugin-schemas/src/error.rs
-assertion_line: 240
+assertion_line: 381
 expression: tags
 ---
 - InvalidPluginName
+- ReservedPluginName
 - InvalidVersion
 - DescriptionTooLong
 - DescriptionEmpty

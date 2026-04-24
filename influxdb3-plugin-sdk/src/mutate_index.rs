@@ -29,17 +29,23 @@ pub enum YankOutcome {
     AlreadyInDesiredState,
 }
 
-/// Appends `entry` to `idx.plugins[]`, rejecting duplicate `(name, version)`.
+/// Appends `entry` to `idx.plugins[]`, rejecting duplicate
+/// `(canonical(name), version)`. Name matching uses
+/// [`PluginName::canonical`] so `-`/`_` and case variants of the same
+/// canonical form collide — mirrors the in-index duplicate check in
+/// [`Index::from_raw_json`].
 ///
-/// On conflict returns [`SdkError::AlreadyPublished`] with every existing
-/// version of `entry.name` in input order, so the CLI can render the
-/// actionable "increment version or yank one of these" message.
+/// On conflict returns [`SdkError::AlreadyPublished`] listing every
+/// existing version whose name shares the new entry's canonical form
+/// (input order preserved). The CLI renders that into the actionable
+/// "increment version or yank one of these" message.
 pub fn add_entry(idx: &mut Index, entry: IndexEntry) -> Result<(), SdkError> {
     let new_version_str = entry.version.to_string();
+    let new_canonical = entry.name.canonical();
     let existing_versions: Vec<String> = idx
         .plugins
         .iter()
-        .filter(|e| e.name.as_str() == entry.name.as_str())
+        .filter(|e| e.name.canonical() == new_canonical)
         .map(|e| e.version.to_string())
         .collect();
     if existing_versions.iter().any(|v| v == &new_version_str) {
@@ -181,6 +187,44 @@ mod tests {
         let mut idx = empty_index();
         add_entry(&mut idx, make_entry("a", Version::new(1, 0, 0))).unwrap();
         add_entry(&mut idx, make_entry("a", Version::new(1, 1, 0))).unwrap();
+        assert_eq!(idx.plugins.len(), 2);
+    }
+
+    /// Canonical-form collision: `-`/`_` variants share a canonical
+    /// name and must collide on the same version.
+    #[test]
+    fn add_entry_rejects_hyphen_underscore_canonical_collision() {
+        let mut idx = empty_index();
+        add_entry(&mut idx, make_entry("my-plugin", Version::new(1, 0, 0))).unwrap();
+        let err =
+            add_entry(&mut idx, make_entry("my_plugin", Version::new(1, 0, 0))).unwrap_err();
+        match err {
+            SdkError::AlreadyPublished {
+                existing_versions, ..
+            } => {
+                assert_eq!(existing_versions, vec!["1.0.0".to_owned()]);
+            }
+            other => panic!("expected AlreadyPublished, got {other:?}"),
+        }
+        assert_eq!(idx.plugins.len(), 1, "no mutation on error");
+    }
+
+    /// Case differences share a canonical name.
+    #[test]
+    fn add_entry_rejects_case_canonical_collision() {
+        let mut idx = empty_index();
+        add_entry(&mut idx, make_entry("myplugin", Version::new(1, 0, 0))).unwrap();
+        let err =
+            add_entry(&mut idx, make_entry("MyPlugin", Version::new(1, 0, 0))).unwrap_err();
+        assert!(matches!(err, SdkError::AlreadyPublished { .. }));
+    }
+
+    /// Canonical keying must NOT over-match on distinct versions.
+    #[test]
+    fn add_entry_allows_different_versions_of_same_canonical_name() {
+        let mut idx = empty_index();
+        add_entry(&mut idx, make_entry("my_plugin", Version::new(1, 0, 0))).unwrap();
+        add_entry(&mut idx, make_entry("my-plugin", Version::new(1, 0, 1))).unwrap();
         assert_eq!(idx.plugins.len(), 2);
     }
 

@@ -72,14 +72,13 @@ when a deliberate decision lands or a deviation is reconciled.
 
 ### `plugin.name` rule (1–64 characters)
 
-- **Approved rule:** `[a-z0-9][a-z0-9-]{0,63}` — first character is a
-  lowercase alphanumeric, total length 1 to 64.
-- **Spec:** core design doc updated to `{0,63}` (was `{1,63}`); 4
-  occurrences synced; 2-character-minimum wording removed.
-- **Code:** `PluginName::validate` in `src/identity.rs` already implements
-  this; no behavior change.
-- **Tests:** 1-character boundary case in `identity.rs` retained as the
-  approved rule.
+- **Approved rule:** `[a-zA-Z][a-zA-Z0-9_-]*` (1-64 ASCII characters,
+  starting with an ASCII letter; Windows reserved device names are
+  rejected case-insensitively) — aligned with Cargo's `validate_create_ident`.
+- **Code:** enforced by `PluginName::validate` in `src/identity.rs`.
+- **Tests:** `plugin_name_length_boundaries` in `identity.rs` pins the
+  empty / 1 / 64 / 65-char edges; `reserved_names_rejected` covers the
+  Windows-device-name set.
 - **Remaining gaps:** none.
 
 ### Index-entry validation alignment

@@ -1,9 +1,10 @@
 ---
 source: influxdb3-plugin-schemas/tests/parse_fixtures.rs
+assertion_line: 72
 expression: errors.to_string()
 ---
 4 schema validation errors:
-  1. plugin.name: plugin name "Bad_Name" must be 1-64 characters: lowercase letters, digits, or hyphens, starting with a lowercase letter or digit
+  1. plugin.name: plugin name "Bad Name" must match `[a-zA-Z][a-zA-Z0-9_-]*` (1-64 chars, ASCII alphanumerics / `-` / `_`, starting with a letter)
   2. plugin.version: version "1.2" is not SemVer 2.0.0 compliant: unexpected end of input while parsing minor version number
   3. plugin.triggers[0]: trigger "on_startup" is not in the closed set {process_writes, process_scheduled_call, process_request}
   4. plugin.homepage: URL "ftp://bad" must use http or https scheme (was "ftp")

@@ -11,9 +11,16 @@
 #[non_exhaustive]
 pub enum SchemaError {
     #[error(
-        "plugin name {name:?} must be 1-64 characters: lowercase letters, digits, or hyphens, starting with a lowercase letter or digit"
+        "plugin name {name:?} must match `[a-zA-Z][a-zA-Z0-9_-]*` \
+         (1-64 chars, ASCII alphanumerics / `-` / `_`, starting with a letter)"
     )]
     InvalidPluginName { name: String },
+
+    #[error(
+        "plugin name {name:?} matches a Windows reserved device name \
+         (case-insensitive); pick a different name"
+    )]
+    ReservedPluginName { name: String },
 
     #[error("version {version:?} is not SemVer 2.0.0 compliant: {source}")]
     InvalidVersion {
@@ -122,6 +129,7 @@ impl SchemaError {
     pub fn variant_name(&self) -> &'static str {
         match self {
             Self::InvalidPluginName { .. } => "InvalidPluginName",
+            Self::ReservedPluginName { .. } => "ReservedPluginName",
             Self::InvalidVersion { .. } => "InvalidVersion",
             Self::DescriptionTooLong { .. } => "DescriptionTooLong",
             Self::DescriptionEmpty => "DescriptionEmpty",
@@ -285,7 +293,10 @@ mod tests {
     fn every_variant() -> Vec<SchemaError> {
         vec![
             SchemaError::InvalidPluginName {
-                name: "Bad-Name".into(),
+                name: "Bad Name".into(),
+            },
+            SchemaError::ReservedPluginName {
+                name: "con".into(),
             },
             SchemaError::InvalidVersion {
                 version: "1.2".into(),
@@ -387,7 +398,7 @@ mod tests {
             ReportedError::new(
                 FieldPath::root().field("plugin").field("name"),
                 SchemaError::InvalidPluginName {
-                    name: "Bad_Name".into(),
+                    name: "Bad Name".into(),
                 },
             ),
             ReportedError::new(
@@ -411,5 +422,19 @@ mod tests {
         );
         let src = re.source().expect("source exists");
         assert!(src.downcast_ref::<SchemaError>().is_some());
+    }
+
+    #[test]
+    fn reserved_plugin_name_variant_renders_windows_message() {
+        let err = SchemaError::ReservedPluginName {
+            name: "con".into(),
+        };
+        let text = err.to_string();
+        assert!(
+            text.contains("Windows reserved"),
+            "expected Windows-reserved mention, got: {text}"
+        );
+        assert!(text.contains("\"con\""), "expected original name, got: {text}");
+        assert_eq!(err.variant_name(), "ReservedPluginName");
     }
 }

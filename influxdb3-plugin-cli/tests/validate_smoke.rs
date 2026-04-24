@@ -82,7 +82,7 @@ fn validate_collects_multiple_diagnostics_in_one_pass() {
     let bad_manifest = r#"manifest_schema_version = "1.0"
 
 [plugin]
-name = "BAD_NAME"
+name = "1bad"
 version = "1.2"
 description = "x"
 triggers = ["process_writes"]

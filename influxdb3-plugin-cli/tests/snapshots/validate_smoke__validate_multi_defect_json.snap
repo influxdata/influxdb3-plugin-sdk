@@ -1,12 +1,13 @@
 ---
 source: influxdb3-plugin-cli/tests/validate_smoke.rs
+assertion_line: 131
 expression: payload
 ---
 {
   "diagnostics": [
     {
       "field": "plugin.name",
-      "message": "plugin.name: plugin name \"BAD_NAME\" must be 1-64 characters: lowercase letters, digits, or hyphens, starting with a lowercase letter or digit",
+      "message": "plugin.name: plugin name \"1bad\" must match `[a-zA-Z][a-zA-Z0-9_-]*` (1-64 chars, ASCII alphanumerics / `-` / `_`, starting with a letter)",
       "variant": "SchemaReported"
     },
     {

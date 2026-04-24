@@ -1,9 +1,9 @@
 manifest_schema_version = "1.0"
 
 [plugin]
-name = "Bad_Name"
+name = "Bad Name"
 version = "0.1.0"
-description = "Name contains uppercase and underscore."
+description = "Name contains an ASCII space, which is not allowed."
 triggers = ["process_writes"]
 
 [dependencies]

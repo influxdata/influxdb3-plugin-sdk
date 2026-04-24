@@ -1,9 +1,10 @@
 ---
 source: influxdb3-plugin-schemas/src/error.rs
-assertion_line: 245
+assertion_line: 373
 expression: rendered
 ---
-- "plugin name \"Bad-Name\" must be 1-64 characters: lowercase letters, digits, or hyphens, starting with a lowercase letter or digit"
+- "plugin name \"Bad Name\" must match `[a-zA-Z][a-zA-Z0-9_-]*` (1-64 chars, ASCII alphanumerics / `-` / `_`, starting with a letter)"
+- "plugin name \"con\" matches a Windows reserved device name (case-insensitive); pick a different name"
 - "version \"1.2\" is not SemVer 2.0.0 compliant: unexpected end of input while parsing minor version number"
 - description exceeds 200 characters (was 201)
 - description must not be empty

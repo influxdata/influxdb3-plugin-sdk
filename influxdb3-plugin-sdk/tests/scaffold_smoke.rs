@@ -32,7 +32,7 @@ fn plugin_scaffold_rejects_invalid_name() {
     let td = tempfile::tempdir().unwrap();
     let dir = td.path().join("bad-name");
     let err =
-        scaffold::plugin(&dir, "BAD_NAME", TriggerType::ProcessWrites, None, false).unwrap_err();
+        scaffold::plugin(&dir, "1bad", TriggerType::ProcessWrites, None, false).unwrap_err();
     assert!(matches!(
         err,
         SdkError::Schema(influxdb3_plugin_schemas::SchemaError::InvalidPluginName { .. })

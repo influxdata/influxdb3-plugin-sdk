@@ -26,7 +26,7 @@ fn setup() -> TempDir {
         r#"manifest_schema_version = "1.0"
 
 [plugin]
-name = "Bad_Name"
+name = "Bad Name"
 version = "not-semver"
 description = ""
 triggers = ["process_writes"]

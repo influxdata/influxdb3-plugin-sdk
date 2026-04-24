@@ -218,7 +218,7 @@ fn new_errors_on_pre_existing_file() {
 #[test]
 fn new_rejects_invalid_basename_without_name_override() {
     let td = tempfile::tempdir().unwrap();
-    let target = td.path().join("BAD_NAME");
+    let target = td.path().join("1bad");
 
     let assert = spawn_new(&target, &["process_writes"]).failure().code(1);
 
@@ -236,13 +236,13 @@ fn new_rejects_invalid_explicit_name() {
     let td = tempfile::tempdir().unwrap();
     let target = td.path().join("ok");
 
-    let assert = spawn_new(&target, &["process_writes", "--name", "BAD_NAME"])
+    let assert = spawn_new(&target, &["process_writes", "--name", "1bad"])
         .failure()
         .code(2);
 
     let stderr = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
     assert!(
-        stderr.contains("BAD_NAME"),
+        stderr.contains("1bad"),
         "stderr should name the bad value, got: {stderr}"
     );
     assert!(!target.join("manifest.toml").exists());
@@ -554,6 +554,95 @@ fn new_registry_with_force_overwrites_index() {
 
     let raw = std::fs::read_to_string(target.join("index.json")).unwrap();
     assert!(raw.contains("https://x.example/"), "index: {raw}");
+}
+
+// -----------------------------------------------------------------------
+// PluginName rule coverage — accept + reject paths under the new rule
+// (`[a-zA-Z][a-zA-Z0-9_-]*`, case-preserving, rejects Windows reserved
+// device names).
+// -----------------------------------------------------------------------
+
+#[test]
+fn new_accepts_underscore_name_via_flag() {
+    let td = tempfile::tempdir().unwrap();
+    spawn_new(td.path(), &["process_writes", "--name", "my_plugin"]).success();
+    let manifest = std::fs::read_to_string(td.path().join("manifest.toml")).unwrap();
+    assert!(
+        manifest.contains("name = \"my_plugin\""),
+        "manifest should contain exact name, got: {manifest}"
+    );
+}
+
+#[test]
+fn new_accepts_mixed_case_name_via_flag() {
+    let td = tempfile::tempdir().unwrap();
+    spawn_new(td.path(), &["process_writes", "--name", "MyPlugin"]).success();
+    let manifest = std::fs::read_to_string(td.path().join("manifest.toml")).unwrap();
+    assert!(
+        manifest.contains("name = \"MyPlugin\""),
+        "manifest should preserve case, got: {manifest}"
+    );
+}
+
+#[test]
+fn new_accepts_mixed_case_basename() {
+    let td = tempfile::tempdir().unwrap();
+    let dir = td.path().join("MyPlugin");
+    spawn_new(&dir, &["process_writes"]).success();
+    let manifest = std::fs::read_to_string(dir.join("manifest.toml")).unwrap();
+    assert!(manifest.contains("name = \"MyPlugin\""));
+}
+
+/// Regression narrowing: `7plugin` (digit-leading) was valid under the
+/// previous rule (which allowed a digit in the leading position). The
+/// new Cargo rule requires a leading letter — verify the explicit
+/// `--name` path rejects it with the new regex in the error message.
+#[test]
+fn new_rejects_digit_leading_name_regression() {
+    let td = tempfile::tempdir().unwrap();
+    // Anchor on the English rule rendering ("starting with a letter")
+    // rather than the bracketed regex literal — durable against future
+    // reformats of the error copy.
+    spawn_new(td.path(), &["process_writes", "--name", "7plugin"])
+        .code(2)
+        .stderr(predicates::str::contains("starting with a letter"));
+}
+
+#[test]
+fn new_rejects_reserved_device_name() {
+    let td = tempfile::tempdir().unwrap();
+    spawn_new(td.path(), &["process_writes", "--name", "con"])
+        .code(2)
+        .stderr(predicates::str::contains("Windows reserved"));
+}
+
+#[test]
+fn new_rejects_reserved_device_name_case_insensitive() {
+    let td = tempfile::tempdir().unwrap();
+    spawn_new(td.path(), &["process_writes", "--name", "CON"])
+        .code(2)
+        .stderr(predicates::str::contains("Windows reserved"));
+}
+
+/// Basename-derived invalid name surfaces as a runtime failure (exit 1,
+/// anyhow error — not a clap parse error), and the message instructs
+/// `--name` as the remediation.
+#[test]
+fn new_rejects_invalid_basename_with_actionable_message() {
+    let td = tempfile::tempdir().unwrap();
+    let dir = td.path().join("7plugin");
+    spawn_new(&dir, &["process_writes"])
+        .code(1)
+        .stderr(predicates::str::contains("pass --name"));
+}
+
+#[test]
+fn new_rejects_reserved_basename_with_actionable_message() {
+    let td = tempfile::tempdir().unwrap();
+    let dir = td.path().join("con");
+    spawn_new(&dir, &["process_writes"])
+        .code(1)
+        .stderr(predicates::str::contains("pass --name"));
 }
 
 #[test]

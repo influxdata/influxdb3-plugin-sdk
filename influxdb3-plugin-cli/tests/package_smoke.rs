@@ -156,6 +156,132 @@ fn package_rejects_duplicate_name_version() {
     assert!(!out_dir.join("index.json").exists());
 }
 
+// -----------------------------------------------------------------------
+// Canonical-form collision detection — hyphen/underscore and case
+// differences collide under `Index::from_raw_json`'s canonical key
+// (lowercase + `-` → `_`). The new `package` check must fire, reusing
+// the existing S2-2 payload shape (list versions + direct to `yank`).
+// -----------------------------------------------------------------------
+
+/// Writes a plugin directory with a caller-chosen `name` and `version`.
+/// Mirrors `write_valid_plugin` but parameterized so collision tests can
+/// pick names that differ only by canonicalization.
+fn write_plugin_named(dir: &Path, name: &str, version: &str) {
+    std::fs::create_dir_all(dir).unwrap();
+    let manifest = format!(
+        r#"manifest_schema_version = "1.0"
+
+[plugin]
+name = "{name}"
+version = "{version}"
+description = "Test plugin."
+triggers = ["process_writes"]
+
+[dependencies]
+database_version = ">=3.0.0"
+"#
+    );
+    std::fs::write(dir.join("manifest.toml"), manifest).unwrap();
+    std::fs::write(
+        dir.join("__init__.py"),
+        "def process_writes(a, b, c):\n    pass\n",
+    )
+    .unwrap();
+}
+
+/// Builds an `index.json` body with a single seeded entry at
+/// `(name, version)`.
+fn seeded_index_with(name: &str, version: &str) -> String {
+    serde_json::to_string_pretty(&serde_json::json!({
+        "index_schema_version": "1.0",
+        "artifacts_url": "https://plugins.example.com/artifacts",
+        "plugins": [
+            {
+                "name": name, "version": version,
+                "description": "seed", "triggers": ["process_writes"],
+                "dependencies": { "database_version": ">=3.0.0", "python": [] },
+                "hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+            }
+        ]
+    }))
+    .unwrap()
+}
+
+#[test]
+fn package_rejects_hyphen_underscore_collision() {
+    let td = tempfile::tempdir().unwrap();
+    let plugin_dir = td.path().join("p");
+    write_plugin_named(&plugin_dir, "my_plugin", "1.0.0");
+    let index_dir = td.path().join("reg");
+    std::fs::create_dir_all(&index_dir).unwrap();
+    let index_path = index_dir.join("index.json");
+    std::fs::write(&index_path, seeded_index_with("my-plugin", "1.0.0")).unwrap();
+    let out_dir = td.path().join("build");
+
+    let assert = spawn_package(&plugin_dir, &index_path, &out_dir, &[])
+        .failure()
+        .code(1);
+    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).into_owned();
+    assert!(
+        stderr.contains("\"1.0.0\""),
+        "stderr must list the existing version (S2-2), got: {stderr}"
+    );
+    assert!(
+        stderr.contains("yank"),
+        "stderr must direct the author to `yank` per S2-2, got: {stderr}"
+    );
+
+    assert!(!out_dir.join("my_plugin-1.0.0.tar.gz").exists());
+    assert!(!out_dir.join("index.json").exists());
+}
+
+#[test]
+fn package_rejects_case_collision() {
+    let td = tempfile::tempdir().unwrap();
+    let plugin_dir = td.path().join("p");
+    write_plugin_named(&plugin_dir, "MyPlugin", "1.0.0");
+    let index_dir = td.path().join("reg");
+    std::fs::create_dir_all(&index_dir).unwrap();
+    let index_path = index_dir.join("index.json");
+    std::fs::write(&index_path, seeded_index_with("myplugin", "1.0.0")).unwrap();
+    let out_dir = td.path().join("build");
+
+    let assert = spawn_package(&plugin_dir, &index_path, &out_dir, &[])
+        .failure()
+        .code(1);
+    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).into_owned();
+    assert!(
+        stderr.contains("\"1.0.0\""),
+        "stderr must list the existing version (S2-2), got: {stderr}"
+    );
+    assert!(
+        stderr.contains("yank"),
+        "stderr must direct the author to `yank` per S2-2, got: {stderr}"
+    );
+
+    assert!(!out_dir.join("MyPlugin-1.0.0.tar.gz").exists());
+    assert!(!out_dir.join("index.json").exists());
+}
+
+/// Canonical keying must NOT over-match on distinct versions of the same
+/// canonical name — packaging `my_plugin@1.0.1` against an index seeded
+/// with `my_plugin@1.0.0` succeeds.
+#[test]
+fn package_accepts_different_versions_of_same_canonical_name() {
+    let td = tempfile::tempdir().unwrap();
+    let plugin_dir = td.path().join("p");
+    write_plugin_named(&plugin_dir, "my_plugin", "1.0.1");
+    let index_dir = td.path().join("reg");
+    std::fs::create_dir_all(&index_dir).unwrap();
+    let index_path = index_dir.join("index.json");
+    std::fs::write(&index_path, seeded_index_with("my_plugin", "1.0.0")).unwrap();
+    let out_dir = td.path().join("build");
+
+    spawn_package(&plugin_dir, &index_path, &out_dir, &[]).success();
+    assert!(out_dir.join("my_plugin-1.0.1.tar.gz").exists());
+    assert!(out_dir.join("index.json").exists());
+}
+
 /// Input/output non-overlap: every equivalence form for
 /// `--out == dirname(--index)` must be rejected.
 #[rstest]

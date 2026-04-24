@@ -218,6 +218,77 @@ fn yank_malformed_target_exits_two() {
     );
 }
 
+// -----------------------------------------------------------------------
+// PluginName rule inheritance — `yank` parses `<name>@<version>` through
+// the same `PluginName::from_str` used by `package`, so the new Cargo
+// rule applies transparently. Cover one accept + two reject paths.
+// -----------------------------------------------------------------------
+
+/// `my_plugin` (underscore) parses cleanly through the clap value parser
+/// under the new rule. The entry is not in the seeded index, so the
+/// command fails downstream with exit 1 + "not present" — what matters
+/// is that stderr does NOT carry a clap usage rejection for the name
+/// itself.
+#[test]
+fn yank_parses_underscore_name() {
+    let td = tempfile::tempdir().unwrap();
+    let index_dir = td.path().join("reg");
+    std::fs::create_dir_all(&index_dir).unwrap();
+    let index_path = index_dir.join("index.json");
+    write_index(&index_path, SEEDED_INDEX);
+    let out = td.path().join("build");
+
+    let assert = spawn_yank("my_plugin@1.0.0", &index_path, &out, &[])
+        .failure()
+        .code(1);
+    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).into_owned();
+    assert!(
+        !stderr.contains("starting with a letter"),
+        "parser rejected `my_plugin` — new rule should accept it; stderr: {stderr}"
+    );
+    assert!(
+        !stderr.contains("Windows reserved"),
+        "stderr should not flag `my_plugin` as reserved; stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("not present"),
+        "downstream failure expected (entry absent); stderr: {stderr}"
+    );
+}
+
+/// Regression narrowing: `7plugin` (digit-leading) was valid under the
+/// old rule, rejected under the new one. Clap surfaces the regex on
+/// stderr.
+#[test]
+fn yank_rejects_digit_leading_name_regression() {
+    let td = tempfile::tempdir().unwrap();
+    let index_dir = td.path().join("reg");
+    std::fs::create_dir_all(&index_dir).unwrap();
+    let index_path = index_dir.join("index.json");
+    write_index(&index_path, SEEDED_INDEX);
+    let out = td.path().join("build");
+
+    spawn_yank("7plugin@1.0.0", &index_path, &out, &[])
+        .failure()
+        .code(2)
+        .stderr(predicates::str::contains("starting with a letter"));
+}
+
+#[test]
+fn yank_rejects_reserved_name() {
+    let td = tempfile::tempdir().unwrap();
+    let index_dir = td.path().join("reg");
+    std::fs::create_dir_all(&index_dir).unwrap();
+    let index_path = index_dir.join("index.json");
+    write_index(&index_path, SEEDED_INDEX);
+    let out = td.path().join("build");
+
+    spawn_yank("con@1.0.0", &index_path, &out, &[])
+        .failure()
+        .code(2)
+        .stderr(predicates::str::contains("Windows reserved"));
+}
+
 /// The input `--index` is byte-identical pre/post.
 #[test]
 fn yank_does_not_modify_input_index() {
