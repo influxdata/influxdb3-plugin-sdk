@@ -1,6 +1,5 @@
 ---
 source: influxdb3-plugin-sdk/src/error.rs
-assertion_line: 307
 expression: rendered
 ---
 - "plugin.description: description must not be empty"
@@ -9,3 +8,4 @@ expression: rendered
 - "trigger ProcessWrites is declared in manifest.toml but has no matching top-level `def process_writes(...)` in __init__.py"
 - "trigger ProcessScheduledCall is implemented as `async def` in __init__.py; the runtime invokes trigger functions synchronously"
 - "plugin (\"downsampler\", \"1.2.0\") already exists in the target index; increment version or run `yank` instead"
+- "failed to read --index /tmp/nope.json: No such file or directory (os error 2)"

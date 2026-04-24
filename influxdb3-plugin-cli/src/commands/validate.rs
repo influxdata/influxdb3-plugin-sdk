@@ -3,19 +3,19 @@
 //! Wraps [`influxdb3_plugin_sdk::validate::plugin_dir`] and, when
 //! `--index <path>` is supplied, [`influxdb3_plugin_sdk::validate::plugin_dir_with_index`].
 //!
-//! Validator idiom: in `--output json` mode, stdout emits a single
-//! `{ "diagnostics": [...] }` document on both pass and fail paths. Empty
-//! array signals a clean pass; populated array signals failure. The exit
-//! code redundantly signals the outcome (0 / 1).
+//! Validator idiom: in `--output json` mode, stdout always emits a
+//! single `{ "diagnostics": [...] }` document on both pass and fail
+//! paths, including index read failures, index parse failures, and
+//! per-entry index schema defects. Stderr stays empty in JSON mode.
+//! The exit code redundantly signals the outcome (0 / 1).
 //!
-//! Runtime errors that aren't validation diagnostics (I/O permission
-//! failures, malformed `--index` JSON, etc.) bubble up as
-//! [`anyhow::Error`] and follow the standard failure path: empty stdout,
-//! human-readable error on stderr, exit 1.
+//! Truly unrecoverable runtime errors that cannot be shaped as a
+//! diagnostic (e.g., I/O on the plugin directory itself) still bubble up
+//! as [`anyhow::Error`] and follow the standard failure path.
 
 use clap::Args as ClapArgs;
 use influxdb3_plugin_schemas::Index;
-use influxdb3_plugin_sdk::{SdkError, validate};
+use influxdb3_plugin_sdk::{SdkError, ValidationError, validate};
 use std::path::PathBuf;
 
 use crate::color::Stream;
@@ -89,18 +89,18 @@ fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
 /// stderr).
 fn run_validation(args: &Args) -> anyhow::Result<ValidateOutput> {
     let result = match &args.index {
-        Some(index_path) => {
-            let index_raw = std::fs::read_to_string(index_path).map_err(|e| {
-                anyhow::anyhow!("failed to read --index {}: {e}", index_path.display())
-            })?;
-            let index = Index::parse_json(&index_raw).map_err(|e| {
-                anyhow::anyhow!(
-                    "failed to parse --index {} as a registry index: {e}",
-                    index_path.display()
-                )
-            })?;
-            validate::plugin_dir_with_index(&args.plugin_dir, &index)
-        }
+        Some(index_path) => match std::fs::read_to_string(index_path) {
+            Ok(raw) => match Index::parse_json(&raw) {
+                Ok(index) => validate::plugin_dir_with_index(&args.plugin_dir, &index),
+                Err(schema_errors) => Err(SdkError::from(schema_errors)),
+            },
+            Err(io_err) => Err(SdkError::ValidationErrors(vec![
+                ValidationError::IndexReadFailed {
+                    path: index_path.clone(),
+                    message: io_err.to_string(),
+                },
+            ])),
+        },
         None => validate::plugin_dir(&args.plugin_dir),
     };
 

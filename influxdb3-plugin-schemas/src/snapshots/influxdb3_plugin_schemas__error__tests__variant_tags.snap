@@ -1,6 +1,5 @@
 ---
 source: influxdb3-plugin-schemas/src/error.rs
-assertion_line: 399
 expression: tags
 ---
 - InvalidPluginName
@@ -8,6 +7,7 @@ expression: tags
 - InvalidVersion
 - DescriptionTooLong
 - DescriptionEmpty
+- DescriptionMultiline
 - InvalidUrlScheme
 - InvalidUrl
 - UnknownTriggerType

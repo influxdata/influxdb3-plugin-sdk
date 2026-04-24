@@ -35,6 +35,9 @@ pub enum SchemaError {
     #[error("description must not be empty")]
     DescriptionEmpty,
 
+    #[error("description must be one line; got {len} chars across multiple lines")]
+    DescriptionMultiline { len: usize },
+
     #[error("URL {url:?} must use http or https scheme (was {scheme:?})")]
     InvalidUrlScheme { url: String, scheme: String },
 
@@ -144,6 +147,7 @@ impl SchemaError {
             Self::InvalidVersion { .. } => "InvalidVersion",
             Self::DescriptionTooLong { .. } => "DescriptionTooLong",
             Self::DescriptionEmpty => "DescriptionEmpty",
+            Self::DescriptionMultiline { .. } => "DescriptionMultiline",
             Self::InvalidUrlScheme { .. } => "InvalidUrlScheme",
             Self::InvalidUrl { .. } => "InvalidUrl",
             Self::UnknownTriggerType { .. } => "UnknownTriggerType",
@@ -316,6 +320,7 @@ mod tests {
             },
             SchemaError::DescriptionTooLong { len: 201 },
             SchemaError::DescriptionEmpty,
+            SchemaError::DescriptionMultiline { len: 201 },
             SchemaError::InvalidUrlScheme {
                 url: "ftp://bad".into(),
                 scheme: "ftp".into(),

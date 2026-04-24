@@ -44,48 +44,46 @@ use crate::{SdkError, ValidationError, ValidationReport};
 pub fn plugin_dir(dir: &Path) -> Result<Manifest, SdkError> {
     let mut report = ValidationReport::new();
 
-    // `NotFound` on required files is a collectible validation error; other
-    // I/O errors surface as `SdkError::Io`.
-    let manifest_path = dir.join("manifest.toml");
-    let manifest_raw = match std::fs::read_to_string(&manifest_path) {
-        Ok(s) => s,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            report.push(ValidationError::MissingRequiredFile {
-                file: "manifest.toml".into(),
-            });
-            report.into_result()?;
-            unreachable!("non-empty report always returns Err");
-        }
-        Err(source) => {
-            return Err(SdkError::Io {
-                source,
-                path: Some(manifest_path),
-            });
-        }
+    let manifest_raw = read_optional_required(&dir.join("manifest.toml"), "manifest.toml", &mut report)?;
+    let init_raw = read_optional_required(&dir.join("__init__.py"), "__init__.py", &mut report)?;
+
+    // Without manifest contents, the trigger list is unknown, so cross-file
+    // checks can't run. Surface the collected file-existence diagnostics now.
+    let Some(manifest_raw) = manifest_raw else {
+        report.into_result()?;
+        unreachable!("non-empty report always returns Err");
     };
     let manifest = Manifest::parse_toml(&manifest_raw)?;
 
-    let init_path = dir.join("__init__.py");
-    let init_raw = match std::fs::read_to_string(&init_path) {
-        Ok(s) => s,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            report.push(ValidationError::MissingRequiredFile {
-                file: "__init__.py".into(),
-            });
-            report.into_result()?;
-            unreachable!("non-empty report always returns Err");
-        }
-        Err(source) => {
-            return Err(SdkError::Io {
-                source,
-                path: Some(init_path),
-            });
-        }
-    };
-
-    check_python_source(&init_raw, &manifest.plugin.triggers, &mut report);
+    if let Some(init_raw) = init_raw {
+        check_python_source(&init_raw, &manifest.plugin.triggers, &mut report);
+    }
     report.into_result()?;
     Ok(manifest)
+}
+
+/// Reads a required file, treating `NotFound` as a collectible validation
+/// error rather than a runtime failure. Returns `Ok(None)` when the file is
+/// missing (after recording the diagnostic), `Ok(Some(content))` when read
+/// succeeded, and `Err(SdkError::Io)` for other I/O errors.
+fn read_optional_required(
+    path: &Path,
+    label: &str,
+    report: &mut ValidationReport,
+) -> Result<Option<String>, SdkError> {
+    match std::fs::read_to_string(path) {
+        Ok(s) => Ok(Some(s)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            report.push(ValidationError::MissingRequiredFile {
+                file: label.into(),
+            });
+            Ok(None)
+        }
+        Err(source) => Err(SdkError::Io {
+            source,
+            path: Some(path.to_path_buf()),
+        }),
+    }
 }
 
 /// [`plugin_dir`] plus an index-relative uniqueness check.
@@ -106,8 +104,12 @@ pub fn plugin_dir_with_index(
 ) -> Result<Manifest, SdkError> {
     let manifest = plugin_dir(dir)?;
 
+    // Compare canonical forms (lowercase, hyphens replaced with underscores)
+    // so `foo-bar`/`foo_bar` and `Foo`/`foo` collide. Matches the rule used at
+    // `Index::parse_json` time and `mutate_index::add_entry`.
+    let manifest_canonical = manifest.plugin.name.canonical();
     let collision = index.plugins.iter().any(|e| {
-        e.name.as_str() == manifest.plugin.name.as_str() && e.version == manifest.plugin.version
+        e.name.canonical() == manifest_canonical && e.version == manifest.plugin.version
     });
     if collision {
         let mut report = ValidationReport::new();
@@ -502,6 +504,113 @@ def process_writes(a, b, c):
         assert!(
             message.contains("line 2"),
             "expected error on line 2 (earliest position), got: {message}"
+        );
+    }
+
+    fn build_index_with_one_entry(name: &str, version: &str) -> influxdb3_plugin_schemas::Index {
+        let json = format!(
+            r#"{{
+                "index_schema_version": "1.0",
+                "artifacts_url": "https://x.example/a",
+                "plugins": [{{
+                    "name": "{name}",
+                    "version": "{version}",
+                    "description": "seed",
+                    "triggers": ["process_writes"],
+                    "dependencies": {{ "database_version": ">=3.0.0", "python": [] }},
+                    "hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+                }}]
+            }}"#
+        );
+        influxdb3_plugin_schemas::Index::parse_json(&json).expect("fixture parses")
+    }
+
+    fn write_plugin_with_name(dir: &std::path::Path, name: &str, version: &str) {
+        std::fs::create_dir_all(dir).unwrap();
+        let manifest = format!(
+            r#"manifest_schema_version = "1.0"
+
+[plugin]
+name = "{name}"
+version = "{version}"
+description = "x"
+triggers = ["process_writes"]
+
+[dependencies]
+database_version = ">=3.0.0"
+"#
+        );
+        std::fs::write(dir.join("manifest.toml"), manifest).unwrap();
+        std::fs::write(dir.join("__init__.py"), "def process_writes(a, b, c):\n    pass\n").unwrap();
+    }
+
+    fn assert_canonical_collision(manifest_name: &str, index_name: &str) {
+        let td = tempfile::tempdir().unwrap();
+        write_plugin_with_name(td.path(), manifest_name, "0.1.0");
+        let index = build_index_with_one_entry(index_name, "0.1.0");
+
+        let err = plugin_dir_with_index(td.path(), &index)
+            .expect_err("canonical collision must fail");
+        let SdkError::ValidationErrors(errs) = err else {
+            panic!("expected ValidationErrors, got {err:?}");
+        };
+        assert_eq!(errs.len(), 1);
+        let ValidationError::NameVersionConflict { name, version } = &errs[0] else {
+            panic!("expected NameVersionConflict, got {:?}", errs[0]);
+        };
+        assert_eq!(name, manifest_name, "diagnostic should pin the manifest's spelling");
+        assert_eq!(version, "0.1.0");
+    }
+
+    #[test]
+    fn plugin_dir_with_index_collides_on_hyphen_underscore() {
+        assert_canonical_collision("foo-bar", "foo_bar");
+    }
+
+    #[test]
+    fn plugin_dir_with_index_collides_on_case() {
+        assert_canonical_collision("Foo", "foo");
+    }
+
+    #[test]
+    fn plugin_dir_with_index_collides_on_mixed_canonical() {
+        assert_canonical_collision("Foo-Bar_Baz", "foo_bar_baz");
+    }
+
+    #[test]
+    fn plugin_dir_with_index_no_collision_when_canonical_differs() {
+        let td = tempfile::tempdir().unwrap();
+        write_plugin_with_name(td.path(), "foo", "0.1.0");
+        let index = build_index_with_one_entry("bar", "0.1.0");
+        plugin_dir_with_index(td.path(), &index).expect("no collision");
+    }
+
+    #[test]
+    fn plugin_dir_with_index_no_collision_when_version_differs() {
+        let td = tempfile::tempdir().unwrap();
+        write_plugin_with_name(td.path(), "foo-bar", "0.2.0");
+        let index = build_index_with_one_entry("foo_bar", "0.1.0");
+        plugin_dir_with_index(td.path(), &index).expect("different versions, no collision");
+    }
+
+    #[test]
+    fn plugin_dir_reports_both_missing_required_files() {
+        let td = tempfile::tempdir().unwrap();
+        let err = plugin_dir(td.path()).expect_err("empty dir must fail");
+        let SdkError::ValidationErrors(errs) = err else {
+            panic!("expected ValidationErrors, got {err:?}");
+        };
+        assert_eq!(errs.len(), 2, "expected exactly two diagnostics, got {errs:?}");
+        let files: std::collections::BTreeSet<&str> = errs
+            .iter()
+            .map(|e| match e {
+                ValidationError::MissingRequiredFile { file } => file.as_str(),
+                other => panic!("expected MissingRequiredFile, got {other:?}"),
+            })
+            .collect();
+        assert_eq!(
+            files,
+            std::collections::BTreeSet::from(["manifest.toml", "__init__.py"]),
         );
     }
 }

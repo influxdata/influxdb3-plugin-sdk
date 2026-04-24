@@ -1,6 +1,5 @@
 ---
 source: influxdb3-plugin-sdk/src/error.rs
-assertion_line: 316
 expression: tags
 ---
 - SchemaReported
@@ -9,3 +8,4 @@ expression: tags
 - TriggerNotImplemented
 - AsyncTriggerFn
 - NameVersionConflict
+- IndexReadFailed

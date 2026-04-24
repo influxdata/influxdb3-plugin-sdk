@@ -28,6 +28,7 @@ pub(crate) fn field_of(err: &ValidationError) -> Option<String> {
         ValidationError::NameVersionConflict { name, version } => {
             Some(format!("{name}@{version}"))
         }
+        ValidationError::IndexReadFailed { path, .. } => Some(path.display().to_string()),
         _ => None,
     }
 }

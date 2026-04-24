@@ -1,6 +1,5 @@
 ---
 source: influxdb3-plugin-schemas/src/error.rs
-assertion_line: 390
 expression: rendered
 ---
 - "plugin name \"Bad Name\" must match `[a-zA-Z][a-zA-Z0-9_-]*` (1-64 chars, ASCII alphanumerics / `-` / `_`, starting with a letter)"
@@ -8,6 +7,7 @@ expression: rendered
 - "version \"1.2\" is not SemVer 2.0.0 compliant: unexpected end of input while parsing minor version number"
 - description exceeds 200 characters (was 201)
 - description must not be empty
+- description must be one line; got 201 chars across multiple lines
 - "URL \"ftp://bad\" must use http or https scheme (was \"ftp\")"
 - "URL \"not a url\" is malformed: relative URL without a base"
 - "trigger \"on_startup\" is not in the closed set {process_writes, process_scheduled_call, process_request}"

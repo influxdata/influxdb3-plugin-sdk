@@ -88,6 +88,14 @@ impl Description {
         if s.is_empty() {
             return Err(SchemaError::DescriptionEmpty);
         }
+        // The newline check is the more specific rule, so it precedes the
+        // length check: a 201-char string that also contains a newline is
+        // reported as multiline rather than too-long.
+        if s.contains('\n') || s.contains('\r') {
+            return Err(SchemaError::DescriptionMultiline {
+                len: s.chars().count(),
+            });
+        }
         let len = s.chars().count();
         if len > 200 {
             return Err(SchemaError::DescriptionTooLong { len });
@@ -534,6 +542,45 @@ mod description_tests {
     fn accepts_single_char() {
         assert!(Description::try_new("x").is_ok());
     }
+
+    #[test]
+    fn rejects_multiline_description_lf() {
+        assert_matches!(
+            Description::try_new("first\nsecond"),
+            Err(SchemaError::DescriptionMultiline { .. })
+        );
+    }
+
+    #[test]
+    fn rejects_multiline_description_crlf() {
+        assert_matches!(
+            Description::try_new("first\r\nsecond"),
+            Err(SchemaError::DescriptionMultiline { .. })
+        );
+    }
+
+    #[test]
+    fn rejects_multiline_description_cr() {
+        assert_matches!(
+            Description::try_new("first\rsecond"),
+            Err(SchemaError::DescriptionMultiline { .. })
+        );
+    }
+
+    /// A 201-char string containing a newline must be reported as multiline,
+    /// not as too-long. The newline rule is the more specific.
+    /// `rejects_201_chars` proves that the same 201-char input absent a
+    /// newline fires `DescriptionTooLong`; together they pin precedence.
+    #[test]
+    fn multiline_check_precedes_length_check() {
+        let s = format!("{}\n{}", "a".repeat(100), "b".repeat(100));
+        assert_eq!(s.chars().count(), 201, "fixture sanity: input is 201 chars");
+        let err = Description::try_new(&s).expect_err("must reject");
+        let SchemaError::DescriptionMultiline { len } = err else {
+            panic!("expected DescriptionMultiline, got {err:?}");
+        };
+        assert_eq!(len, 201);
+    }
 }
 
 #[cfg(test)]
@@ -806,6 +853,33 @@ database_version = ">=3.0.0"
             errors.errors()[0].error,
             SchemaError::UnsupportedManifestMajor { .. }
         );
+    }
+
+    /// A triple-quoted TOML string with embedded newlines must be rejected
+    /// for `plugin.description`. (TOML strips the leading newline immediately
+    /// after `"""`, so the rejection here fires on the inner `\n`s.)
+    #[test]
+    fn rejects_description_with_embedded_newline_in_toml() {
+        let input = r#"
+manifest_schema_version = "1.0"
+
+[plugin]
+name = "downsampler"
+version = "1.2.0"
+description = """
+line one
+line two
+"""
+triggers = ["process_writes"]
+
+[dependencies]
+database_version = ">=3.0.0"
+"#;
+        let errors = Manifest::parse_toml(input).expect_err("multiline description must fail");
+        assert_eq!(errors.errors().len(), 1);
+        let e = &errors.errors()[0];
+        assert_eq!(e.path.as_str(), "plugin.description");
+        assert_matches!(e.error, SchemaError::DescriptionMultiline { .. });
     }
 }
 

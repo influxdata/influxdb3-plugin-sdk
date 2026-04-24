@@ -9,6 +9,9 @@ use predicates::prelude::*;
 use std::fs;
 use tempfile::TempDir;
 
+mod common;
+use common::{VALID_INIT, VALID_MANIFEST};
+
 fn plugin() -> Command {
     Command::cargo_bin("influxdb3-plugin").expect("binary not built")
 }
@@ -107,5 +110,40 @@ fn validate_human_diagnostics_do_not_duplicate_field_prefix() {
     assert!(
         stdout.contains("plugin.name: plugin name"),
         "stdout should contain the single field-prefixed message: {stdout}"
+    );
+}
+
+/// Human-mode parity for index parse failures: the diagnostic line(s)
+/// land on stdout (via `render_human`) and the anyhow summary lands on
+/// stderr — symmetric with manifest-error rendering.
+#[test]
+fn validate_human_mode_index_failure_renders_diagnostics_on_stdout() {
+    let tmp = TempDir::new().unwrap();
+    let plugin_dir = tmp.path().join("p");
+    fs::create_dir_all(&plugin_dir).unwrap();
+    fs::write(plugin_dir.join("manifest.toml"), VALID_MANIFEST).unwrap();
+    fs::write(plugin_dir.join("__init__.py"), VALID_INIT).unwrap();
+    let index_path = tmp.path().join("bad.json");
+    fs::write(&index_path, "not valid json").unwrap();
+
+    let assert = plugin()
+        .args([
+            "validate",
+            plugin_dir.to_str().unwrap(),
+            "--index",
+            index_path.to_str().unwrap(),
+            "--output",
+            "human",
+        ])
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("validation failed"));
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
+    // The diagnostic body lands on stdout via render_human; the variant
+    // tag is part of the stable contract. A regression that routed the
+    // line to stderr (or dropped it) breaks this assertion.
+    assert!(
+        stdout.contains("[SchemaReported]"),
+        "stdout should render the SchemaReported diagnostic line, got: {stdout}"
     );
 }

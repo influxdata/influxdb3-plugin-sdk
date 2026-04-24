@@ -46,6 +46,41 @@ fn validate_happy_path_emits_empty_diagnostics_array() {
     insta::assert_json_snapshot!("validate_happy_path_json", payload);
 }
 
+/// Empty plugin directory: BOTH `manifest.toml` and `__init__.py` are
+/// missing. Spec says all validation errors are collected, so both
+/// `MissingRequiredFile` diagnostics must surface in one run.
+#[test]
+fn validate_empty_plugin_dir_reports_both_missing_files_in_json() {
+    let td = tempfile::tempdir().unwrap();
+    let dir = td.path().join("empty");
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let assert = spawn_validate(&dir, &["--output", "json"])
+        .failure()
+        .code(1);
+
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
+    let payload: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    let diags = payload["diagnostics"].as_array().expect("array");
+    assert_eq!(diags.len(), 2, "expected two diagnostics, got {payload}");
+    let mut variants_and_fields: Vec<(&str, &str)> = diags
+        .iter()
+        .map(|d| (d["variant"].as_str().unwrap(), d["field"].as_str().unwrap()))
+        .collect();
+    variants_and_fields.sort();
+    assert_eq!(
+        variants_and_fields,
+        vec![
+            ("MissingRequiredFile", "__init__.py"),
+            ("MissingRequiredFile", "manifest.toml"),
+        ]
+    );
+    assert!(
+        assert.get_output().stderr.is_empty(),
+        "stderr must be empty in JSON mode"
+    );
+}
+
 /// Validator idiom: failure path emits a single JSON document on STDOUT
 /// (not stderr), and exits 1.
 #[test]
@@ -227,11 +262,142 @@ fn validate_does_not_auto_discover_adjacent_index() {
     spawn_validate(&plugin_dir, &["--output", "json"]).success();
 }
 
-/// Runtime failure path: a malformed `--index` cannot be parsed, so the
-/// command falls through to the standard data-tool failure path: stdout
-/// empty, stderr carries the error, exit 1.
+/// `validate --index` must compare canonical name forms (lowercase,
+/// hyphens replaced with underscores). `foo-bar` and `foo_bar` collide.
 #[test]
-fn validate_with_malformed_index_exits_one_via_stderr() {
+fn validate_with_index_detects_hyphen_underscore_collision() {
+    let td = tempfile::tempdir().unwrap();
+    let plugin_dir = td.path().join("p");
+    std::fs::create_dir_all(&plugin_dir).unwrap();
+    let manifest = r#"manifest_schema_version = "1.0"
+
+[plugin]
+name = "foo-bar"
+version = "0.1.0"
+description = "x"
+triggers = ["process_writes"]
+
+[dependencies]
+database_version = ">=3.0.0"
+"#;
+    std::fs::write(plugin_dir.join("manifest.toml"), manifest).unwrap();
+    std::fs::write(plugin_dir.join("__init__.py"), VALID_INIT).unwrap();
+    let index = serde_json::json!({
+        "index_schema_version": "1.0",
+        "artifacts_url": "https://x.example/a",
+        "plugins": [{
+            "name": "foo_bar",
+            "version": "0.1.0",
+            "description": "seed",
+            "triggers": ["process_writes"],
+            "dependencies": { "database_version": ">=3.0.0", "python": [] },
+            "hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        }]
+    });
+    let index_path = td.path().join("index.json");
+    std::fs::write(&index_path, serde_json::to_string_pretty(&index).unwrap()).unwrap();
+
+    let assert = spawn_validate(
+        &plugin_dir,
+        &["--output", "json", "--index", index_path.to_str().unwrap()],
+    )
+    .failure()
+    .code(1);
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
+    let payload: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    let diags = payload["diagnostics"].as_array().unwrap();
+    assert_eq!(diags.len(), 1);
+    assert_eq!(diags[0]["variant"], "NameVersionConflict");
+    let field = diags[0]["field"].as_str().unwrap();
+    assert!(field.ends_with("@0.1.0"), "field should pin version: {field}");
+    assert!(assert.get_output().stderr.is_empty());
+}
+
+/// Sister case: case-only collision. `Foo` and `foo` share canonical form.
+#[test]
+fn validate_with_index_detects_case_collision() {
+    let td = tempfile::tempdir().unwrap();
+    let plugin_dir = td.path().join("p");
+    std::fs::create_dir_all(&plugin_dir).unwrap();
+    let manifest = r#"manifest_schema_version = "1.0"
+
+[plugin]
+name = "Foo"
+version = "0.1.0"
+description = "x"
+triggers = ["process_writes"]
+
+[dependencies]
+database_version = ">=3.0.0"
+"#;
+    std::fs::write(plugin_dir.join("manifest.toml"), manifest).unwrap();
+    std::fs::write(plugin_dir.join("__init__.py"), VALID_INIT).unwrap();
+    let index = serde_json::json!({
+        "index_schema_version": "1.0",
+        "artifacts_url": "https://x.example/a",
+        "plugins": [{
+            "name": "foo",
+            "version": "0.1.0",
+            "description": "seed",
+            "triggers": ["process_writes"],
+            "dependencies": { "database_version": ">=3.0.0", "python": [] },
+            "hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        }]
+    });
+    let index_path = td.path().join("index.json");
+    std::fs::write(&index_path, serde_json::to_string_pretty(&index).unwrap()).unwrap();
+
+    let assert = spawn_validate(
+        &plugin_dir,
+        &["--output", "json", "--index", index_path.to_str().unwrap()],
+    )
+    .failure()
+    .code(1);
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
+    let payload: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    let diags = payload["diagnostics"].as_array().unwrap();
+    assert_eq!(diags.len(), 1);
+    assert_eq!(diags[0]["variant"], "NameVersionConflict");
+}
+
+/// Multiline `plugin.description` must be rejected (one-line rule),
+/// surfacing as a `SchemaReported` diagnostic at field `plugin.description`.
+#[test]
+fn validate_rejects_multiline_description() {
+    let td = tempfile::tempdir().unwrap();
+    let dir = td.path().join("p");
+    std::fs::create_dir_all(&dir).unwrap();
+    let manifest = r#"manifest_schema_version = "1.0"
+
+[plugin]
+name = "downsampler"
+version = "1.2.0"
+description = """
+top
+bottom
+"""
+triggers = ["process_writes"]
+
+[dependencies]
+database_version = ">=3.0.0"
+"#;
+    std::fs::write(dir.join("manifest.toml"), manifest).unwrap();
+    std::fs::write(dir.join("__init__.py"), VALID_INIT).unwrap();
+
+    let assert = spawn_validate(&dir, &["--output", "json"]).failure().code(1);
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
+    let payload: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    let diags = payload["diagnostics"].as_array().expect("array");
+    assert_eq!(diags.len(), 1);
+    assert_eq!(diags[0]["variant"], "SchemaReported");
+    assert_eq!(diags[0]["field"], "plugin.description");
+    assert!(assert.get_output().stderr.is_empty());
+}
+
+/// Validator JSON-mode contract: a malformed `--index` file must
+/// surface as a JSON document on stdout, with stderr empty.
+#[test]
+fn validate_with_malformed_index_emits_json_diagnostic() {
     let td = tempfile::tempdir().unwrap();
     let plugin_dir = td.path().join("p");
     write_valid_plugin(&plugin_dir);
@@ -247,13 +413,90 @@ fn validate_with_malformed_index_exits_one_via_stderr() {
 
     let out = assert.get_output();
     assert!(
-        out.stdout.is_empty(),
-        "stdout MUST be empty on runtime failure (vs validation failure), got {:?}",
-        String::from_utf8_lossy(&out.stdout)
+        out.stderr.is_empty(),
+        "stderr MUST be empty in JSON mode, got {:?}",
+        String::from_utf8_lossy(&out.stderr)
     );
-    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    let payload: serde_json::Value = serde_json::from_str(&stdout)
+        .expect("stdout must be one JSON document on parse failure");
+    let diags = payload["diagnostics"].as_array().expect("array");
     assert!(
-        stderr.contains("--index") || stderr.contains("registry index"),
-        "stderr should reference the failed --index, got: {stderr}"
+        !diags.is_empty(),
+        "expected at least one diagnostic, got {payload}"
     );
+    assert_eq!(diags[0]["variant"], "SchemaReported");
+}
+
+/// Index path that does not exist surfaces as a single
+/// `IndexReadFailed` diagnostic on stdout in JSON mode.
+#[test]
+fn validate_with_unreadable_index_emits_json_diagnostic() {
+    let td = tempfile::tempdir().unwrap();
+    let plugin_dir = td.path().join("p");
+    write_valid_plugin(&plugin_dir);
+    let missing = td.path().join("nope.json");
+
+    let assert = spawn_validate(
+        &plugin_dir,
+        &["--output", "json", "--index", missing.to_str().unwrap()],
+    )
+    .failure()
+    .code(1);
+
+    let out = assert.get_output();
+    assert!(out.stderr.is_empty(), "stderr empty: {:?}", out.stderr);
+    let payload: serde_json::Value =
+        serde_json::from_str(&String::from_utf8_lossy(&out.stdout)).unwrap();
+    let diags = payload["diagnostics"].as_array().unwrap();
+    assert_eq!(diags.len(), 1);
+    assert_eq!(diags[0]["variant"], "IndexReadFailed");
+    assert_eq!(diags[0]["field"], missing.display().to_string());
+}
+
+/// Multi-error case: an index with two distinct schema defects (bad URL
+/// scheme + non-SemVer version) surfaces as multiple `SchemaReported`
+/// diagnostics in one document.
+#[test]
+fn validate_with_index_schema_errors_emits_all_diagnostics() {
+    let td = tempfile::tempdir().unwrap();
+    let plugin_dir = td.path().join("p");
+    write_valid_plugin(&plugin_dir);
+    let bad_index = serde_json::json!({
+        "index_schema_version": "1.0",
+        "artifacts_url": "s3://nope",
+        "plugins": [{
+            "name": "downsampler",
+            "version": "v1",
+            "description": "seed",
+            "triggers": ["process_writes"],
+            "dependencies": { "database_version": ">=3.0.0", "python": [] },
+            "hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        }]
+    });
+    let index_path = td.path().join("bad-schema.json");
+    std::fs::write(&index_path, serde_json::to_string_pretty(&bad_index).unwrap()).unwrap();
+
+    let assert = spawn_validate(
+        &plugin_dir,
+        &["--output", "json", "--index", index_path.to_str().unwrap()],
+    )
+    .failure()
+    .code(1);
+    let out = assert.get_output();
+    assert!(out.stderr.is_empty());
+    let payload: serde_json::Value =
+        serde_json::from_str(&String::from_utf8_lossy(&out.stdout)).unwrap();
+    let diags = payload["diagnostics"].as_array().unwrap();
+    assert_eq!(diags.len(), 2, "expected exactly two diagnostics, got {payload}");
+    assert!(
+        diags.iter().all(|d| d["variant"] == "SchemaReported"),
+        "all index schema errors should be SchemaReported, got {payload}"
+    );
+    let mut fields: Vec<&str> = diags
+        .iter()
+        .map(|d| d["field"].as_str().unwrap())
+        .collect();
+    fields.sort();
+    assert_eq!(fields, vec!["artifacts_url", "plugins[0].version"]);
 }
