@@ -339,6 +339,13 @@ fn new_conflict_error_mentions_path_once() {
         .output()
         .unwrap();
 
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "conflict error should be a runtime failure per S2-18; got {:?}",
+        output.status.code()
+    );
+
     let stderr = String::from_utf8_lossy(&output.stderr);
     let occurrences = stderr.matches(dir.to_str().unwrap()).count();
     assert_eq!(
