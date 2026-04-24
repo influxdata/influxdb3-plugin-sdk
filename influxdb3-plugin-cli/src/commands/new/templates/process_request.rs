@@ -13,6 +13,7 @@ pub(crate) const METADATA: TemplateMetadata = TemplateMetadata {
 };
 
 #[derive(Debug, ClapArgs)]
+#[command(override_usage = "influxdb3-plugin new process_request [OPTIONS] [PATH]")]
 pub(crate) struct Args {
     #[command(flatten)]
     pub global: GlobalFlags,

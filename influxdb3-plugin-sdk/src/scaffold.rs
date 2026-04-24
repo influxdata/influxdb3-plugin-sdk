@@ -102,10 +102,11 @@ pub fn plugin(
 
 /// Scaffolds a new registry directory under `dir`.
 ///
-/// Writes `dir/index.json` with `index_schema_version = "1.0"`, an empty
+/// Writes `dir/index.json` with `index_schema_version = "1.1"`, an empty
 /// `plugins` array, and `artifacts_url` set to either `artifacts_url` or,
-/// when `None`, `file://<absolute dir>` — making a fresh local registry
-/// immediately usable as a `file://` registry.
+/// when `None`, `file://<absolute-but-not-canonicalized dir>` — making a
+/// fresh local registry immediately usable as a `file://` registry while
+/// preserving whatever path the user typed (no symlink resolution).
 ///
 /// When `overwrite` is true, an existing `index.json` is replaced. When
 /// false, the scaffold errors if `index.json` already exists.
@@ -134,7 +135,12 @@ pub fn registry(dir: &Path, artifacts_url: Option<&str>, overwrite: bool) -> Res
             url.to_owned()
         }
         None => {
-            let absolute = std::fs::canonicalize(dir).map_err(|source| SdkError::Io {
+            // `std::path::absolute` gives an absolute path without resolving
+            // symlinks, matching the explicit-`--artifacts-url` side's
+            // verbatim-passthrough contract. `canonicalize` would silently
+            // rewrite e.g. `/tmp` → `/private/tmp` on macOS, producing an
+            // `artifacts_url` that doesn't match what the user typed.
+            let absolute = std::path::absolute(dir).map_err(|source| SdkError::Io {
                 source,
                 path: Some(dir.to_path_buf()),
             })?;
@@ -333,8 +339,42 @@ mod tests {
         let recovered = parsed
             .to_file_path()
             .expect("file URL must convert back to a path");
-        let expected = std::fs::canonicalize(&dir).unwrap();
+        let expected = std::path::absolute(&dir).unwrap();
         assert_eq!(recovered, expected);
+    }
+
+    /// Default `artifacts_url` preserves the user-typed path without
+    /// resolving symlinks (matches the explicit-`--artifacts-url` side's
+    /// verbatim-passthrough contract and avoids a macOS-only surprise where
+    /// `/tmp` becomes `/private/tmp`).
+    #[test]
+    fn scaffold_registry_default_url_does_not_resolve_symlinks() {
+        let td = tempfile::tempdir().unwrap();
+        // Create a symlink pointing at a real subdirectory, then scaffold
+        // through the symlink path. The emitted `file://` URL must reference
+        // the symlink path, not the symlink's target.
+        let real = td.path().join("real");
+        fs::create_dir_all(&real).unwrap();
+        let link = td.path().join("link");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_dir(&real, &link).unwrap();
+        let dir = link.join("reg");
+
+        registry(&dir, None, false).unwrap();
+
+        let raw = fs::read_to_string(dir.join("index.json")).unwrap();
+        let index = Index::parse_json(&raw).unwrap();
+        let url_str = index.artifacts_url.to_string();
+
+        let recovered = url::Url::parse(&url_str).unwrap().to_file_path().unwrap();
+        // Absolute, but symlink component preserved.
+        assert!(
+            recovered.starts_with(&link),
+            "artifacts_url path {recovered:?} should start with symlink path {link:?}, \
+             not its target"
+        );
     }
 
     /// Explicit `artifacts_url` is written verbatim (no canonicalize, no

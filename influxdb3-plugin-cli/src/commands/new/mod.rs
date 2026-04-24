@@ -42,7 +42,8 @@ influxdb3-plugin new <TEMPLATE> [PATH] [OPTIONS]
        influxdb3-plugin new list [OPTIONS]",
     after_help = "\
 Run `influxdb3-plugin new list` to see available templates, \
-or `influxdb3-plugin new <template> --help` for per-template options."
+or `influxdb3-plugin new <template> --help` for per-template options. \
+Pass `--output` after the template name (e.g. `new registry --output json`)."
 )]
 pub(crate) enum NewCommand {
     /// List available templates.

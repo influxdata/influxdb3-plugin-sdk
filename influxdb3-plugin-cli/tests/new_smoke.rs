@@ -161,6 +161,33 @@ fn new_registry_happy_path_writes_file_url() {
     );
 }
 
+/// Default `artifacts_url` on `new registry` reflects the path the user
+/// typed. On macOS the OS-level `/tmp` → `/private/tmp` symlink used to
+/// leak into the index; `std::path::absolute` prevents that.
+#[test]
+fn new_registry_default_artifacts_url_preserves_typed_path() {
+    let td = tempfile::tempdir().unwrap();
+    let real = td.path().join("real");
+    std::fs::create_dir_all(&real).unwrap();
+    let link = td.path().join("link");
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&real, &link).unwrap();
+    #[cfg(windows)]
+    std::os::windows::fs::symlink_dir(&real, &link).unwrap();
+    let target = link.join("reg");
+
+    spawn_new(&target, &["registry"]).success();
+
+    let index = std::fs::read_to_string(target.join("index.json")).unwrap();
+    // The URL must reference the symlink path, not its target.
+    let link_str = link.to_str().unwrap();
+    assert!(
+        index.contains(link_str),
+        "registry index artifacts_url should preserve typed (symlink) \
+         path {link_str:?}, got:\n{index}"
+    );
+}
+
 /// Explicit `--artifacts-url` is written through verbatim (https / http
 /// inclusive).
 #[test]
@@ -1009,4 +1036,45 @@ fn new_succeeds_when_parent_dir_does_not_yet_exist() {
     spawn_new(&target, &["process_writes"]).success();
 
     assert!(target.join("manifest.toml").exists());
+}
+
+/// Unknown-flag errors on `new <template>` render the same `[OPTIONS] [PATH]`
+/// usage shape as `--help`. Clap's default error rendering strips the
+/// `[OPTIONS]` marker and the brackets around `[PATH]` whenever the
+/// unknown flag appears *after* a consumed positional — the exact layout
+/// users type (e.g. `new registry /tmp/reg --name foo`). A per-template
+/// `override_usage` forces help and error paths to agree.
+#[test]
+fn new_template_unknown_flag_usage_line_matches_help() {
+    let td = tempfile::tempdir().unwrap();
+    let target = td.path().join("x");
+    let target_str = target.to_str().unwrap();
+
+    for template in [
+        "registry",
+        "process_writes",
+        "process_scheduled_call",
+        "process_request",
+    ] {
+        let mut cmd = cli_cmd();
+        let assertion = cmd
+            .arg("new")
+            .arg(template)
+            .arg(target_str)
+            .arg("--totally-bogus-flag")
+            .assert()
+            .failure()
+            .code(2);
+        let stderr = String::from_utf8_lossy(&assertion.get_output().stderr).to_string();
+        let expected = format!("Usage: influxdb3-plugin new {template} [OPTIONS] [PATH]");
+        assert!(
+            stderr.contains(&expected),
+            "template {template} parse-error stderr should contain {expected:?}, \
+             got:\n{stderr}"
+        );
+        assert!(
+            !stderr.contains(&format!("new {template} <PATH>")),
+            "template {template} parse-error stderr still renders `<PATH>`, got:\n{stderr}"
+        );
+    }
 }
