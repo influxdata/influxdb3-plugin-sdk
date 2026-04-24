@@ -30,7 +30,27 @@ use influxdb3_plugin_cli::PluginConfig;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> std::process::ExitCode {
-    let config = PluginConfig::parse();
+    let config = match PluginConfig::try_parse() {
+        Ok(c) => c,
+        Err(e) => {
+            // Print clap's styled error first, then append a template-
+            // discovery hint when the failing parse is an unknown
+            // subcommand under `new`. clap's `after_help` only surfaces
+            // in `--help` output; the spec requires the error path also
+            // point at `new list`.
+            let _ = e.print();
+            if e.kind() == clap::error::ErrorKind::InvalidSubcommand
+                && std::env::args().nth(1).as_deref() == Some("new")
+            {
+                eprintln!(
+                    "Run `influxdb3-plugin new list` to see available templates."
+                );
+            }
+            // Mirror clap's exit conventions: 2 for errors that print to
+            // stderr, 0 for informational outputs like `--help` / `--version`.
+            return std::process::ExitCode::from(if e.use_stderr() { 2 } else { 0 });
+        }
+    };
     match config.run().await {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(e) => {

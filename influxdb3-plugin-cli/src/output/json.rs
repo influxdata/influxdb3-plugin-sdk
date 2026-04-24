@@ -59,6 +59,21 @@ pub(crate) struct PackageOutput {
     pub new_entry_version: String,
 }
 
+/// `--output json` payload emitted by `new list`. Stable (semver-locked)
+/// schema.
+#[derive(Debug, Serialize)]
+pub(crate) struct ListOutput {
+    pub templates: Vec<ListTemplate>,
+}
+
+/// One row of [`ListOutput`]. `name` is the human-facing display name;
+/// `short_name` is the CLI arg a user would pass to `new`.
+#[derive(Debug, Serialize)]
+pub(crate) struct ListTemplate {
+    pub name: &'static str,
+    pub short_name: &'static str,
+}
+
 /// `--output json` payload emitted by `new` on success: stdout carries this
 /// single document; failure paths leave stdout empty and write the error
 /// to stderr.

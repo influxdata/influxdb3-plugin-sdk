@@ -15,7 +15,7 @@ use std::fs;
 fn plugin_scaffold_produces_parseable_manifest() {
     let td = tempfile::tempdir().unwrap();
     let dir = td.path().join("downsampler");
-    scaffold::plugin(&dir, "downsampler", TriggerType::ProcessWrites, None)
+    scaffold::plugin(&dir, "downsampler", TriggerType::ProcessWrites, None, false)
         .expect("plugin scaffold should succeed");
 
     let manifest_raw = fs::read_to_string(dir.join("manifest.toml")).unwrap();
@@ -31,7 +31,8 @@ fn plugin_scaffold_produces_parseable_manifest() {
 fn plugin_scaffold_rejects_invalid_name() {
     let td = tempfile::tempdir().unwrap();
     let dir = td.path().join("bad-name");
-    let err = scaffold::plugin(&dir, "BAD_NAME", TriggerType::ProcessWrites, None).unwrap_err();
+    let err =
+        scaffold::plugin(&dir, "BAD_NAME", TriggerType::ProcessWrites, None, false).unwrap_err();
     assert!(matches!(
         err,
         SdkError::Schema(influxdb3_plugin_schemas::SchemaError::InvalidPluginName { .. })
@@ -42,7 +43,7 @@ fn plugin_scaffold_rejects_invalid_name() {
 fn registry_scaffold_produces_parseable_index() {
     let td = tempfile::tempdir().unwrap();
     let dir = td.path().join("my-registry");
-    scaffold::registry(&dir, None).expect("registry scaffold should succeed");
+    scaffold::registry(&dir, None, false).expect("registry scaffold should succeed");
 
     let index_raw = fs::read_to_string(dir.join("index.json")).unwrap();
     let index = Index::parse_json(&index_raw).expect("scaffolded index must parse");

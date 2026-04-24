@@ -3,8 +3,11 @@
 //! Templates are compiled-in via `include_str!`; user-extensible templates
 //! are out of v1 scope.
 //!
-//! Both scaffolds create `dir` if missing and reject if any file they would
-//! write already exists — no partial scaffolds.
+//! Both scaffolds create `dir` if missing. When `overwrite` is false, they
+//! reject if any file they would write already exists (no partial
+//! scaffolds). When `overwrite` is true, conflicting files in the
+//! template's write set are replaced; unrelated files in `dir` are left
+//! alone.
 
 use influxdb3_plugin_schemas::{PluginName, TriggerType};
 use std::path::{Path, PathBuf};
@@ -35,15 +38,20 @@ pub const DEFAULT_DATABASE_VERSION: &str = ">=3.0.0";
 /// [`DEFAULT_DATABASE_VERSION`]). The init template carries a stub for the
 /// declared `trigger`.
 ///
+/// When `overwrite` is true, existing files in the template's write set are
+/// replaced; when false, the scaffold errors if any already exist.
+///
 /// # Errors
 ///
 /// `SdkError::Schema` if `name` fails the `PluginName` check. `SdkError::Io`
-/// if any target path already exists or on file-write failure.
+/// if any target path already exists (only when `overwrite` is false) or on
+/// file-write failure.
 pub fn plugin(
     dir: &Path,
     name: &str,
     trigger: TriggerType,
     database_version: Option<&str>,
+    overwrite: bool,
 ) -> Result<(), SdkError> {
     // Fail fast on bad name, before touching the filesystem.
     let _validated: PluginName = name.parse()?;
@@ -64,7 +72,9 @@ pub fn plugin(
     let readme_path = dir.join("README.md");
 
     ensure_dir(dir)?;
-    check_no_existing(&[&manifest_path, &init_path, &readme_path])?;
+    if !overwrite {
+        check_no_existing(&[&manifest_path, &init_path, &readme_path])?;
+    }
 
     let db_ver = database_version.unwrap_or(DEFAULT_DATABASE_VERSION);
     let manifest = manifest_template
@@ -83,16 +93,22 @@ pub fn plugin(
 /// when `None`, `file://<absolute dir>` — making a fresh local registry
 /// immediately usable as a `file://` registry.
 ///
+/// When `overwrite` is true, an existing `index.json` is replaced. When
+/// false, the scaffold errors if `index.json` already exists.
+///
 /// # Errors
 ///
-/// `SdkError::Io` if `dir/index.json` already exists or on write failure.
-/// `SdkError::Archive` when an auto-derived `file://` URL cannot be built
-/// from `dir` (rare; Windows UNC-path edge case).
-pub fn registry(dir: &Path, artifacts_url: Option<&str>) -> Result<(), SdkError> {
+/// `SdkError::Io` if `dir/index.json` already exists (only when `overwrite`
+/// is false) or on write failure. `SdkError::Archive` when an auto-derived
+/// `file://` URL cannot be built from `dir` (rare; Windows UNC-path edge
+/// case).
+pub fn registry(dir: &Path, artifacts_url: Option<&str>, overwrite: bool) -> Result<(), SdkError> {
     let index_path = dir.join("index.json");
 
     ensure_dir(dir)?;
-    check_no_existing(&[&index_path])?;
+    if !overwrite {
+        check_no_existing(&[&index_path])?;
+    }
 
     let url_string: String = match artifacts_url {
         Some(url) => url.to_owned(),
@@ -132,10 +148,7 @@ fn check_no_existing(paths: &[&PathBuf]) -> Result<(), SdkError> {
                 // Bare message — the outer `SdkError::Io`'s Display adds
                 // ` at {path}` via `path_suffix`, so including the path here
                 // too produces a duplicate in the rendered error chain.
-                source: std::io::Error::new(
-                    std::io::ErrorKind::AlreadyExists,
-                    "already exists",
-                ),
+                source: std::io::Error::new(std::io::ErrorKind::AlreadyExists, "already exists"),
                 path: Some((*path).clone()),
             });
         }
@@ -160,7 +173,7 @@ mod tests {
     fn scaffold_process_writes_plugin_creates_three_files() {
         let td = tempfile::tempdir().unwrap();
         let dir = td.path().join("my-plugin");
-        plugin(&dir, "my-plugin", TriggerType::ProcessWrites, None).unwrap();
+        plugin(&dir, "my-plugin", TriggerType::ProcessWrites, None, false).unwrap();
 
         assert!(dir.join("manifest.toml").exists());
         assert!(dir.join("__init__.py").exists());
@@ -171,7 +184,7 @@ mod tests {
     fn scaffold_writes_valid_manifest() {
         let td = tempfile::tempdir().unwrap();
         let dir = td.path().join("downsampler");
-        plugin(&dir, "downsampler", TriggerType::ProcessWrites, None).unwrap();
+        plugin(&dir, "downsampler", TriggerType::ProcessWrites, None, false).unwrap();
 
         let raw = fs::read_to_string(dir.join("manifest.toml")).unwrap();
         let manifest = Manifest::parse_toml(&raw).expect("scaffolded manifest must parse");
@@ -185,12 +198,20 @@ mod tests {
         let default_dir = td.path().join("default");
         let override_dir = td.path().join("override");
 
-        plugin(&default_dir, "default", TriggerType::ProcessWrites, None).unwrap();
+        plugin(
+            &default_dir,
+            "default",
+            TriggerType::ProcessWrites,
+            None,
+            false,
+        )
+        .unwrap();
         plugin(
             &override_dir,
             "override",
             TriggerType::ProcessWrites,
             Some(">=3.5,<4"),
+            false,
         )
         .unwrap();
 
@@ -215,7 +236,7 @@ mod tests {
     fn scaffold_rejects_invalid_name_up_front() {
         let td = tempfile::tempdir().unwrap();
         let dir = td.path().join("bad-name-test");
-        let err = plugin(&dir, "BAD_NAME", TriggerType::ProcessWrites, None).unwrap_err();
+        let err = plugin(&dir, "BAD_NAME", TriggerType::ProcessWrites, None, false).unwrap_err();
         assert!(matches!(
             err,
             SdkError::Schema(influxdb3_plugin_schemas::SchemaError::InvalidPluginName { .. })
@@ -230,7 +251,7 @@ mod tests {
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join("manifest.toml"), "pre-existing").unwrap();
 
-        let err = plugin(&dir, "plugin", TriggerType::ProcessWrites, None).unwrap_err();
+        let err = plugin(&dir, "plugin", TriggerType::ProcessWrites, None, false).unwrap_err();
         assert!(matches!(err, SdkError::Io { .. }));
         assert_eq!(
             fs::read_to_string(dir.join("manifest.toml")).unwrap(),
@@ -247,7 +268,7 @@ mod tests {
         ] {
             let td = tempfile::tempdir().unwrap();
             let dir = td.path().join("p");
-            plugin(&dir, "p", trigger, None).unwrap();
+            plugin(&dir, "p", trigger, None, false).unwrap();
             let init = fs::read_to_string(dir.join("__init__.py")).unwrap();
             let expected_def = format!("def {}(", trigger.as_str());
             assert!(
@@ -261,7 +282,7 @@ mod tests {
     fn scaffold_registry_creates_parseable_index() {
         let td = tempfile::tempdir().unwrap();
         let dir = td.path().join("my-registry");
-        registry(&dir, None).unwrap();
+        registry(&dir, None, false).unwrap();
 
         let raw = fs::read_to_string(dir.join("index.json")).unwrap();
         let index = Index::parse_json(&raw).expect("scaffolded index must parse");
@@ -279,7 +300,7 @@ mod tests {
     fn scaffold_registry_artifacts_url_is_valid_file_url() {
         let td = tempfile::tempdir().unwrap();
         let dir = td.path().join("my-registry");
-        registry(&dir, None).unwrap();
+        registry(&dir, None, false).unwrap();
 
         let raw = fs::read_to_string(dir.join("index.json")).unwrap();
         let index = Index::parse_json(&raw).unwrap();
@@ -301,7 +322,7 @@ mod tests {
     fn scaffold_registry_uses_explicit_artifacts_url() {
         let td = tempfile::tempdir().unwrap();
         let dir = td.path().join("r");
-        registry(&dir, Some("https://plugins.example.com/artifacts")).unwrap();
+        registry(&dir, Some("https://plugins.example.com/artifacts"), false).unwrap();
 
         let raw = fs::read_to_string(dir.join("index.json")).unwrap();
         let index = Index::parse_json(&raw).expect("scaffolded index must parse");
@@ -318,7 +339,69 @@ mod tests {
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join("index.json"), "{}").unwrap();
 
-        let err = registry(&dir, None).unwrap_err();
+        let err = registry(&dir, None, false).unwrap_err();
         assert!(matches!(err, SdkError::Io { .. }));
+        // Pre-existing content must survive — no partial write.
+        assert_eq!(fs::read_to_string(dir.join("index.json")).unwrap(), "{}");
+    }
+
+    #[test]
+    fn scaffold_plugin_overwrite_replaces_existing_files() {
+        let td = tempfile::tempdir().unwrap();
+        let dir = td.path().join("plugin");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("manifest.toml"), "pre-existing").unwrap();
+        fs::write(dir.join("__init__.py"), "pre-existing").unwrap();
+        fs::write(dir.join("README.md"), "pre-existing").unwrap();
+
+        plugin(&dir, "plugin", TriggerType::ProcessWrites, None, true).unwrap();
+
+        let manifest = fs::read_to_string(dir.join("manifest.toml")).unwrap();
+        assert!(
+            manifest.contains("name = \"plugin\""),
+            "manifest not replaced: {manifest}"
+        );
+        let init = fs::read_to_string(dir.join("__init__.py")).unwrap();
+        assert!(
+            init.contains("def process_writes("),
+            "init not replaced: {init}"
+        );
+        let readme = fs::read_to_string(dir.join("README.md")).unwrap();
+        assert!(
+            !readme.contains("pre-existing"),
+            "readme not replaced: {readme}"
+        );
+    }
+
+    #[test]
+    fn scaffold_plugin_overwrite_leaves_unrelated_files_alone() {
+        let td = tempfile::tempdir().unwrap();
+        let dir = td.path().join("plugin");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("notes.txt"), "keep me").unwrap();
+
+        plugin(&dir, "plugin", TriggerType::ProcessWrites, None, true).unwrap();
+
+        assert_eq!(
+            fs::read_to_string(dir.join("notes.txt")).unwrap(),
+            "keep me"
+        );
+        assert!(dir.join("manifest.toml").exists());
+    }
+
+    #[test]
+    fn scaffold_registry_overwrite_replaces_existing_index() {
+        let td = tempfile::tempdir().unwrap();
+        let dir = td.path().join("r");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("index.json"), "{}").unwrap();
+
+        registry(&dir, Some("https://x.example/"), true).unwrap();
+
+        let raw = fs::read_to_string(dir.join("index.json")).unwrap();
+        assert!(
+            raw.contains("https://x.example/"),
+            "index not replaced: {raw}"
+        );
     }
 }

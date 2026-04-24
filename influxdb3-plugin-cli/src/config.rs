@@ -38,7 +38,8 @@ pub struct PluginConfig {
 #[derive(Debug, clap::Subcommand)]
 enum Command {
     /// Scaffold a new plugin or registry from a built-in template.
-    New(crate::commands::new::Args),
+    #[command(subcommand)]
+    New(crate::commands::new::NewCommand),
     /// Validate a plugin directory.
     Validate(crate::commands::validate::Args),
     /// Validate, archive, hash, and emit a derived index entry.
@@ -88,7 +89,7 @@ impl PluginConfig {
     /// ```
     pub async fn run(self) -> anyhow::Result<()> {
         match self.command {
-            Command::New(args) => args.run(),
+            Command::New(sub) => sub.run(),
             Command::Validate(args) => args.run(),
             Command::Package(args) => args.run(),
             Command::Yank(args) => args.run(),

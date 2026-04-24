@@ -115,8 +115,14 @@ fn archive_is_extractable_and_contains_expected_entries() {
 fn scaffold_then_validate_then_package_round_trips() {
     let td = tempfile::tempdir().unwrap();
     let plugin_dir = td.path().join("scaffolded");
-    scaffold::plugin(&plugin_dir, "scaffolded", TriggerType::ProcessWrites, None)
-        .expect("scaffold should succeed");
+    scaffold::plugin(
+        &plugin_dir,
+        "scaffolded",
+        TriggerType::ProcessWrites,
+        None,
+        false,
+    )
+    .expect("scaffold should succeed");
 
     let out =
         package_plugin(&plugin_dir, empty_index()).expect("scaffolded plugin must package cleanly");
@@ -135,7 +141,10 @@ fn pipeline_does_not_mutate_source_plugin_dir() {
     let _ = package_plugin(&plugin_dir, empty_index()).unwrap();
     let after = snapshot_tree(&plugin_dir);
 
-    assert_eq!(before, after, "plugin directory must be unchanged after package()");
+    assert_eq!(
+        before, after,
+        "plugin directory must be unchanged after package()"
+    );
 }
 
 /// Returns a sorted Vec of `(relative_path, sha256)` pairs for every file

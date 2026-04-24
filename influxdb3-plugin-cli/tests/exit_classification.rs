@@ -49,6 +49,9 @@ fn plain_runtime_failure_exits_one() {
 
 #[test]
 fn new_database_version_on_registry_template_exits_two() {
+    // `registry`'s Args omits `--database-version`, so clap rejects it
+    // at parse time. We pin exit 2 and a flag mention, not clap's exact
+    // wording.
     let tmp = TempDir::new().unwrap();
     plugin()
         .args([
@@ -60,9 +63,7 @@ fn new_database_version_on_registry_template_exits_two() {
         ])
         .assert()
         .code(2)
-        .stderr(predicates::str::contains(
-            "--database-version is not supported",
-        ));
+        .stderr(predicates::str::contains("--database-version"));
 }
 
 #[test]

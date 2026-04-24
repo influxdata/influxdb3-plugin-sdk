@@ -261,7 +261,8 @@ fn new_rejects_artifacts_url_on_plugin_template() {
         &["process_writes", "--artifacts-url", "https://example.com/a"],
     )
     .failure()
-    .code(2);
+    .code(2)
+    .stderr(predicates::str::contains("--artifacts-url"));
 }
 
 #[test]
@@ -271,25 +272,24 @@ fn new_rejects_name_on_registry_template() {
 
     spawn_new(&target, &["registry", "--name", "x"])
         .failure()
-        .code(2);
+        .code(2)
+        .stderr(predicates::str::contains("--name"));
 }
 
-/// Unknown template → clap parse error → exit code 2 (usage error).
+/// Unknown template → clap parse error → exit code 2 (usage error), and
+/// stderr points users at `new list` for template discovery.
 #[test]
 fn new_unknown_template_exits_two() {
     let td = tempfile::tempdir().unwrap();
     let target = td.path().join("p");
 
-    let assert = cli_cmd()
+    cli_cmd()
         .args(["new", "garbage_template", target.to_str().unwrap()])
         .assert()
-        .failure();
-
-    assert_eq!(
-        assert.get_output().status.code(),
-        Some(2),
-        "clap usage errors must exit 2 per S2-18"
-    );
+        .failure()
+        .code(2)
+        .stderr(predicates::str::contains("garbage_template"))
+        .stderr(predicates::str::contains("new list"));
 }
 
 /// Data-tool failure path: stdout empty, error on stderr.
@@ -360,5 +360,268 @@ fn new_conflict_error_mentions_path_once() {
     assert_eq!(
         phrase_occurrences, 1,
         "phrase 'already exists' should appear exactly once; was:\n{stderr}"
+    );
+}
+
+#[test]
+fn new_list_human_mode_shows_templates() {
+    // Explicit `--output human`: under the test harness stdout is piped,
+    // so auto-detection would pick json (covered by the snapshot test
+    // below).
+    let assert = cli_cmd()
+        .args(["new", "list", "--output", "human"])
+        .assert()
+        .success();
+    let stdout = std::str::from_utf8(&assert.get_output().stdout).unwrap();
+
+    assert!(stdout.contains("Template Name"), "stdout: {stdout}");
+    assert!(stdout.contains("Short Name"), "stdout: {stdout}");
+    // One row per built-in template (short names are the stable contract).
+    for short in [
+        "process_writes",
+        "process_scheduled_call",
+        "process_request",
+        "registry",
+    ] {
+        assert!(stdout.contains(short), "missing `{short}` in:\n{stdout}");
+    }
+    // Descriptions are intentionally withheld from `list`; they appear
+    // in `new <template> -h`.
+    assert!(
+        !stdout.contains("Plugin triggered by rows written"),
+        "description leaked into list output:\n{stdout}"
+    );
+}
+
+#[test]
+fn new_list_json_mode_is_stable_schema() {
+    let assert = cli_cmd()
+        .arg("new")
+        .arg("list")
+        .arg("--output")
+        .arg("json")
+        .assert()
+        .success();
+
+    let out = assert.get_output();
+    assert!(
+        out.stderr.is_empty(),
+        "stderr not empty: {:?}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let stdout = std::str::from_utf8(&out.stdout).unwrap();
+    let payload: serde_json::Value = serde_json::from_str(stdout).expect("stdout is JSON");
+    insta::assert_json_snapshot!("new_list_json", payload);
+}
+
+#[test]
+fn new_help_does_not_enumerate_templates() {
+    let assert = cli_cmd().arg("new").arg("--help").assert().success();
+    let stdout = std::str::from_utf8(&assert.get_output().stdout).unwrap();
+
+    // Scope the assertion to the `Commands:` block: `registry` also
+    // appears in the after-help prose, which should not trip this check.
+    let commands_block = stdout
+        .split_once("Commands:")
+        .and_then(|(_, after)| after.split_once("Options:"))
+        .map(|(block, _)| block)
+        .expect("help output should have a Commands section followed by Options");
+
+    // Per-template subcommands are `hide = true`; users are funneled
+    // through `new list`.
+    assert!(
+        commands_block.contains("list"),
+        "commands:\n{commands_block}"
+    );
+    for short in [
+        "process_writes",
+        "process_scheduled_call",
+        "process_request",
+        "registry",
+    ] {
+        assert!(
+            !commands_block.contains(short),
+            "`{short}` should not appear in the Commands section of `new --help`:\n{commands_block}"
+        );
+    }
+}
+
+#[test]
+fn new_process_writes_help_shows_template_flags_only() {
+    let assert = cli_cmd()
+        .arg("new")
+        .arg("process_writes")
+        .arg("-h")
+        .assert()
+        .success();
+    let stdout = std::str::from_utf8(&assert.get_output().stdout).unwrap();
+
+    assert!(
+        stdout.contains("Plugin triggered by rows written to a database"),
+        "stdout: {stdout}"
+    );
+    for needle in ["--output", "--force", "--name", "--database-version"] {
+        assert!(stdout.contains(needle), "missing `{needle}`:\n{stdout}");
+    }
+    // Registry-only flags do not appear.
+    assert!(
+        !stdout.contains("--artifacts-url"),
+        "registry flag leaked into plugin help:\n{stdout}"
+    );
+}
+
+#[test]
+fn new_process_writes_with_force_overwrites_existing_write_set() {
+    let td = tempfile::tempdir().unwrap();
+    let target = td.path().join("hp");
+    std::fs::create_dir_all(&target).unwrap();
+    // Pre-write every file in the template's write set; --force must
+    // replace all of them, matching the SDK-inline coverage.
+    std::fs::write(target.join("manifest.toml"), "pre-existing").unwrap();
+    std::fs::write(target.join("__init__.py"), "pre-existing").unwrap();
+    std::fs::write(target.join("README.md"), "pre-existing").unwrap();
+    std::fs::write(target.join("notes.txt"), "keep me").unwrap();
+
+    spawn_new(&target, &["process_writes", "--force"]).success();
+
+    let manifest = std::fs::read_to_string(target.join("manifest.toml")).unwrap();
+    assert!(manifest.contains("name = \"hp\""), "manifest: {manifest}");
+    let init = std::fs::read_to_string(target.join("__init__.py")).unwrap();
+    assert!(init.contains("def process_writes("), "init: {init}");
+    let readme = std::fs::read_to_string(target.join("README.md")).unwrap();
+    assert!(!readme.contains("pre-existing"), "readme: {readme}");
+    // Unrelated file untouched.
+    assert_eq!(
+        std::fs::read_to_string(target.join("notes.txt")).unwrap(),
+        "keep me"
+    );
+}
+
+#[test]
+fn new_process_writes_succeeds_when_only_unrelated_files_exist() {
+    let td = tempfile::tempdir().unwrap();
+    let target = td.path().join("hp");
+    std::fs::create_dir_all(&target).unwrap();
+    std::fs::write(target.join("notes.txt"), "keep me").unwrap();
+
+    // No `--force`; the unrelated file is not in the template's write
+    // set, so the scaffold must succeed and leave it alone.
+    spawn_new(&target, &["process_writes"]).success();
+
+    assert!(target.join("manifest.toml").exists());
+    assert_eq!(
+        std::fs::read_to_string(target.join("notes.txt")).unwrap(),
+        "keep me"
+    );
+}
+
+#[test]
+fn new_process_writes_without_force_fails_on_conflict() {
+    let td = tempfile::tempdir().unwrap();
+    let target = td.path().join("hp");
+    std::fs::create_dir_all(&target).unwrap();
+    std::fs::write(target.join("manifest.toml"), "pre-existing").unwrap();
+
+    spawn_new(&target, &["process_writes"]).code(1);
+
+    // Content preserved — no partial scaffold.
+    assert_eq!(
+        std::fs::read_to_string(target.join("manifest.toml")).unwrap(),
+        "pre-existing"
+    );
+    assert!(!target.join("__init__.py").exists());
+    assert!(!target.join("README.md").exists());
+}
+
+#[test]
+fn new_registry_with_force_overwrites_index() {
+    let td = tempfile::tempdir().unwrap();
+    let target = td.path().join("r");
+    std::fs::create_dir_all(&target).unwrap();
+    std::fs::write(target.join("index.json"), "{}").unwrap();
+
+    spawn_new(
+        &target,
+        &[
+            "registry",
+            "--force",
+            "--artifacts-url",
+            "https://x.example/",
+        ],
+    )
+    .success();
+
+    let raw = std::fs::read_to_string(target.join("index.json")).unwrap();
+    assert!(raw.contains("https://x.example/"), "index: {raw}");
+}
+
+#[test]
+fn new_registry_help_shows_only_its_flags() {
+    let assert = cli_cmd()
+        .arg("new")
+        .arg("registry")
+        .arg("-h")
+        .assert()
+        .success();
+    let stdout = std::str::from_utf8(&assert.get_output().stdout).unwrap();
+    assert!(
+        stdout.contains("Empty plugin registry directory"),
+        "stdout: {stdout}"
+    );
+    for needle in ["--output", "--force", "--artifacts-url"] {
+        assert!(stdout.contains(needle), "missing `{needle}`:\n{stdout}");
+    }
+    for absent in ["--name", "--database-version"] {
+        assert!(
+            !stdout.contains(absent),
+            "plugin flag leaked into registry help:\n{stdout}"
+        );
+    }
+}
+
+/// `--force` only makes sense for commands that write files.
+/// `new list` writes nothing, so the flag is deliberately not
+/// declared on its `Args` — clap rejects it at parse time with
+/// exit 2, the same contract as `--name` on the registry template.
+#[test]
+fn new_list_rejects_force_flag() {
+    cli_cmd()
+        .args(["new", "list", "--force"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicates::str::contains("--force"));
+}
+
+/// Discovery regression guard: a first-time user running `new --help`
+/// must see both the scaffold form (`new <TEMPLATE> [PATH]`) and the
+/// discovery form (`new list`) in the Usage block. Hiding per-template
+/// subcommands from `Commands:` is correct, but the Usage line must
+/// still teach the creation path or the help is a dead end.
+#[test]
+fn new_help_teaches_scaffold_and_list_forms() {
+    let assert = cli_cmd().arg("new").arg("--help").assert().success();
+    let stdout = std::str::from_utf8(&assert.get_output().stdout).unwrap();
+
+    // Isolate clap's Usage block — from "Usage:" to the first blank line.
+    let usage_block = stdout
+        .split_once("Usage:")
+        .and_then(|(_, after)| after.split_once("\n\n"))
+        .map(|(block, _)| block)
+        .expect("help output should have a Usage block ending in a blank line");
+
+    // Scaffold form — uppercase `<TEMPLATE>` is clap's default rendering
+    // for a positional with a `TEMPLATE` value name; accept either
+    // casing so the test doesn't over-pin clap's placeholder styling.
+    assert!(
+        usage_block.contains("<TEMPLATE>") || usage_block.contains("<template>"),
+        "Usage block should expose the scaffold form (`new <TEMPLATE> [PATH]`):\n{usage_block}"
+    );
+    // Discovery form — the literal `new list` must appear so users know
+    // to run it before picking a template short-name.
+    assert!(
+        usage_block.contains("new list"),
+        "Usage block should show the list-subcommand form:\n{usage_block}"
     );
 }
