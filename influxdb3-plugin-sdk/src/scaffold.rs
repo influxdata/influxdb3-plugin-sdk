@@ -25,10 +25,12 @@ const REGISTRY_INDEX: &str = include_str!("templates/registry_index.json");
 const README: &str = include_str!("templates/readme.md");
 
 /// Default `database_version` baked into a scaffolded manifest when the
-/// caller doesn't override it. Matches the SemVer floor every v1
-/// processing-engine release supports; release engineering may inject a
-/// tighter pin via the CLI's `--database-version` flag.
-pub const DEFAULT_DATABASE_VERSION: &str = ">=3.0.0";
+/// caller doesn't override it. Value resolved at build time from
+/// `INFLUXDB3_PLUGIN_SDK_KNOWN_LATEST_DB` (see `build.rs`); falls back to
+/// `>=3.0.0` when the env var is unset. Release builds should supply a
+/// pinned version; dev builds get the permissive floor.
+pub const DEFAULT_DATABASE_VERSION: &str =
+    concat!(">=", env!("INFLUXDB3_PLUGIN_SDK_KNOWN_LATEST_DB"));
 
 /// Scaffolds a new plugin directory under `dir`.
 ///
@@ -55,6 +57,18 @@ pub fn plugin(
 ) -> Result<(), SdkError> {
     // Fail fast on bad name, before touching the filesystem.
     let _validated: PluginName = name.parse()?;
+
+    // Fail fast on bad --database-version. Mirrors the check
+    // `Manifest::parse_toml` would apply later; surfacing here means the
+    // scaffold never produces a manifest that validation would reject.
+    if let Some(raw) = database_version {
+        semver::VersionReq::parse(raw).map_err(|source| {
+            influxdb3_plugin_schemas::SchemaError::InvalidDatabaseVersion {
+                range: raw.to_owned(),
+                source,
+            }
+        })?;
+    }
 
     let manifest_template = match trigger {
         TriggerType::ProcessWrites => PROCESS_WRITES_MANIFEST,
@@ -111,7 +125,14 @@ pub fn registry(dir: &Path, artifacts_url: Option<&str>, overwrite: bool) -> Res
     }
 
     let url_string: String = match artifacts_url {
-        Some(url) => url.to_owned(),
+        Some(url) => {
+            // Reject unsupported schemes and malformed URLs before writing.
+            // Mirrors the check `Index::parse_json` would apply later, but
+            // surfaces here so the scaffold never produces an index that
+            // downstream consumers (accepting only https/http/file) reject.
+            influxdb3_plugin_schemas::ArtifactsUrl::try_new(url)?;
+            url.to_owned()
+        }
         None => {
             let absolute = std::fs::canonicalize(dir).map_err(|source| SdkError::Io {
                 source,
@@ -403,5 +424,79 @@ mod tests {
             raw.contains("https://x.example/"),
             "index not replaced: {raw}"
         );
+    }
+
+    /// Explicit `--artifacts-url` must pass the same scheme check that
+    /// `Index::parse_json` applies; otherwise the scaffold can produce an
+    /// index that downstream consumers (which accept only https/http/file)
+    /// must reject.
+    #[test]
+    fn scaffold_registry_rejects_unsupported_url_scheme() {
+        let td = tempfile::tempdir().unwrap();
+        let cases = [
+            "ftp://example.com/a",
+            "s3://bucket/plugins",
+            "oci://registry.example",
+        ];
+        for (i, bad) in cases.iter().enumerate() {
+            let dir = td.path().join(format!("reg-{i}"));
+            let err = registry(&dir, Some(bad), false).unwrap_err();
+            assert!(
+                matches!(
+                    err,
+                    SdkError::Schema(
+                        influxdb3_plugin_schemas::SchemaError::UnsupportedArtifactScheme { .. }
+                    )
+                ),
+                "expected UnsupportedArtifactScheme for {bad:?}, got {err:?}"
+            );
+            assert!(
+                !dir.join("index.json").exists(),
+                "no index written for {bad:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn scaffold_registry_rejects_malformed_url() {
+        let td = tempfile::tempdir().unwrap();
+        let dir = td.path().join("reg");
+        let err = registry(&dir, Some("not a url"), false).unwrap_err();
+        assert!(
+            matches!(
+                err,
+                SdkError::Schema(influxdb3_plugin_schemas::SchemaError::InvalidUrl { .. })
+            ),
+            "expected InvalidUrl, got {err:?}"
+        );
+        assert!(!dir.join("index.json").exists());
+    }
+
+    /// Explicit `--database-version` must parse as a `semver::VersionReq`;
+    /// otherwise the scaffold can produce a manifest that `Manifest::parse_toml`
+    /// would reject. Fail fast, write nothing.
+    #[test]
+    fn scaffold_plugin_rejects_invalid_database_version() {
+        let td = tempfile::tempdir().unwrap();
+        let cases = ["not-a-range", "garbage", ">= ?"];
+        for (i, bad) in cases.iter().enumerate() {
+            let dir = td.path().join(format!("p-{i}"));
+            let err = plugin(&dir, "p", TriggerType::ProcessWrites, Some(bad), false).unwrap_err();
+            assert!(
+                matches!(
+                    err,
+                    SdkError::Schema(
+                        influxdb3_plugin_schemas::SchemaError::InvalidDatabaseVersion { .. }
+                    )
+                ),
+                "expected InvalidDatabaseVersion for {bad:?}, got {err:?}"
+            );
+            assert!(
+                !dir.join("manifest.toml").exists(),
+                "no manifest written for {bad:?}"
+            );
+            assert!(!dir.join("__init__.py").exists());
+            assert!(!dir.join("README.md").exists());
+        }
     }
 }

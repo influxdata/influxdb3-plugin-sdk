@@ -147,9 +147,8 @@ fn ci_env_plus_pipe_yields_json_stdout() {
         .assert()
         .success();
     let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
-    let _: serde_json::Value = serde_json::from_str(&stdout).unwrap_or_else(|e| {
-        panic!("stdout failed to parse as JSON: {e}\n{stdout}")
-    });
+    let _: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|e| panic!("stdout failed to parse as JSON: {e}\n{stdout}"));
 }
 
 /// Every observed exit code is in `{0, 1, 2}`. Spawns one command per
@@ -209,4 +208,95 @@ fn help_text_snapshots() {
         let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
         insta::assert_snapshot!(format!("help_{name}"), stdout);
     }
+}
+
+/// Asserts that `stderr` has exactly one non-empty line and that the
+/// clap `For more information, try '--help'.` footer is absent — the
+/// pair of conditions that define JSON-mode's collapsed error shape.
+fn assert_single_meaningful_stderr_line(stderr: &str) {
+    let meaningful: Vec<&str> = stderr.lines().filter(|l| !l.trim().is_empty()).collect();
+    assert_eq!(
+        meaningful.len(),
+        1,
+        "stderr must have exactly one meaningful line; got {} lines:\n{}",
+        meaningful.len(),
+        stderr
+    );
+    assert!(
+        !meaningful[0].contains("For more information"),
+        "stderr must not include the clap help footer; got: {stderr}"
+    );
+}
+
+/// `--output json` usage errors must emit empty stdout and exactly one
+/// meaningful stderr line. Applies to clap parse failures as well as
+/// runtime failures.
+#[test]
+fn json_mode_usage_error_stderr_is_single_line_for_new() {
+    let assert = Command::cargo_bin("influxdb3-plugin")
+        .unwrap()
+        .args(["new", "not_a_template", "--output", "json"])
+        .assert()
+        .failure();
+
+    assert_eq!(assert.get_output().status.code(), Some(2));
+    assert!(
+        assert.get_output().stdout.is_empty(),
+        "stdout must be empty on JSON-mode usage error, got: {:?}",
+        String::from_utf8_lossy(&assert.get_output().stdout)
+    );
+    assert_single_meaningful_stderr_line(&String::from_utf8_lossy(&assert.get_output().stderr));
+}
+
+#[test]
+fn ci_env_triggers_single_line_stderr_for_usage_errors() {
+    let assert = Command::cargo_bin("influxdb3-plugin")
+        .unwrap()
+        .env("CI", "true")
+        .args(["new", "not_a_template"])
+        .assert()
+        .failure();
+
+    assert_eq!(assert.get_output().status.code(), Some(2));
+    assert_single_meaningful_stderr_line(&String::from_utf8_lossy(&assert.get_output().stderr));
+}
+
+/// validate with an unknown flag — confirms main-level interception
+/// applies to subcommands other than `new`.
+#[test]
+fn json_mode_validate_unknown_flag_is_single_line() {
+    let assert = Command::cargo_bin("influxdb3-plugin")
+        .unwrap()
+        .args(["validate", "--nope", "--output", "json"])
+        .assert()
+        .failure();
+    assert_single_meaningful_stderr_line(&String::from_utf8_lossy(&assert.get_output().stderr));
+}
+
+/// package with no positional — confirms the collapse covers the
+/// missing-required class of clap error, not only unknown-value.
+#[test]
+fn json_mode_package_missing_required_is_single_line() {
+    let assert = Command::cargo_bin("influxdb3-plugin")
+        .unwrap()
+        .args(["package", "--output", "json"])
+        .assert()
+        .failure();
+    assert_single_meaningful_stderr_line(&String::from_utf8_lossy(&assert.get_output().stderr));
+}
+
+/// Human mode must keep clap's full multi-line diagnostic — including the
+/// `For more information, try '--help'.` footer.
+#[test]
+fn explicit_human_mode_preserves_multi_line_clap_output() {
+    let assert = Command::cargo_bin("influxdb3-plugin")
+        .unwrap()
+        .args(["new", "not_a_template", "--output", "human"])
+        .assert()
+        .failure();
+    let stderr = String::from_utf8_lossy(&assert.get_output().stderr);
+    assert!(
+        stderr.contains("For more information"),
+        "human mode must preserve clap's full diagnostic (with help footer); got:\n{stderr}"
+    );
 }

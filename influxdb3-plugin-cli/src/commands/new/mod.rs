@@ -8,7 +8,7 @@ pub(crate) mod list;
 pub(crate) mod templates;
 
 use clap::{Args as ClapArgs, Subcommand};
-use influxdb3_plugin_schemas::{PluginName, SchemaError, TriggerType};
+use influxdb3_plugin_schemas::{ArtifactsUrl, PluginName, SchemaError, TriggerType};
 use influxdb3_plugin_sdk::scaffold;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -118,6 +118,15 @@ fn run_plugin_with_env(
     let stdout_palette = Palette::for_stream(Stream::Stdout, mode, env, env.stdout_is_terminal());
 
     let name = resolve_plugin_name(&path, name_arg)?;
+
+    if let Some(raw) = database_version.as_deref()
+        && let Err(e) = semver::VersionReq::parse(raw)
+    {
+        return Err(crate::cli_error::CliError::usage(anyhow::anyhow!(
+            "invalid --database-version {raw:?}: {e}"
+        )));
+    }
+
     scaffold::plugin(
         &path,
         &name,
@@ -150,6 +159,14 @@ fn run_registry_with_env(
     let mode = resolve_output_mode(global.output, env);
     let stdout_palette = Palette::for_stream(Stream::Stdout, mode, env, env.stdout_is_terminal());
 
+    if let Some(raw) = artifacts_url.as_deref()
+        && let Err(e) = ArtifactsUrl::try_new(raw)
+    {
+        return Err(crate::cli_error::CliError::usage(anyhow::anyhow!(
+            "invalid --artifacts-url {raw:?}: {e}"
+        )));
+    }
+
     scaffold::registry(&path, artifacts_url.as_deref(), global.force)?;
 
     let summary = Summary {
@@ -168,7 +185,13 @@ fn resolve_plugin_name(dir: &Path, name_arg: Option<String>) -> anyhow::Result<S
     let (candidate, source_was_explicit) = match name_arg {
         Some(n) => (n, true),
         None => {
-            let basename = dir
+            // Canonicalize-without-existence so `.`, `./foo`, `../bar`, and
+            // absolute paths all resolve to the same basename rule. Without
+            // absolute(), `.`'s file_name is None and a bare
+            // `new <template>` invocation fails.
+            let absolute = std::path::absolute(dir)
+                .map_err(|source| anyhow::anyhow!("could not resolve path {dir:?}: {source}"))?;
+            let basename = absolute
                 .file_name()
                 .and_then(|s| s.to_str())
                 .ok_or_else(|| {

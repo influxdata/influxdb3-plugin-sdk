@@ -25,6 +25,19 @@ fn spawn_new<P: AsRef<Path>>(target: P, extra_args: &[&str]) -> assert_cmd::asse
     cmd.assert()
 }
 
+/// Spawns `influxdb3-plugin new <args>` with no positional target from
+/// the given working directory, exercising `[path]`'s default-to-`.`
+/// behavior where `--name` derives from the cwd basename.
+fn spawn_new_in<P: AsRef<Path>>(cwd: P, extra_args: &[&str]) -> assert_cmd::assert::Assert {
+    let mut cmd = cli_cmd();
+    cmd.current_dir(cwd.as_ref());
+    cmd.arg("new");
+    for a in extra_args {
+        cmd.arg(a);
+    }
+    cmd.assert()
+}
+
 #[test]
 fn new_process_writes_happy_path_human_mode() {
     let td = tempfile::tempdir().unwrap();
@@ -713,4 +726,145 @@ fn new_help_teaches_scaffold_and_list_forms() {
         usage_block.contains("new list"),
         "Usage block should show the list-subcommand form:\n{usage_block}"
     );
+}
+
+#[test]
+fn new_plugin_omitted_path_uses_cwd_basename() {
+    for template in [
+        "process_writes",
+        "process_scheduled_call",
+        "process_request",
+    ] {
+        let td = tempfile::tempdir().unwrap();
+        let working = td.path().join("downsampler-plugin");
+        std::fs::create_dir_all(&working).unwrap();
+
+        spawn_new_in(&working, &[template, "--output", "json"]).success();
+
+        let manifest = std::fs::read_to_string(working.join("manifest.toml")).unwrap();
+        assert!(
+            manifest.contains("name = \"downsampler-plugin\""),
+            "[{template}] manifest should derive name from cwd basename; got: {manifest}"
+        );
+        assert!(working.join("__init__.py").exists(), "[{template}]");
+        assert!(working.join("README.md").exists(), "[{template}]");
+    }
+}
+
+#[test]
+fn new_plugin_literal_dot_path_matches_omitted_behavior() {
+    let td = tempfile::tempdir().unwrap();
+    let working = td.path().join("my-plugin");
+    std::fs::create_dir_all(&working).unwrap();
+
+    spawn_new_in(&working, &["process_writes", "."]).success();
+
+    let manifest = std::fs::read_to_string(working.join("manifest.toml")).unwrap();
+    assert!(
+        manifest.contains("name = \"my-plugin\""),
+        "literal `.` should behave identically to omitted path; got: {manifest}"
+    );
+}
+
+#[test]
+fn new_plugin_omitted_path_with_invalid_cwd_basename_errors_helpfully() {
+    let td = tempfile::tempdir().unwrap();
+    // `1bad` fails PluginName::from_str (digit-leading); matches the
+    // invalid-name sentinel used elsewhere after the Cargo-rule alignment.
+    let working = td.path().join("1bad");
+    std::fs::create_dir_all(&working).unwrap();
+
+    let assert = spawn_new_in(&working, &["process_writes"])
+        .failure()
+        .code(1);
+
+    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
+    assert!(
+        stderr.contains("--name"),
+        "stderr should hint at --name when cwd basename is invalid; got: {stderr}"
+    );
+    assert!(!working.join("manifest.toml").exists());
+}
+
+/// Isolates "explicit --name wins over cwd basename" — cwd basename here
+/// is itself valid (`foo-cwd`), so the only thing being proven is that
+/// --name takes precedence. Keeps this test distinct from the
+/// invalid-cwd-basename case above.
+#[test]
+fn new_plugin_omitted_path_with_explicit_name_succeeds() {
+    let td = tempfile::tempdir().unwrap();
+    let working = td.path().join("foo-cwd");
+    std::fs::create_dir_all(&working).unwrap();
+
+    spawn_new_in(&working, &["process_writes", "--name", "good-name"]).success();
+
+    let manifest = std::fs::read_to_string(working.join("manifest.toml")).unwrap();
+    assert!(
+        manifest.contains("name = \"good-name\""),
+        "explicit --name should override cwd basename; got: {manifest}"
+    );
+}
+
+#[test]
+fn new_registry_omitted_path_writes_index_in_cwd() {
+    let td = tempfile::tempdir().unwrap();
+    let working = td.path().join("reg");
+    std::fs::create_dir_all(&working).unwrap();
+
+    spawn_new_in(&working, &["registry"]).success();
+
+    assert!(working.join("index.json").exists());
+}
+
+/// Explicit `--database-version` must parse as a SemVer range. Invalid
+/// ranges are usage errors (exit 2); no manifest is written.
+#[test]
+fn new_plugin_rejects_invalid_database_version() {
+    let td = tempfile::tempdir().unwrap();
+    let target = td.path().join("p");
+
+    let assert = spawn_new(
+        &target,
+        &["process_writes", "--database-version", "not-a-range"],
+    )
+    .failure()
+    .code(2);
+
+    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
+    assert!(
+        stderr.contains("not-a-range"),
+        "stderr should surface the rejected value verbatim; got: {stderr}"
+    );
+    assert!(!target.join("manifest.toml").exists());
+    assert!(!target.join("__init__.py").exists());
+    assert!(!target.join("README.md").exists());
+}
+
+/// Unsupported schemes and malformed URLs must be rejected at the CLI as
+/// usage errors (exit 2), not written into an index that downstream
+/// consumers (which accept only https/http/file) would reject.
+#[test]
+fn new_registry_rejects_unsupported_artifacts_url_scheme() {
+    for bad in [
+        "ftp://example.com/artifacts",
+        "s3://bucket/plugins",
+        "not-a-url",
+    ] {
+        let td = tempfile::tempdir().unwrap();
+        let target = td.path().join("reg");
+
+        let assert = spawn_new(&target, &["registry", "--artifacts-url", bad])
+            .failure()
+            .code(2);
+
+        let stderr = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
+        assert!(
+            stderr.contains(bad),
+            "stderr should surface the rejected value verbatim for {bad:?}; got: {stderr}"
+        );
+        assert!(
+            !target.join("index.json").exists(),
+            "no index.json should be written for rejected value {bad:?}"
+        );
+    }
 }
