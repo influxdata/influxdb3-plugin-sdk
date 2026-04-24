@@ -14,9 +14,13 @@
 //! as a printed informational marker.
 
 use clap::Args as ClapArgs;
+use clap::builder::{StringValueParser, TypedValueParser};
+use clap::error::{ContextKind, ContextValue, Error as ClapError, ErrorKind};
+use clap::{Arg, Command};
 use influxdb3_plugin_schemas::{Index, PluginName};
 use influxdb3_plugin_sdk::{SdkError, mutate_index};
 use semver::Version;
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
@@ -28,7 +32,8 @@ use crate::style::Palette;
 #[derive(Debug, ClapArgs)]
 pub(crate) struct Args {
     /// `<name>@<version>` identifier of the entry to toggle.
-    target: String,
+    #[arg(value_name = "NAME@VERSION", value_parser = NameAtVersionParser)]
+    target: NameAtVersion,
 
     /// Output format. Auto-detected from stdout's TTY status and `CI`
     /// when omitted (Spec 2 § S2-14).
@@ -60,7 +65,7 @@ fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
     let mode = resolve_output_mode(args.output, env);
     let stdout_palette =
         Palette::for_stream(Stream::Stdout, mode, env, env.stdout_is_terminal());
-    let (name, version) = parse_target(&args.target)?;
+    let NameAtVersion { name, version } = args.target;
 
     let index_raw = std::fs::read_to_string(&args.index)
         .map_err(|e| anyhow::anyhow!("failed to read --index {}: {e}", args.index.display()))?;
@@ -116,25 +121,73 @@ fn outcome_label(outcome: mutate_index::YankOutcome) -> &'static str {
     }
 }
 
-/// Parses `<name>@<version>`. Both halves must be present; `name` is
-/// validated via [`PluginName`] and `version` via SemVer 2.0.0.
-fn parse_target(s: &str) -> anyhow::Result<(PluginName, Version)> {
-    let (name_str, version_str) = s.split_once('@').ok_or_else(|| {
-        crate::cli_error::CliError::usage(anyhow::anyhow!(
-            "target {s:?} must be in `<name>@<version>` form (e.g., `downsampler@1.2.0`)"
-        ))
-    })?;
-    let name = PluginName::from_str(name_str).map_err(|e| {
-        crate::cli_error::CliError::usage(anyhow::anyhow!(
-            "invalid plugin name {name_str:?}: {e}"
-        ))
-    })?;
-    let version = Version::parse(version_str).map_err(|e| {
-        crate::cli_error::CliError::usage(anyhow::anyhow!(
-            "invalid SemVer version {version_str:?}: {e}"
-        ))
-    })?;
-    Ok((name, version))
+/// `<name>@<version>` positional target for the `yank` subcommand.
+///
+/// Parsing is driven through the clap [`TypedValueParser`] below so that
+/// malformed inputs surface as clap usage errors (exit 2) rather than
+/// runtime errors (exit 1) — per Spec 2 § S2-18 and spec F-1. The
+/// [`CliError`] classification in `cli_error.rs` continues to handle
+/// S2-12 path-overlap and other runtime-path usage errors.
+#[derive(Debug, Clone)]
+pub(crate) struct NameAtVersion {
+    pub(crate) name: PluginName,
+    pub(crate) version: Version,
+}
+
+impl FromStr for NameAtVersion {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, String> {
+        let (name_str, ver_str) = s.split_once('@').ok_or_else(|| {
+            format!(
+                "expected `<name>@<version>` (e.g., `downsampler@1.2.0`); got {s:?} with no `@` separator"
+            )
+        })?;
+        let name = name_str
+            .parse::<PluginName>()
+            .map_err(|e| format!("invalid plugin name {name_str:?}: {e}"))?;
+        let version = Version::parse(ver_str)
+            .map_err(|e| format!("invalid SemVer version {ver_str:?}: {e}"))?;
+        Ok(Self { name, version })
+    }
+}
+
+/// Clap [`TypedValueParser`] adapter around [`NameAtVersion::from_str`].
+///
+/// Surfacing the error as [`ErrorKind::ValueValidation`] produces clap's
+/// standard `invalid value '<v>' for '<ARG>'` message and gives an exit
+/// status of 2, matching spec F-1.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct NameAtVersionParser;
+
+impl TypedValueParser for NameAtVersionParser {
+    type Value = NameAtVersion;
+
+    fn parse_ref(
+        &self,
+        cmd: &Command,
+        arg: Option<&Arg>,
+        value: &OsStr,
+    ) -> Result<Self::Value, ClapError> {
+        let inner = StringValueParser::new();
+        let s = TypedValueParser::parse_ref(&inner, cmd, arg, value)?;
+        s.parse::<NameAtVersion>().map_err(|msg| {
+            let mut err = ClapError::new(ErrorKind::ValueValidation).with_cmd(cmd);
+            if let Some(arg) = arg {
+                err.insert(
+                    ContextKind::InvalidArg,
+                    ContextValue::String(arg.to_string()),
+                );
+            }
+            // Put the FromStr detail in InvalidValue — clap's default error
+            // renderer emits it; `Suggested` would be silently discarded.
+            err.insert(
+                ContextKind::InvalidValue,
+                ContextValue::String(format!("{s}: {msg}")),
+            );
+            err
+        })
+    }
 }
 
 /// S2-12 helper — same shape as `commands::package`.

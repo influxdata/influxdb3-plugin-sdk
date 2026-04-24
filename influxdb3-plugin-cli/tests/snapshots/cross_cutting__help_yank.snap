@@ -1,13 +1,14 @@
 ---
 source: influxdb3-plugin-cli/tests/cross_cutting.rs
+assertion_line: 213
 expression: stdout
 ---
 Toggle the `yanked` flag on an existing index entry
 
-Usage: influxdb3-plugin yank [OPTIONS] --index <INDEX> --out <OUT> <TARGET>
+Usage: influxdb3-plugin yank [OPTIONS] --index <INDEX> --out <OUT> <NAME@VERSION>
 
 Arguments:
-  <TARGET>
+  <NAME@VERSION>
           `<name>@<version>` identifier of the entry to toggle
 
 Options:

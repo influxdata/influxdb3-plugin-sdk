@@ -181,7 +181,12 @@ fn yank_missing_entry_exits_one() {
     );
 }
 
-/// Malformed `<name>@<version>` → exit 1 + stderr.
+/// Malformed `<name>@<version>` → exit 2 (usage error per S2-18 /
+/// spec F-1). Clap's `ValueValidation` error kind surfaces the invalid
+/// value verbatim; the parser folds the `FromStr::Err` detail into the
+/// `InvalidValue` field (clap's default renderer only emits
+/// `InvalidValue`, silently discarding `Suggested`), so stderr echoes
+/// both the offender and the expected shape on the error line.
 #[test]
 fn yank_malformed_target_exits_two() {
     let td = tempfile::tempdir().unwrap();
@@ -199,9 +204,18 @@ fn yank_malformed_target_exits_two() {
         stderr.contains("no-at-sign"),
         "stderr should echo the malformed argument value, got: {stderr}"
     );
+    // The FromStr detail ("no '@' separator" / "invalid plugin name" /
+    // "invalid version") is now inside the InvalidValue field, which clap
+    // renders as part of the error line.
     assert!(
-        stderr.contains("@") || stderr.contains("name@version"),
-        "stderr should hint at the expected <name>@<version> shape, got: {stderr}"
+        stderr.contains("<NAME@VERSION>"),
+        "stderr should name the positional placeholder, got: {stderr}"
+    );
+    assert!(
+        stderr.contains("no `@` separator")
+            || stderr.contains("invalid plugin name")
+            || stderr.contains("invalid SemVer version"),
+        "stderr should include the FromStr failure detail, got: {stderr}"
     );
 }
 
