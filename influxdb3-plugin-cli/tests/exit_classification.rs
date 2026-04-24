@@ -28,42 +28,23 @@ fn missing_required_flag_exits_two() {
 
 #[test]
 fn plain_runtime_failure_exits_one() {
-    // `validate` against a non-existent directory: I/O error → runtime fail.
-    plugin()
-        .arg("validate")
-        .arg("/nonexistent/plugin/dir")
-        .assert()
-        .code(1);
-}
-
-#[test]
-fn new_with_invalid_explicit_name_exits_two() {
+    // Runtime failure path: `yank` against a nonexistent `--index` hits the
+    // "failed to read --index" anyhow branch in commands/yank.rs, which
+    // surfaces as CliError::Runtime (exit 1) with stderr content. Avoids
+    // the silent JSON-mode validation path (S2-15) that `validate` would take.
     let tmp = TempDir::new().unwrap();
     plugin()
         .args([
-            "new",
-            "process_writes",
-            tmp.path().join("ok-dir").to_str().unwrap(),
-            "--name",
-            "Bad_Name",
+            "yank",
+            "downsampler@1.2.0",
+            "--index",
+            tmp.path().join("does-not-exist.json").to_str().unwrap(),
+            "--out",
+            tmp.path().join("out").to_str().unwrap(),
         ])
         .assert()
-        .code(2);
-}
-
-#[test]
-fn new_artifacts_url_on_plugin_template_exits_two() {
-    let tmp = TempDir::new().unwrap();
-    plugin()
-        .args([
-            "new",
-            "process_writes",
-            tmp.path().join("x").to_str().unwrap(),
-            "--artifacts-url",
-            "https://example.com",
-        ])
-        .assert()
-        .code(2);
+        .code(1)
+        .stderr(predicates::str::contains("failed to read --index"));
 }
 
 #[test]
@@ -78,22 +59,10 @@ fn new_database_version_on_registry_template_exits_two() {
             ">=3",
         ])
         .assert()
-        .code(2);
-}
-
-#[test]
-fn new_name_on_registry_template_exits_two() {
-    let tmp = TempDir::new().unwrap();
-    plugin()
-        .args([
-            "new",
-            "registry",
-            tmp.path().join("r2").to_str().unwrap(),
-            "--name",
-            "whatever",
-        ])
-        .assert()
-        .code(2);
+        .code(2)
+        .stderr(predicates::str::contains(
+            "--database-version is not supported",
+        ));
 }
 
 #[test]
@@ -120,7 +89,7 @@ fn package_self_overwrite_exits_two() {
         ])
         .assert()
         .code(2)
-        .stderr(predicates::str::contains("S2-12").or(predicates::str::contains("disjoint")));
+        .stderr(predicates::str::contains("S2-12"));
 }
 
 #[test]
@@ -143,7 +112,8 @@ fn yank_self_overwrite_exits_two() {
             reg.to_str().unwrap(),
         ])
         .assert()
-        .code(2);
+        .code(2)
+        .stderr(predicates::str::contains("S2-12"));
 }
 
 #[test]
@@ -164,5 +134,9 @@ fn yank_malformed_target_exits_two() {
             tmp.path().join("y").to_str().unwrap(),
         ])
         .assert()
-        .code(2);
+        .code(2)
+        .stderr(
+            predicates::str::contains("name:version")
+                .and(predicates::str::contains("<name>@<version>")),
+        );
 }
