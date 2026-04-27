@@ -2,19 +2,19 @@
 
 use clap::Parser;
 
-/// `<version> (<sha> <build-date>)` fragment fed to clap's `version` attribute.
+/// `<version>, revision <sha>` fragment fed to clap's `version` attribute.
 ///
-/// `build.rs` writes the parenthesized half (either `"(abc1234 2026-04-23)"`
-/// or `"(unknown)"`) to `$OUT_DIR/version_fragment.rs`; we splice it onto
-/// `CARGO_PKG_VERSION`. clap prepends the binary `name` when rendering
-/// `--version`, producing:
+/// `build.rs` writes the SHA value (a 40-char lowercase hex string, or
+/// the literal `unknown`) to `$OUT_DIR/version_fragment.rs`; we splice
+/// it onto `CARGO_PKG_VERSION` with the `, revision ` separator. clap
+/// prepends the binary `name` when rendering `--version`, producing:
 ///
 /// ```text
-/// influxdb3-plugin <version> (<short-sha> <build-date>)
+/// influxdb3-plugin <version>, revision <sha>
 /// ```
 const VERSION_STRING: &str = concat!(
     env!("CARGO_PKG_VERSION"),
-    " ",
+    ", revision ",
     include!(concat!(env!("OUT_DIR"), "/version_fragment.rs")),
 );
 

@@ -71,11 +71,19 @@ Top-level flag (Spec 2 § S2-21). Always emits one line of plain
 text regardless of `--output`:
 
 ```text
-influxdb3-plugin <version> (<short-sha> <build-date>)
+influxdb3-plugin <version>, revision <sha>
 ```
 
-The parenthesized half degrades to `(unknown)` when build-time git
-or date metadata is unavailable.
+The format matches the `influxdb3` binary's `build_version_string`
+(`{product}, {version}, revision {sha}`), so when the SDK is embedded
+as `influxdb3 plugin --version`, the output is visually consistent
+with the host's top-level `--version`.
+
+`<sha>` is the 40-character git commit hash from which the binary was
+built, sourced from (in precedence) the `GIT_HASH` env var,
+`.cargo_vcs_info.json` at the crate root, or `git rev-parse HEAD`. It
+degrades to the literal `unknown` only for uncontrolled rebuilds
+outside CI and outside `cargo install`.
 
 ## Exit codes (Spec 2 § S2-18)
 
@@ -135,7 +143,9 @@ macros), `serde`, `serde_json`, `semver`,
 Dev / test: `assert_cmd`, `predicates`, `insta`, `rstest`,
 `tempfile`, `toml`.
 
-A `build.rs` script captures the git short SHA and UTC build date
-for the `--version` output (Spec 2 § S2-21). The script invokes
-`git` and `date`; on either failure the version string degrades to
-`(unknown)` rather than the build itself failing.
+A `build.rs` script captures the full 40-char git commit SHA for the
+`--version` output (Spec 2 § S2-21), reading from `GIT_HASH` env when
+set, then `.cargo_vcs_info.json` at the crate root (Cargo's
+publish-time SHA capture), then `git rev-parse HEAD`. On full
+fallback the SHA degrades to the literal `unknown` rather than
+failing the build.

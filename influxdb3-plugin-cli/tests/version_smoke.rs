@@ -3,11 +3,11 @@
 //!
 //! Pins the output shape:
 //! ```text
-//! influxdb3-plugin <version> (<short-sha> <build-date>)
+//! influxdb3-plugin <version>, revision <sha>
 //! ```
-//! the graceful-degradation `(unknown)` form when build-time git/date
-//! metadata is unavailable, and the regex's acceptance of the full
-//! SemVer grammar (pre-release identifiers and build metadata).
+//! the graceful-degradation `revision unknown` form when no SHA source
+//! produces a value, and the regex's acceptance of the full SemVer
+//! grammar (pre-release identifiers and build metadata).
 //!
 //! See `validate_smoke.rs` in the SDK crate for the rationale behind the
 //! crate-root allow.
@@ -19,72 +19,96 @@ use predicates::Predicate as _;
 use predicates::str::is_match;
 
 const VERSION_RE: &str =
-    r"^influxdb3-plugin \d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)? (\([a-f0-9]{7} \d{4}-\d{2}-\d{2}\)|\(unknown\))\n$";
+    r"^influxdb3-plugin \d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?, revision ([a-f0-9]{40}|unknown)\n$";
 
 /// Exercises `VERSION_RE` directly so coverage of the full SemVer
-/// grammar (pre-release identifiers + build metadata, per S2-21) does
-/// not depend on the cli crate's current `Cargo.toml` version, which
-/// is typically stable during development.
+/// grammar (pre-release identifiers + build metadata) and the SHA
+/// grammar (40-char lowercase hex or literal `unknown`) does not
+/// depend on the cli crate's current `Cargo.toml` version or on the
+/// build environment producing a real SHA.
 #[test]
 fn version_re_accepts_full_semver_grammar() {
     let predicate = is_match(VERSION_RE).expect("regex compiles");
 
-    // Stable form — sanity check that widening did not regress the
-    // existing primary case.
+    // 40-char lowercase hex SHA used in positive cases below.
+    let sha = "a5ed19d8e3f4c2b1a09f8e6d5c4b3a2918f7e6d5";
+
+    // Stable form — primary positive case; guards against the regex
+    // accidentally requiring a pre-release or build-metadata segment.
     assert!(
-        predicate.eval("influxdb3-plugin 1.2.3 (abc1234 2026-04-22)\n"),
+        predicate.eval(&format!("influxdb3-plugin 1.2.3, revision {sha}\n")),
         "stable MAJOR.MINOR.PATCH must match"
     );
 
     // Org tag convention is `vX.Y.Z-N.(alpha|beta|rc).N` — pin all three
     // channels so a single-channel grammar regression is caught.
     assert!(
-        predicate.eval("influxdb3-plugin 1.0.0-1.alpha.0 (abc1234 2026-04-22)\n"),
+        predicate.eval(&format!("influxdb3-plugin 1.0.0-1.alpha.0, revision {sha}\n")),
         "alpha channel pre-release must match"
     );
     assert!(
-        predicate.eval("influxdb3-plugin 1.0.0-1.beta.5 (abc1234 2026-04-22)\n"),
+        predicate.eval(&format!("influxdb3-plugin 1.0.0-1.beta.5, revision {sha}\n")),
         "beta channel pre-release must match"
     );
     assert!(
-        predicate.eval("influxdb3-plugin 3.9.0-1.rc.0 (abc1234 2026-04-22)\n"),
+        predicate.eval(&format!("influxdb3-plugin 3.9.0-1.rc.0, revision {sha}\n")),
         "rc channel pre-release must match"
     );
 
-    // Single-segment pre-release (covers degenerate cases outside the
-    // org's three-channel convention but valid per SemVer).
+    // Single-segment pre-release — valid per SemVer though outside the
+    // org's three-channel tag convention.
     assert!(
-        predicate.eval("influxdb3-plugin 1.2.3-alpha (abc1234 2026-04-22)\n"),
+        predicate.eval(&format!("influxdb3-plugin 1.2.3-alpha, revision {sha}\n")),
         "single-segment pre-release must match"
     );
 
-    // Build metadata only.
+    // Build metadata.
     assert!(
-        predicate.eval("influxdb3-plugin 1.2.3+build.42 (unknown)\n"),
+        predicate.eval(&format!("influxdb3-plugin 1.2.3+build.42, revision {sha}\n")),
         "build metadata must match"
     );
 
     // Pre-release plus build metadata.
     assert!(
-        predicate.eval("influxdb3-plugin 1.2.3-rc.1+sha.deadbee (abc1234 2026-04-22)\n"),
+        predicate.eval(&format!("influxdb3-plugin 1.2.3-rc.1+sha.deadbee, revision {sha}\n")),
         "combined pre-release + build metadata must match"
     );
 
-    // Negative cases — ensure widening did not over-broaden.
+    // Graceful degradation: the literal `unknown` is the only non-hex
+    // SHA accepted.
+    assert!(
+        predicate.eval("influxdb3-plugin 1.2.3, revision unknown\n"),
+        "graceful-degradation `revision unknown` must match"
+    );
+
+    // Negative cases — version-segment.
 
     assert!(
-        !predicate.eval("influxdb3-plugin 1.2 (abc1234 2026-04-22)\n"),
+        !predicate.eval(&format!("influxdb3-plugin 1.2, revision {sha}\n")),
         "two-segment version must NOT match (S2-21 requires MAJOR.MINOR.PATCH)"
     );
-
     assert!(
-        !predicate.eval("influxdb3-plugin 1.2.3- (abc1234 2026-04-22)\n"),
+        !predicate.eval(&format!("influxdb3-plugin 1.2.3-, revision {sha}\n")),
         "trailing hyphen with empty pre-release must NOT match"
     );
-
     assert!(
-        !predicate.eval("influxdb3-plugin 1.2.3+ (abc1234 2026-04-22)\n"),
+        !predicate.eval(&format!("influxdb3-plugin 1.2.3+, revision {sha}\n")),
         "trailing plus with empty build metadata must NOT match"
+    );
+
+    // Negative cases — SHA-segment. Pin the 40-char lowercase-hex
+    // requirement; over-broadening would let short SHAs or uppercase
+    // through.
+    assert!(
+        !predicate.eval("influxdb3-plugin 1.2.3, revision a5ed19d\n"),
+        "7-char short SHA must NOT match (S2-21 requires 40-char)"
+    );
+    assert!(
+        !predicate.eval(&format!(
+            "influxdb3-plugin 1.2.3, revision {}\n",
+            sha.to_uppercase()
+        )),
+        "uppercase-hex SHA must NOT match (S2-21 requires lowercase)"
     );
 }
 
@@ -109,7 +133,7 @@ fn version_output_shape_matches_spec() {
     );
 
     // Version portion MUST match the cli crate's CARGO_PKG_VERSION.
-    let expected_prefix = format!("influxdb3-plugin {} ", env!("CARGO_PKG_VERSION"));
+    let expected_prefix = format!("influxdb3-plugin {}, revision ", env!("CARGO_PKG_VERSION"));
     assert!(
         stdout.starts_with(&expected_prefix),
         "expected version prefix {expected_prefix:?}, got {stdout:?}"
