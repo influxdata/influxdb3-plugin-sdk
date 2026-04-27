@@ -9,16 +9,19 @@ default-members = ["influxdb3-plugin-cli"]
 resolver = "3"
 
 [workspace.package]
-version = "0.1.0"
 authors = ["InfluxData Developers"]
 edition = "2024"
 rust-version = "1.94"
 license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
-# Local deps
-influxdb3-plugin-schemas = { path = "influxdb3-plugin-schemas" }
-influxdb3-plugin-sdk = { path = "influxdb3-plugin-sdk" }
+# Local deps. Breaking bumps in schemas (minor in 0.x, major in 1.x+)
+# cascade through BOTH sdk (direct dep) and cli (direct dep + re-exports
+# schemas types via cli/src/lib.rs); breaking bumps in sdk cascade
+# through cli. Update the version constraints below in lockstep with any
+# breaking bump; patch bumps resolve automatically under caret semantics.
+influxdb3-plugin-schemas = { path = "influxdb3-plugin-schemas", version = "0.1.0" }
+influxdb3-plugin-sdk = { path = "influxdb3-plugin-sdk", version = "0.1.0" }
 
 # crates.io dependencies
 anstyle = "1"
