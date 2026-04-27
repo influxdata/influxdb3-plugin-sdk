@@ -1,11 +1,13 @@
-//! Integration tests for the `influxdb3-plugin --version` flag.
+//! Integration tests for the `influxdb3-plugin --version` flag plus
+//! grammar-coverage tests for `VERSION_RE` itself.
 //!
 //! Pins the output shape:
 //! ```text
 //! influxdb3-plugin <version> (<short-sha> <build-date>)
 //! ```
-//! and verifies the graceful-degradation `(unknown)` form when build-time
-//! git/date metadata is unavailable.
+//! the graceful-degradation `(unknown)` form when build-time git/date
+//! metadata is unavailable, and the regex's acceptance of the full
+//! SemVer grammar (pre-release identifiers and build metadata).
 //!
 //! See `validate_smoke.rs` in the SDK crate for the rationale behind the
 //! crate-root allow.
@@ -17,7 +19,74 @@ use predicates::Predicate as _;
 use predicates::str::is_match;
 
 const VERSION_RE: &str =
-    r"^influxdb3-plugin \d+\.\d+\.\d+ (\([a-f0-9]{7} \d{4}-\d{2}-\d{2}\)|\(unknown\))\n$";
+    r"^influxdb3-plugin \d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)? (\([a-f0-9]{7} \d{4}-\d{2}-\d{2}\)|\(unknown\))\n$";
+
+/// Exercises `VERSION_RE` directly so coverage of the full SemVer
+/// grammar (pre-release identifiers + build metadata, per S2-21) does
+/// not depend on the cli crate's current `Cargo.toml` version, which
+/// is typically stable during development.
+#[test]
+fn version_re_accepts_full_semver_grammar() {
+    let predicate = is_match(VERSION_RE).expect("regex compiles");
+
+    // Stable form — sanity check that widening did not regress the
+    // existing primary case.
+    assert!(
+        predicate.eval("influxdb3-plugin 1.2.3 (abc1234 2026-04-22)\n"),
+        "stable MAJOR.MINOR.PATCH must match"
+    );
+
+    // Org tag convention is `vX.Y.Z-N.(alpha|beta|rc).N` — pin all three
+    // channels so a single-channel grammar regression is caught.
+    assert!(
+        predicate.eval("influxdb3-plugin 1.0.0-1.alpha.0 (abc1234 2026-04-22)\n"),
+        "alpha channel pre-release must match"
+    );
+    assert!(
+        predicate.eval("influxdb3-plugin 1.0.0-1.beta.5 (abc1234 2026-04-22)\n"),
+        "beta channel pre-release must match"
+    );
+    assert!(
+        predicate.eval("influxdb3-plugin 3.9.0-1.rc.0 (abc1234 2026-04-22)\n"),
+        "rc channel pre-release must match"
+    );
+
+    // Single-segment pre-release (covers degenerate cases outside the
+    // org's three-channel convention but valid per SemVer).
+    assert!(
+        predicate.eval("influxdb3-plugin 1.2.3-alpha (abc1234 2026-04-22)\n"),
+        "single-segment pre-release must match"
+    );
+
+    // Build metadata only.
+    assert!(
+        predicate.eval("influxdb3-plugin 1.2.3+build.42 (unknown)\n"),
+        "build metadata must match"
+    );
+
+    // Pre-release plus build metadata.
+    assert!(
+        predicate.eval("influxdb3-plugin 1.2.3-rc.1+sha.deadbee (abc1234 2026-04-22)\n"),
+        "combined pre-release + build metadata must match"
+    );
+
+    // Negative cases — ensure widening did not over-broaden.
+
+    assert!(
+        !predicate.eval("influxdb3-plugin 1.2 (abc1234 2026-04-22)\n"),
+        "two-segment version must NOT match (S2-21 requires MAJOR.MINOR.PATCH)"
+    );
+
+    assert!(
+        !predicate.eval("influxdb3-plugin 1.2.3- (abc1234 2026-04-22)\n"),
+        "trailing hyphen with empty pre-release must NOT match"
+    );
+
+    assert!(
+        !predicate.eval("influxdb3-plugin 1.2.3+ (abc1234 2026-04-22)\n"),
+        "trailing plus with empty build metadata must NOT match"
+    );
+}
 
 #[test]
 fn version_output_shape_matches_spec() {
