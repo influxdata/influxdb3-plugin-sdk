@@ -35,7 +35,35 @@ jobs:
           name: cargo build --workspace
           command: cargo build --workspace
 
+  cargo-test:
+    executor: self-hosted-amd
+    steps:
+      - checkout
+      - run:
+          name: Install Rust toolchain
+          command: |
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+              | sh -s -- -y --default-toolchain none --profile minimal
+            echo 'source $HOME/.cargo/env' >> "$BASH_ENV"
+            source "$BASH_ENV"
+            rustup show
+      - run:
+          name: Install cargo-nextest (prebuilt binary, fast)
+          command: |
+            source "$BASH_ENV"
+            curl -LsSf https://get.nexte.st/latest/linux \
+              | tar zxf - -C "$HOME/.cargo/bin"
+            cargo nextest --version
+      - run:
+          name: cargo nextest run --workspace
+          environment:
+            INSTA_UPDATE: "no"
+          command: |
+            source "$BASH_ENV"
+            cargo nextest run --workspace --no-fail-fast
+
 workflows:
   ci:
     jobs:
       - cargo-build
+      - cargo-test
