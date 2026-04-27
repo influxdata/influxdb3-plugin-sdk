@@ -1,0 +1,41 @@
+version: 2.1
+
+# Self-hosted CircleCI runner executors (org-supplied; see admin's snippet).
+# Working directory namespaced per pipeline.id because the runners are
+# non-ephemeral — without namespacing, concurrent pipelines collide.
+executors:
+  self-hosted-amd:
+    machine: true
+    resource_class: runner-ns/clustered-linux-vm
+    working_directory: /tmp/workspace/<< pipeline.id >>
+  self-hosted-arm:
+    machine: true
+    resource_class: runner-ns/clustered-linux-vm-arm
+    working_directory: /tmp/workspace/<< pipeline.id >>
+
+jobs:
+  cargo-build:
+    executor: self-hosted-amd
+    steps:
+      - checkout
+      - run:
+          name: Install Rust toolchain
+          command: |
+            # Self-hosted runners are bare Ubuntu — install rustup first.
+            # The --default-toolchain none flag avoids installing stable;
+            # rustup will install the version pinned in rust-toolchain.toml
+            # when cargo is invoked below.
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+              | sh -s -- -y --default-toolchain none --profile minimal
+            echo 'source $HOME/.cargo/env' >> "$BASH_ENV"
+            source "$BASH_ENV"
+            rustup show  # triggers install of rust-toolchain.toml's pinned version
+            rustc --version
+      - run:
+          name: cargo build --workspace
+          command: cargo build --workspace
+
+workflows:
+  ci:
+    jobs:
+      - cargo-build
