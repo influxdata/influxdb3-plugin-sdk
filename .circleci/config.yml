@@ -128,10 +128,11 @@ jobs:
             for v in CIRCLE_OIDC_TOKEN CIRCLE_OIDC_TOKEN_V2 \
                      GCP_PROJECT_ID GCP_SERVICE_ACCOUNT_EMAIL \
                      GCP_WIP_ID GCP_WIP_PROVIDER_ID; do
-                if [ -n "${!v:-}" ]; then
-                    echo "$v: SET (len=${#!v})"
+                val="${!v:-}"
+                if [ -n "$val" ]; then
+                    printf '%s: SET (len=%d)\n' "$v" "${#val}"
                 else
-                    echo "$v: UNSET"
+                    printf '%s: UNSET\n' "$v"
                 fi
             done
       - run:
