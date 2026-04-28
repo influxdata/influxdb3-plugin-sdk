@@ -22,7 +22,7 @@
 //! `tree-sitter-python` — rationale for this pick over pyo3, shell-out, and
 //! other Rust parsers lives in the core design-decisions doc.
 
-use influxdb3_plugin_schemas::{Manifest, TriggerType};
+use influxdb3_plugin_schemas::{IndexEntry, Manifest, TriggerType};
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -103,15 +103,8 @@ pub fn plugin_dir_with_index(
 ) -> Result<Manifest, SdkError> {
     let manifest = plugin_dir(dir)?;
 
-    // Compare canonical forms (lowercase, hyphens replaced with underscores)
-    // so `foo-bar`/`foo_bar` and `Foo`/`foo` collide. Matches the rule used at
-    // `Index::parse_json` time and `mutate_index::add_entry`.
-    let manifest_canonical = manifest.plugin.name.canonical();
-    let collision = index
-        .plugins
-        .iter()
-        .any(|e| e.name.canonical() == manifest_canonical && e.version == manifest.plugin.version);
-    if collision {
+    let probe_entry = IndexEntry::from_manifest(manifest.clone(), crate::hash::zero_hash());
+    if let Err(_err) = index.check_entry_insert(&probe_entry) {
         let mut report = ValidationReport::new();
         report.push(ValidationError::NameVersionConflict {
             name: manifest.plugin.name.as_str().to_owned(),

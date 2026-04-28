@@ -9,6 +9,16 @@ use sha2::{Digest, Sha256};
 
 use crate::SdkError;
 
+/// Returns an [`ArtifactHash`] with all-zero hex digits. Used as a sentinel
+/// value when constructing probe entries for uniqueness checks where the
+/// actual hash is not yet known.
+pub fn zero_hash() -> influxdb3_plugin_schemas::ArtifactHash {
+    influxdb3_plugin_schemas::ArtifactHash::try_new(
+        "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    )
+    .expect("zero hash is always valid")
+}
+
 /// Returns the SHA-256 hash of `bytes` as an [`ArtifactHash`] in the
 /// canonical `sha256:<64 lowercase hex chars>` form.
 pub fn sha256_of_bytes(bytes: &[u8]) -> ArtifactHash {
