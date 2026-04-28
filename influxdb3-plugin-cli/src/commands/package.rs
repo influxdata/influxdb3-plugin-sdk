@@ -60,7 +60,6 @@ impl Args {
 fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
     let mode = resolve_output_mode(args.output, env);
     let stdout_palette = Palette::for_stream(Stream::Stdout, mode, env, env.stdout_is_terminal());
-    let stderr_palette = Palette::for_stream(Stream::Stderr, mode, env, env.stderr_is_terminal());
 
     // (a) Read + parse the input index before creating --out so we don't
     // leave an empty scratch dir on parse failure.
@@ -139,7 +138,7 @@ fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
     let outcome = match package::package_plugin(&args.plugin_dir, input_index) {
         Ok(o) => o,
         Err(SdkError::ValidationErrors(errs)) => {
-            return Err(validation_errors_to_cli_error(errs, mode, stderr_palette));
+            return Err(validation_errors_to_cli_error(errs));
         }
         Err(other) => {
             // (f) Other SdkError → structured error.
@@ -282,45 +281,14 @@ fn render_human(
 }
 
 /// Converts SDK validation errors to a `CliError` with structured
-/// `JsonError` payload. Human mode renders to stderr via
-/// `diag_render`; JSON mode carries the full diagnostics array.
-fn validation_errors_to_cli_error(
-    errs: Vec<ValidationError>,
-    mode: OutputMode,
-    stderr_palette: Palette,
-) -> anyhow::Error {
-    match mode {
-        OutputMode::Human => {
-            // Render the full list to stderr so authors see every error
-            // in one pass. Use the same renderer as `validate` for visual
-            // consistency.
-            let diagnostics: Vec<_> = errs
-                .iter()
-                .map(crate::diag_render::diagnostic_from)
-                .collect();
-            let mut buf = Vec::<u8>::new();
-            let _ = crate::diag_render::render_human(&diagnostics, stderr_palette, &mut buf);
-            let rendered = String::from_utf8(buf).unwrap_or_default();
-            let je = JsonError {
-                code: "validate::failed".into(),
-                message: rendered.trim_end().to_owned(),
-                field: None,
-                details: None,
-                diagnostics: errs.iter().map(json_error_from_validation).collect(),
-                cause: vec![],
-            };
-            CliError::runtime(je)
-        }
-        OutputMode::Json => {
-            let je = JsonError {
-                code: "validate::failed".into(),
-                message: format!("{} validation error(s) found", errs.len()),
-                field: None,
-                details: None,
-                diagnostics: errs.iter().map(json_error_from_validation).collect(),
-                cause: vec![],
-            };
-            CliError::runtime(je)
-        }
-    }
+fn validation_errors_to_cli_error(errs: Vec<ValidationError>) -> anyhow::Error {
+    let je = JsonError {
+        code: "validate::failed".into(),
+        message: format!("{} validation error(s) found", errs.len()),
+        field: None,
+        details: None,
+        diagnostics: errs.iter().map(json_error_from_validation).collect(),
+        cause: vec![],
+    };
+    CliError::runtime(je)
 }

@@ -11,29 +11,6 @@
 use serde::Serialize;
 use std::path::PathBuf;
 
-/// `--output json` payload emitted by `validate` on both pass and fail: a
-/// single document on stdout always, with `diagnostics` empty on a clean
-/// pass and populated on failure.
-#[derive(Debug, Serialize)]
-pub(crate) struct ValidateOutput {
-    /// Validation diagnostics, ordered as the SDK collected them. Empty
-    /// on a clean pass.
-    pub diagnostics: Vec<Diagnostic>,
-}
-
-/// One validation diagnostic. `variant` is a stable string tag drawn from
-/// [`influxdb3_plugin_sdk::ValidationError::variant_name`]; consumers can
-/// pattern-match on it. `message` is the variant's `Display` text.
-/// `field` is the field path (e.g., `plugin.name`) or filename (e.g.,
-/// `manifest.toml`) the error refers to, when applicable.
-#[derive(Debug, Serialize)]
-pub(crate) struct Diagnostic {
-    pub variant: &'static str,
-    pub message: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub field: Option<String>,
-}
-
 /// `--output json` payload emitted by `yank` on success.
 /// `outcome` collapses the (target_state, transition vs no-op) cross
 /// product into one four-case enum. The wire form is the snake_case
