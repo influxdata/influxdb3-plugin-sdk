@@ -99,6 +99,17 @@ jobs:
           name: cargo deny check all
           command: cargo deny check all
 
+  cargo-doc:
+    executor: self-hosted-amd
+    environment:
+      RUSTDOCFLAGS: "-D warnings"
+    steps:
+      - checkout
+      - setup-rust
+      - run:
+          name: cargo doc --workspace --no-deps
+          command: cargo doc --workspace --no-deps
+
 workflows:
   ci:
     jobs:
@@ -107,3 +118,4 @@ workflows:
       - cargo-clippy
       - cargo-fmt
       - cargo-deny
+      - cargo-doc
