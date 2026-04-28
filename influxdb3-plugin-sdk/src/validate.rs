@@ -104,14 +104,29 @@ pub fn plugin_dir_with_index(
     let manifest = plugin_dir(dir)?;
 
     let probe_entry = IndexEntry::from_manifest(manifest.clone(), crate::hash::zero_hash());
-    if let Err(_err) = index.check_entry_insert(&probe_entry) {
-        let mut report = ValidationReport::new();
-        report.push(ValidationError::NameVersionConflict {
-            name: manifest.plugin.name.as_str().to_owned(),
-            version: manifest.plugin.version.to_string(),
-        });
-        report.into_result()?;
-        unreachable!("non-empty report always returns Err");
+    if let Err(err) = index.check_entry_insert(&probe_entry) {
+        use influxdb3_plugin_schemas::IndexInsertError;
+        // Surface a conflict only when the (canonical-name, version) pair
+        // already exists in the index — matching the original inline check of
+        // `canonical_match && version_match`. `CanonicalCollision` with a
+        // *different* version is intentionally not flagged here; that stricter
+        // spelling check runs at publish time in `mutate_index::add_entry`.
+        let version_conflict = match &err {
+            IndexInsertError::Duplicate { .. } => true,
+            IndexInsertError::CanonicalCollision { existing, .. } => existing
+                .iter()
+                .any(|(_, v)| v == &probe_entry.version),
+            _ => false,
+        };
+        if version_conflict {
+            let mut report = ValidationReport::new();
+            report.push(ValidationError::NameVersionConflict {
+                name: manifest.plugin.name.as_str().to_owned(),
+                version: manifest.plugin.version.to_string(),
+            });
+            report.into_result()?;
+            unreachable!("non-empty report always returns Err");
+        }
     }
 
     Ok(manifest)
