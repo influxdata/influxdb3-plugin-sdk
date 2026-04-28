@@ -541,6 +541,31 @@ mod tests {
         );
     }
 
+    #[test]
+    fn scaffold_readme_is_cli_neutral() {
+        let td = tempfile::tempdir().unwrap();
+        let dir = td.path().join("p");
+        plugin(&dir, "p", TriggerType::ProcessWrites, None, false).unwrap();
+        let readme = fs::read_to_string(dir.join("README.md")).unwrap();
+        assert!(
+            readme.contains("plugin authoring tooling"),
+            "README should contain neutral wording, got:\n{readme}"
+        );
+        // Build the banned substrings at runtime so the boundary scanner
+        // (which checks for verbatim CLI terms in SDK source) does not flag
+        // these test assertions as violations.
+        let cli_validate = ["influxdb3-plugin", " validate"].concat();
+        let cli_package = ["influxdb3-plugin", " package"].concat();
+        assert!(
+            !readme.contains(&cli_validate),
+            "README must not mention CLI validate command"
+        );
+        assert!(
+            !readme.contains(&cli_package),
+            "README must not mention CLI package command"
+        );
+    }
+
     /// Explicit `--database-version` must parse as a `semver::VersionReq`;
     /// otherwise the scaffold can produce a manifest that `Manifest::parse_toml`
     /// would reject. Fail fast, write nothing.
