@@ -1,5 +1,17 @@
 version: 2.1
 
+parameters:
+  run_nightly:
+    type: boolean
+    default: false
+    description: |
+      When true, runs the `nightly` workflow on this pipeline (full
+      cargo-mutants sweep + coverage-guided fuzzing + branch coverage on
+      nightly toolchain). Defaults false; the `nightly` workflow normally
+      fires on its named schedule (`weekly-nightly`, see project Triggers).
+      Set this to true via the "Trigger Pipeline" UI or `circleci-cli` to
+      run the nightly suite on demand.
+
 # Self-hosted CircleCI runner executors (org-supplied; see admin's snippet).
 # Working directory namespaced per pipeline.id because the runners are
 # non-ephemeral — without namespacing, concurrent pipelines collide.
@@ -245,6 +257,104 @@ jobs:
           path: coverage.json
       - save-cargo-cache
 
+  cargo-mutants-full:
+    executor: self-hosted-amd
+    steps:
+      - checkout
+      - setup-rust
+      - restore-cargo-cache
+      - run:
+          name: Install cargo-mutants (cached after first run via ~/.cargo/bin)
+          command: cargo install cargo-mutants --locked
+      - run:
+          name: cargo mutants (full sweep, no --in-diff)
+          # Expected runtime: 30 minutes to several hours depending on
+          # mutant count and core availability. The artifact is the work
+          # backlog for the following week's triage.
+          no_output_timeout: 6h
+          command: cargo mutants --jobs 8 --timeout-multiplier 2.0
+      - store_artifacts:
+          path: mutants.out/
+      - save-cargo-cache
+
+  cargo-fuzz-parsers:
+    executor: self-hosted-amd
+    steps:
+      - checkout
+      - setup-rust
+      - restore-cargo-cache
+      - run:
+          name: Install nightly toolchain + cargo-bolero
+          # Nightly is installed only inside this job; the project's
+          # rust-toolchain.toml stays pinned to 1.94 stable everywhere
+          # else.
+          command: |
+            rustup toolchain install nightly --profile minimal
+            cargo +nightly install cargo-bolero --locked
+            cargo +nightly bolero --version
+      - restore_cache:
+          # Save-unique / restore-by-prefix pattern. Each save uses a
+          # unique key (suffixed with epoch below) so save_cache never
+          # short-circuits; restore here always falls through to the
+          # prefix match and picks up the most recent corpus for the
+          # branch (or, failing that, any branch's most recent).
+          keys:
+            - fuzz-corpus-{{ .Branch }}-
+            - fuzz-corpus-
+      - run:
+          name: Fuzz fuzz_manifest_parse for 30 minutes
+          no_output_timeout: 35m
+          command: cargo +nightly bolero test fuzz_manifest_parse --time 1800
+      - run:
+          name: Fuzz fuzz_index_parse for 30 minutes
+          no_output_timeout: 35m
+          command: cargo +nightly bolero test fuzz_index_parse --time 1800
+      - save_cache:
+          # Unique per-run key — guarantees the cache is rewritten so
+          # the corpus accumulates findings across runs rather than
+          # being frozen at the first save.
+          key: fuzz-corpus-{{ .Branch }}-{{ epoch }}
+          paths: [fuzz/corpus]
+      - store_artifacts:
+          path: fuzz/corpus
+      - store_artifacts:
+          path: fuzz/artifacts
+      - save-cargo-cache
+
+  cargo-coverage-nightly:
+    executor: self-hosted-amd
+    steps:
+      - checkout
+      - setup-rust
+      - restore-cargo-cache
+      - run:
+          name: Install nightly toolchain + llvm-tools-preview + cargo-llvm-cov + cargo-nextest
+          command: |
+            rustup toolchain install nightly --profile minimal --component llvm-tools-preview
+            cargo install cargo-llvm-cov --locked
+            curl -LsSf https://get.nexte.st/latest/linux \
+              | tar zxf - -C "$HOME/.cargo/bin"
+            cargo +nightly llvm-cov --version
+      - run:
+          name: cargo +nightly llvm-cov nextest --branch
+          # Branch coverage is unstable; nightly toolchain is required.
+          # The #[cfg_attr(coverage_nightly, coverage(off))] attribute
+          # also takes effect under this invocation, so source-level
+          # exclusions added in a follow-up PR will work here.
+          environment:
+            INSTA_UPDATE: "no"
+          command: |
+            cargo +nightly llvm-cov nextest --profile ci --workspace --branch \
+              --json --output-path coverage-nightly.json
+            cargo +nightly llvm-cov report --html --output-dir target/coverage-nightly-html
+            cargo +nightly llvm-cov report --summary-only
+      - store_artifacts:
+          path: coverage-nightly.json
+      - store_artifacts:
+          path: target/coverage-nightly-html
+          destination: coverage-nightly-html
+      - save-cargo-cache
+
 workflows:
   ci:
     jobs:
@@ -257,3 +367,15 @@ workflows:
       - cargo-doc
       - manifest-invariants
       - cargo-package-check
+
+  nightly:
+    when:
+      or:
+        - << pipeline.parameters.run_nightly >>
+        - and:
+            - equal: [scheduled_pipeline, << pipeline.trigger_source >>]
+            - equal: ["weekly-nightly", << pipeline.schedule.name >>]
+    jobs:
+      - cargo-mutants-full
+      - cargo-fuzz-parsers
+      - cargo-coverage-nightly

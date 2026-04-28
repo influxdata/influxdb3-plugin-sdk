@@ -44,8 +44,10 @@ url = { version = "2", features = ["serde"] }
 walkdir = "2"
 
 # dev-dependencies
+arbitrary = { version = "1", features = ["derive"] }
 assert_cmd = "2"
 assert_matches = "1.5"
+bolero = "0.13"
 filetime = "0.2"
 insta = { version = "1.46", features = ["json", "toml", "yaml"] }
 predicates = "3"

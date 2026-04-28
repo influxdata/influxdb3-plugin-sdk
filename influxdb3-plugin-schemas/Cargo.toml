@@ -23,7 +23,9 @@ unicode-normalization.workspace = true
 url.workspace = true
 
 [dev-dependencies]
+arbitrary.workspace = true
 assert_matches.workspace = true
+bolero.workspace = true
 insta.workspace = true
 pretty_assertions.workspace = true
 proptest.workspace = true

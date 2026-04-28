@@ -7,8 +7,13 @@
 //! Schema evolution: additive fields within a schema major are minor bumps;
 //! breaking schema changes bump the crate's major.
 
-// `proptest` is used only in the `tests/determinism.rs` integration test;
-// this guard keeps `unused_crate_dependencies` satisfied on the lib test build.
+// `arbitrary`, `bolero`, and `proptest` are used only in integration tests
+// under `tests/`; these guards keep `unused_crate_dependencies` satisfied on
+// the lib test build.
+#[cfg(test)]
+use arbitrary as _;
+#[cfg(test)]
+use bolero as _;
 #[cfg(test)]
 use proptest as _;
 
