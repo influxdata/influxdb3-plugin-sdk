@@ -15,10 +15,10 @@ executors:
 
 commands:
   setup-rust:
-    description: "Install rustup with no default toolchain; rust-toolchain.toml drives the actual install on first cargo invocation."
+    description: "Install rustup (no default toolchain — rust-toolchain.toml drives the actual install on first cargo invocation) and sccache (used as RUSTC_WRAPPER on non-release jobs)."
     steps:
       - run:
-          name: Install Rust toolchain
+          name: Install Rust toolchain + sccache
           command: |
             # Self-hosted runners are bare Ubuntu — install rustup first.
             # The --default-toolchain none flag avoids installing stable;
@@ -30,21 +30,51 @@ commands:
             source "$BASH_ENV"
             rustup show
             rustc --version
+            # sccache (prebuilt binary; org pattern, fast).
+            SCCACHE_VERSION="0.8.2"
+            curl -LsSf "https://github.com/mozilla/sccache/releases/download/v${SCCACHE_VERSION}/sccache-v${SCCACHE_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
+              | tar zxf - -C "$HOME/.cargo/bin" --strip-components=1 \
+                "sccache-v${SCCACHE_VERSION}-x86_64-unknown-linux-musl/sccache"
+            sccache --version
+            echo 'export RUSTC_WRAPPER=sccache' >> "$BASH_ENV"
+            echo 'export SCCACHE_DIR=$HOME/.cache/sccache' >> "$BASH_ENV"
+
+  restore-cargo-cache:
+    description: "Restore cargo registry/git/target caches keyed on Cargo.lock checksum."
+    steps:
+      - restore_cache:
+          keys:
+            - cargo-v2-x86_64-unknown-linux-gnu-{{ checksum "Cargo.lock" }}
+            - cargo-v2-x86_64-unknown-linux-gnu-
+
+  save-cargo-cache:
+    description: "Persist cargo registry/git/target/sccache caches keyed on Cargo.lock checksum."
+    steps:
+      - save_cache:
+          key: cargo-v2-x86_64-unknown-linux-gnu-{{ checksum "Cargo.lock" }}
+          paths:
+            - ~/.cargo/registry
+            - ~/.cargo/git
+            - ~/.cache/sccache
+            - target
 
 jobs:
   cargo-build:
     executor: self-hosted-amd
     steps:
       - checkout
+      - restore-cargo-cache
       - setup-rust
       - run:
           name: cargo build --workspace
           command: cargo build --workspace
+      - save-cargo-cache
 
   cargo-test:
     executor: self-hosted-amd
     steps:
       - checkout
+      - restore-cargo-cache
       - setup-rust
       - run:
           name: Install cargo-nextest (prebuilt binary, fast)
@@ -57,11 +87,13 @@ jobs:
           environment:
             INSTA_UPDATE: "no"
           command: cargo nextest run --workspace --no-fail-fast
+      - save-cargo-cache
 
   cargo-clippy:
     executor: self-hosted-amd
     steps:
       - checkout
+      - restore-cargo-cache
       - setup-rust
       - run:
           name: rustup add clippy component
@@ -69,11 +101,13 @@ jobs:
       - run:
           name: cargo clippy --workspace --all-targets -- -D warnings
           command: cargo clippy --workspace --all-targets -- -D warnings
+      - save-cargo-cache
 
   cargo-fmt:
     executor: self-hosted-amd
     steps:
       - checkout
+      - restore-cargo-cache
       - setup-rust
       - run:
           name: rustup add rustfmt component
@@ -81,11 +115,13 @@ jobs:
       - run:
           name: cargo fmt --all -- --check
           command: cargo fmt --all -- --check
+      - save-cargo-cache
 
   cargo-deny:
     executor: self-hosted-amd
     steps:
       - checkout
+      - restore-cargo-cache
       - setup-rust
       - run:
           name: Install cargo-deny (prebuilt binary)
@@ -98,6 +134,7 @@ jobs:
       - run:
           name: cargo deny check all
           command: cargo deny check all
+      - save-cargo-cache
 
   cargo-doc:
     executor: self-hosted-amd
@@ -105,15 +142,18 @@ jobs:
       RUSTDOCFLAGS: "-D warnings"
     steps:
       - checkout
+      - restore-cargo-cache
       - setup-rust
       - run:
           name: cargo doc --workspace --no-deps
           command: cargo doc --workspace --no-deps
+      - save-cargo-cache
 
   manifest-invariants:
     executor: self-hosted-amd
     steps:
       - checkout
+      - restore-cargo-cache
       - setup-rust   # need cargo for cargo metadata in the second script
       - run:
           name: scripts/check-manifest-invariants.sh
@@ -121,11 +161,13 @@ jobs:
       - run:
           name: scripts/check-cargo-metadata.sh
           command: ./scripts/check-cargo-metadata.sh
+      - save-cargo-cache
 
   cargo-package-check:
     executor: self-hosted-amd
     steps:
       - checkout
+      - restore-cargo-cache
       - setup-rust
       - run:
           name: cargo package --list (file inclusion sanity for all 3 crates)
@@ -145,6 +187,7 @@ jobs:
           # and the unpublished schemas dep makes that lookup fail. Group H
           # lifts this; until then, only schemas can be fully packaged.
           command: cargo package --no-verify -p influxdb3-plugin-schemas
+      - save-cargo-cache
 
 workflows:
   ci:
