@@ -72,8 +72,7 @@ fn yank_happy_path_sets_flag_and_emits_transitioned() {
 
     let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
     let mut payload: serde_json::Value = serde_json::from_str(&stdout).unwrap();
-    assert_eq!(payload["outcome"], "transitioned");
-    assert_eq!(payload["target_state"], true);
+    assert_eq!(payload["outcome"], "yanked");
     assert_eq!(payload["name"], "downsampler");
     assert_eq!(payload["version"], "1.2.0");
 
@@ -110,8 +109,7 @@ fn yank_undo_clears_flag() {
 
     let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
     let mut payload: serde_json::Value = serde_json::from_str(&stdout).unwrap();
-    assert_eq!(payload["outcome"], "transitioned");
-    assert_eq!(payload["target_state"], false);
+    assert_eq!(payload["outcome"], "unyanked");
 
     assert!(
         !read_yanked_flag(&out.join("index.json"), "downsampler", "1.2.0"),
@@ -147,8 +145,7 @@ fn yank_already_yanked_is_no_op_with_marker() {
     .success();
     let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
     let mut payload: serde_json::Value = serde_json::from_str(&stdout).unwrap();
-    assert_eq!(payload["outcome"], "already_in_desired_state");
-    assert_eq!(payload["target_state"], true);
+    assert_eq!(payload["outcome"], "already_yanked");
 
     redact_index_path(&mut payload);
     insta::assert_json_snapshot!("yank_already_in_desired_state_json", payload);

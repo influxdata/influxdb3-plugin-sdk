@@ -198,11 +198,15 @@ mod envelope_tests {
     use serde::Serialize;
 
     #[derive(Serialize)]
-    struct Demo { a: u32 }
+    struct Demo {
+        a: u32,
+    }
 
     #[test]
     fn json_envelope_ok_serializes_shape() {
-        let env = Envelope::Ok { result: Demo { a: 7 } };
+        let env = Envelope::Ok {
+            result: Demo { a: 7 },
+        };
         let s = serde_json::to_string(&env).unwrap();
         assert_eq!(s, r#"{"status":"ok","result":{"a":7}}"#);
     }
@@ -220,7 +224,10 @@ mod envelope_tests {
             },
         };
         let s = serde_json::to_string(&env).unwrap();
-        assert_eq!(s, r#"{"status":"error","error":{"code":"x::y","message":"msg"}}"#);
+        assert_eq!(
+            s,
+            r#"{"status":"error","error":{"code":"x::y","message":"msg"}}"#
+        );
     }
 
     #[test]
@@ -263,7 +270,9 @@ mod envelope_tests {
 
     #[test]
     fn validate_success_result_is_empty_object() {
-        let env = Envelope::Ok { result: ValidateResult {} };
+        let env = Envelope::Ok {
+            result: ValidateResult {},
+        };
         let s = serde_json::to_string(&env).unwrap();
         assert_eq!(s, r#"{"status":"ok","result":{}}"#);
     }
@@ -287,7 +296,10 @@ mod envelope_tests {
         };
         let mut buf = Vec::new();
         write_envelope_error(&mut buf, &err).unwrap();
-        assert_eq!(buf, b"{\"status\":\"error\",\"error\":{\"code\":\"c\",\"message\":\"m\"}}\n");
+        assert_eq!(
+            buf,
+            b"{\"status\":\"error\",\"error\":{\"code\":\"c\",\"message\":\"m\"}}\n"
+        );
     }
 
     #[test]
@@ -307,15 +319,23 @@ mod envelope_tests {
         // `Envelope` shape changes (status tag rename, field rename, etc.)
         // and `Wire` doesn't follow, this fails.
         let je = JsonError {
-            code: "x::y".into(), message: "m".into(),
-            field: Some("f".into()), details: None,
-            diagnostics: vec![], cause: vec![],
+            code: "x::y".into(),
+            message: "m".into(),
+            field: Some("f".into()),
+            details: None,
+            diagnostics: vec![],
+            cause: vec![],
         };
-        let env: Envelope<()> = Envelope::Error { error: JsonError {
-            code: "x::y".into(), message: "m".into(),
-            field: Some("f".into()), details: None,
-            diagnostics: vec![], cause: vec![],
-        }};
+        let env: Envelope<()> = Envelope::Error {
+            error: JsonError {
+                code: "x::y".into(),
+                message: "m".into(),
+                field: Some("f".into()),
+                details: None,
+                diagnostics: vec![],
+                cause: vec![],
+            },
+        };
         let envelope_json = serde_json::to_string(&env).unwrap();
         let mut buf = Vec::new();
         write_envelope_error(&mut buf, &je).unwrap();
@@ -344,7 +364,8 @@ mod envelope_tests {
             YankOutcomeWire::AlreadyYanked,
             YankOutcomeWire::AlreadyUnyanked,
         ];
-        let strings: Vec<String> = cases.iter()
+        let strings: Vec<String> = cases
+            .iter()
             .map(|c| serde_json::to_string(c).unwrap())
             .collect();
         assert_eq!(

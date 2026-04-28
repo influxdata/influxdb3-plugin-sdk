@@ -24,7 +24,11 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use crate::color::Stream;
-use crate::output::{Env, OutputMode, RealEnv, json::YankOutput, resolve_output_mode};
+use crate::output::{
+    Env, OutputMode, RealEnv,
+    json::{YankOutcomeWire, YankOutput},
+    resolve_output_mode,
+};
 use crate::style::Palette;
 
 /// Parsed `yank` arguments.
@@ -84,12 +88,11 @@ fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
         )));
     }
 
-    let outcome = if args.undo {
+    let sdk_outcome = if args.undo {
         mutate_index::unyank(&mut index, name.as_str(), &version)?
     } else {
         mutate_index::yank(&mut index, name.as_str(), &version)?
     };
-    let target_state = !args.undo;
 
     let derived_index_json = index.to_canonical_json().map_err(SdkError::from)?;
     let derived_index_path = args.out.join("index.json");
@@ -103,18 +106,21 @@ fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
     let payload = YankOutput {
         name: name.as_str().to_owned(),
         version: version.to_string(),
-        outcome: outcome_label(outcome),
-        target_state,
+        outcome: outcome_wire(sdk_outcome, args.undo),
         index_path: canonicalize_or_keep(&derived_index_path),
     };
 
     render(&payload, mode, stdout_palette)
 }
 
-fn outcome_label(outcome: mutate_index::YankOutcome) -> &'static str {
-    match outcome {
-        mutate_index::YankOutcome::Transitioned => "transitioned",
-        mutate_index::YankOutcome::AlreadyInDesiredState => "already_in_desired_state",
+fn outcome_wire(outcome: mutate_index::YankOutcome, undo: bool) -> YankOutcomeWire {
+    match (outcome, undo) {
+        (mutate_index::YankOutcome::Transitioned, false) => YankOutcomeWire::Yanked,
+        (mutate_index::YankOutcome::Transitioned, true) => YankOutcomeWire::Unyanked,
+        (mutate_index::YankOutcome::AlreadyInDesiredState, false) => YankOutcomeWire::AlreadyYanked,
+        (mutate_index::YankOutcome::AlreadyInDesiredState, true) => {
+            YankOutcomeWire::AlreadyUnyanked
+        }
     }
 }
 
@@ -218,28 +224,26 @@ fn render_human(
     palette: Palette,
     writer: &mut impl std::io::Write,
 ) -> std::io::Result<()> {
-    let action = if payload.target_state {
-        "yank"
-    } else {
-        "unyank"
-    };
     match payload.outcome {
-        "transitioned" => {
+        YankOutcomeWire::Yanked | YankOutcomeWire::Unyanked => {
+            let yanked = matches!(payload.outcome, YankOutcomeWire::Yanked);
+            let action = if yanked { "yank" } else { "unyank" };
             let warn = palette.warn.render();
             let warn_reset = palette.warn.render_reset();
             writeln!(
                 writer,
-                "{warn}{action}ed {}@{} (yanked={}){warn_reset}",
-                payload.name, payload.version, payload.target_state
+                "{warn}{action}ed {}@{} (yanked={yanked}){warn_reset}",
+                payload.name, payload.version,
             )?;
         }
-        _ => {
+        YankOutcomeWire::AlreadyYanked | YankOutcomeWire::AlreadyUnyanked => {
+            let yanked = matches!(payload.outcome, YankOutcomeWire::AlreadyYanked);
             let dim = palette.dim.render();
             let dim_reset = palette.dim.render_reset();
             writeln!(
                 writer,
-                "{dim}{}@{} already in desired state (yanked={}); no change{dim_reset}",
-                payload.name, payload.version, payload.target_state
+                "{dim}{}@{} already in desired state (yanked={yanked}); no change{dim_reset}",
+                payload.name, payload.version,
             )?;
         }
     }

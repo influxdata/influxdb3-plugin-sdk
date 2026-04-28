@@ -5,7 +5,6 @@ expression: payload
 {
   "index_path": "<TMPDIR>/build/index.json",
   "name": "downsampler",
-  "outcome": "transitioned",
-  "target_state": true,
+  "outcome": "yanked",
   "version": "1.2.0"
 }
