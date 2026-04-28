@@ -146,22 +146,25 @@ jobs:
           # lifts this; until then, only schemas can be fully packaged.
           command: cargo package --no-verify -p influxdb3-plugin-schemas
 
-  # Temporary probe (do not merge) — verifies SRE's GAR grant landed.
+  # Temporary probe (do not merge) — deep diagnostic for GAR pull failure.
   release-auth-probe-v3:
     machine: true
     resource_class: runner-ns/clustered-linux-vm
     working_directory: /tmp/workspace/<< pipeline.id >>
     steps:
       - run:
-          name: Install gcloud
+          name: Install gcloud + jq
           no_output_timeout: 5m
           command: |
             curl -fsSL \
               https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-linux-x86_64.tar.gz \
               | tar xz -C $HOME
             echo 'export PATH=$HOME/google-cloud-sdk/bin:$PATH' >> "$BASH_ENV"
+            source "$BASH_ENV"
+            # jq might not be on the bare runner
+            which jq || { sudo apt-get update -qq && sudo apt-get install -y -qq jq; }
       - run:
-          name: WIF login + GAR docker login
+          name: WIF login
           command: |
             source "$BASH_ENV"
             TOKEN="${CIRCLE_OIDC_TOKEN:-}"
@@ -179,15 +182,83 @@ jobs:
             }
             JSON
             gcloud auth login --cred-file=/tmp/gcp_cred_config.json
-            gcloud auth print-access-token \
-              | docker login -u oauth2accesstoken --password-stdin \
-                  https://us-east1-docker.pkg.dev
+            echo "WIF_LOGIN_OK"
       - run:
-          name: Pull cross-builder image (SHOULD WORK NOW per SRE grant)
+          name: "DIAG 1: Verify access token identity (is gcloud using OUR SA or a runner default?)"
           command: |
+            source "$BASH_ENV"
+            echo "=== gcloud auth list (which account is active?) ==="
+            gcloud auth list 2>&1
+            echo ""
+            echo "=== gcloud config get-value account ==="
+            gcloud config get-value account 2>&1
+            echo ""
+            echo "=== tokeninfo (what identity does the access token claim?) ==="
+            ACCESS_TOKEN="$(gcloud auth print-access-token)"
+            curl -s "https://oauth2.googleapis.com/tokeninfo?access_token=$ACCESS_TOKEN" \
+              | jq '{email, azp, scope, expires_in}' 2>/dev/null || echo "(tokeninfo failed)"
+            echo ""
+            echo "=== Expected SA: $GCP_SERVICE_ACCOUNT_EMAIL ==="
+      - run:
+          name: "DIAG 2: Check Docker credential helpers (could override docker login)"
+          command: |
+            echo "=== ~/.docker/config.json ==="
+            cat ~/.docker/config.json 2>/dev/null || echo "(no config.json)"
+            echo ""
+            echo "=== docker info: credentialsStore ==="
+            docker info --format '{{json .Plugins}}' 2>/dev/null | jq . || echo "(no plugin info)"
+      - run:
+          name: "DIAG 3: Registry v2 API direct (bypasses Docker; real HTTP status codes)"
+          command: |
+            source "$BASH_ENV"
+            ACCESS_TOKEN="$(gcloud auth print-access-token)"
+            IMAGE_REPO="us-east1-docker.pkg.dev/influxdata-team-edge/ci-support/ci-cross-influxdb3"
+            DIGEST="sha256:98b05538182a2e4eac5ce96150a1f5c552de48a7d3ea8d312d38e45f0dd42611"
+            echo "=== List tags (can we read the repo at all?) ==="
+            curl -s -w "\nHTTP_STATUS: %{http_code}\n" \
+              -H "Authorization: Bearer $ACCESS_TOKEN" \
+              "https://us-east1-docker.pkg.dev/v2/influxdata-team-edge/ci-support/ci-cross-influxdb3/tags/list" \
+              | tail -5
+            echo ""
+            echo "=== Head manifest at specific digest (does this SHA exist?) ==="
+            curl -sI -w "HTTP_STATUS: %{http_code}\n" \
+              -H "Authorization: Bearer $ACCESS_TOKEN" \
+              -H "Accept: application/vnd.docker.distribution.manifest.v2+json" \
+              "https://us-east1-docker.pkg.dev/v2/influxdata-team-edge/ci-support/ci-cross-influxdb3/manifests/$DIGEST" \
+              2>&1 | grep -iE 'HTTP|www-authenticate|docker-distribution|status'
+            echo ""
+            echo "=== testIamPermissions on the repo (does our SA have downloadArtifacts?) ==="
+            curl -s -X POST \
+              -H "Authorization: Bearer $ACCESS_TOKEN" \
+              -H "Content-Type: application/json" \
+              "https://artifactregistry.googleapis.com/v1/projects/influxdata-team-edge/locations/us-east1/repositories/ci-cross-influxdb3:testIamPermissions" \
+              -d '{"permissions": ["artifactregistry.repositories.downloadArtifacts", "artifactregistry.repositories.get", "artifactregistry.repositories.list"]}' \
+              | jq .
+      - run:
+          name: "DIAG 4: Try pull as ci-support-ro (pre-existing runner SA)"
+          command: |
+            source "$BASH_ENV"
+            echo "=== Switching active gcloud account to ci-support-ro ==="
+            gcloud config set account ci-support-ro@influxdata-team-edge.iam.gserviceaccount.com 2>&1
+            echo ""
+            echo "=== Confirm active account ==="
+            gcloud config get-value account 2>&1
+            echo ""
+            echo "=== Docker pull via credHelper (which now uses ci-support-ro) ==="
             docker pull us-east1-docker.pkg.dev/influxdata-team-edge/ci-support/ci-cross-influxdb3@sha256:98b05538182a2e4eac5ce96150a1f5c552de48a7d3ea8d312d38e45f0dd42611 \
-              && echo "PULL_OK — SRE grant validated" \
-              || { echo "PULL_FAIL — grant still pending or wrong SA"; exit 1; }
+              && echo "PULL_OK_VIA_CI_SUPPORT_RO" \
+              || echo "PULL_FAIL_VIA_CI_SUPPORT_RO"
+            echo ""
+            echo "=== Switching back to our SA ==="
+            gcloud config set account "$GCP_SERVICE_ACCOUNT_EMAIL" 2>&1
+      - run:
+          name: "DIAG 5: Try pull as our SA (expected to fail until SRE grants)"
+          command: |
+            source "$BASH_ENV"
+            gcloud config set account "$GCP_SERVICE_ACCOUNT_EMAIL" 2>&1
+            docker pull us-east1-docker.pkg.dev/influxdata-team-edge/ci-support/ci-cross-influxdb3@sha256:98b05538182a2e4eac5ce96150a1f5c552de48a7d3ea8d312d38e45f0dd42611 \
+              && echo "PULL_OK_VIA_OUR_SA" \
+              || { echo "PULL_FAIL_VIA_OUR_SA"; exit 1; }
 
 workflows:
   ci:
@@ -206,4 +277,8 @@ workflows:
       equal: [ "ci/release-auth-probe-v3", << pipeline.git.branch >> ]
     jobs:
       - release-auth-probe-v3:
+          name: probe-our-sa
           context: [influxdb3-plugin-sdk-gcp]
+      - release-auth-probe-v3:
+          name: probe-shared-sa
+          context: [gcp-wif-clustered]
