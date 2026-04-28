@@ -1,10 +1,13 @@
 ---
 source: influxdb3-plugin-cli/tests/yank_smoke.rs
-expression: payload
+expression: envelope
 ---
 {
-  "index_path": "<TMPDIR>/build/index.json",
-  "name": "downsampler",
-  "outcome": "already_yanked",
-  "version": "1.2.0"
+  "result": {
+    "index_path": "<TMPDIR>/build/index.json",
+    "name": "downsampler",
+    "outcome": "already_yanked",
+    "version": "1.2.0"
+  },
+  "status": "ok"
 }

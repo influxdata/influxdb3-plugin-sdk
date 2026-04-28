@@ -33,12 +33,12 @@ fn spawn_yank(
     cmd.assert()
 }
 
-/// Strip the per-machine `index_path` field so the snapshot is
-/// reproducible across hosts.
-fn redact_index_path(payload: &mut serde_json::Value) {
-    payload
+/// Strip the per-machine `index_path` field inside the envelope's
+/// `result` object so the snapshot is reproducible across hosts.
+fn redact_index_path(envelope: &mut serde_json::Value) {
+    envelope["result"]
         .as_object_mut()
-        .expect("payload is a JSON object")
+        .expect("result is a JSON object")
         .insert("index_path".into(), "<TMPDIR>/build/index.json".into());
 }
 
@@ -71,18 +71,19 @@ fn yank_happy_path_sets_flag_and_emits_transitioned() {
     .success();
 
     let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
-    let mut payload: serde_json::Value = serde_json::from_str(&stdout).unwrap();
-    assert_eq!(payload["outcome"], "yanked");
-    assert_eq!(payload["name"], "downsampler");
-    assert_eq!(payload["version"], "1.2.0");
+    let mut envelope: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(envelope["status"], "ok");
+    assert_eq!(envelope["result"]["outcome"], "yanked");
+    assert_eq!(envelope["result"]["name"], "downsampler");
+    assert_eq!(envelope["result"]["version"], "1.2.0");
 
     assert!(
         read_yanked_flag(&out.join("index.json"), "downsampler", "1.2.0"),
         "derived index must reflect yanked=true"
     );
 
-    redact_index_path(&mut payload);
-    insta::assert_json_snapshot!("yank_transitioned_json", payload);
+    redact_index_path(&mut envelope);
+    insta::assert_json_snapshot!("yank_transitioned_json", envelope);
 }
 
 #[test]
@@ -108,16 +109,17 @@ fn yank_undo_clears_flag() {
     .success();
 
     let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
-    let mut payload: serde_json::Value = serde_json::from_str(&stdout).unwrap();
-    assert_eq!(payload["outcome"], "unyanked");
+    let mut envelope: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(envelope["status"], "ok");
+    assert_eq!(envelope["result"]["outcome"], "unyanked");
 
     assert!(
         !read_yanked_flag(&out.join("index.json"), "downsampler", "1.2.0"),
         "derived index must reflect yanked=false after --undo"
     );
 
-    redact_index_path(&mut payload);
-    insta::assert_json_snapshot!("yank_undo_transitioned_json", payload);
+    redact_index_path(&mut envelope);
+    insta::assert_json_snapshot!("yank_undo_transitioned_json", envelope);
 }
 
 /// Idempotency: re-yanking an already-yanked entry exits 0 with the
@@ -144,11 +146,12 @@ fn yank_already_yanked_is_no_op_with_marker() {
     )
     .success();
     let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
-    let mut payload: serde_json::Value = serde_json::from_str(&stdout).unwrap();
-    assert_eq!(payload["outcome"], "already_yanked");
+    let mut envelope: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(envelope["status"], "ok");
+    assert_eq!(envelope["result"]["outcome"], "already_yanked");
 
-    redact_index_path(&mut payload);
-    insta::assert_json_snapshot!("yank_already_yanked_json", payload);
+    redact_index_path(&mut envelope);
+    insta::assert_json_snapshot!("yank_already_yanked_json", envelope);
 }
 
 /// Missing entry -> exit 1 + error envelope on stdout in JSON mode.
@@ -166,6 +169,13 @@ fn yank_missing_entry_exits_one() {
         .code(1);
     let out_bytes = assert.get_output();
     let stdout = String::from_utf8_lossy(&out_bytes.stdout).into_owned();
+    let doc: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|e| panic!("stdout must be valid JSON: {e}\n{stdout}"));
+    assert_eq!(
+        doc.get("status").and_then(|v| v.as_str()),
+        Some("error"),
+        "envelope status must be \"error\"; got:\n{stdout}"
+    );
     assert!(
         stdout.contains("not present"),
         "output should reference the missing entry, got: {stdout}"

@@ -18,18 +18,17 @@ use clap::builder::{StringValueParser, TypedValueParser};
 use clap::error::{ContextKind, ContextValue, Error as ClapError, ErrorKind};
 use clap::{Arg, Command};
 use influxdb3_plugin_schemas::{Index, PluginName};
-use influxdb3_plugin_sdk::{SdkError, mutate_index};
+use influxdb3_plugin_sdk::{SdkError, ValidationError, mutate_index};
 use semver::Version;
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
+use crate::cli_error::CliError;
 use crate::color::Stream;
-use crate::output::{
-    Env, OutputMode, RealEnv,
-    json::{YankOutcomeWire, YankOutput},
-    resolve_output_mode,
-};
+use crate::output::error_mapping::{ErrorContext, json_error_from_sdk, json_error_from_validation};
+use crate::output::json::{JsonError, YankOutcomeWire, YankOutput, write_envelope_ok};
+use crate::output::{Env, OutputMode, RealEnv, resolve_output_mode};
 use crate::style::Palette;
 
 /// Parsed `yank` arguments.
@@ -69,39 +68,110 @@ fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
     let stdout_palette = Palette::for_stream(Stream::Stdout, mode, env, env.stdout_is_terminal());
     let NameAtVersion { name, version } = args.target;
 
-    let index_raw = std::fs::read_to_string(&args.index)
-        .map_err(|e| anyhow::anyhow!("failed to read --index {}: {e}", args.index.display()))?;
-    let mut index = Index::parse_json(&index_raw).map_err(|e| {
-        anyhow::anyhow!(
-            "failed to parse --index {} as a registry index: {e}",
-            args.index.display()
-        )
+    // (a) Read input index.
+    let index_raw = std::fs::read_to_string(&args.index).map_err(|e| {
+        CliError::runtime(JsonError {
+            code: "io::read_failed".into(),
+            message: format!("failed to read --index {}: {e}", args.index.display()),
+            field: Some(args.index.display().to_string()),
+            details: Some(serde_json::json!({
+                "path": args.index.display().to_string(),
+                "io_kind": format!("{:?}", e.kind()),
+            })),
+            diagnostics: vec![],
+            cause: vec![e.to_string()],
+        })
     })?;
 
-    std::fs::create_dir_all(&args.out)
-        .map_err(|e| anyhow::anyhow!("failed to create --out {}: {e}", args.out.display()))?;
+    // (b) Parse index JSON — SchemaErrors → structured diagnostics.
+    let mut index = Index::parse_json(&index_raw).map_err(|schema_errors| {
+        let diagnostics: Vec<JsonError> = schema_errors
+            .into_iter()
+            .map(|reported| {
+                json_error_from_validation(&ValidationError::SchemaReported(reported))
+            })
+            .collect();
+        CliError::runtime(JsonError {
+            code: "yank::index_parse_failed".into(),
+            message: format!(
+                "failed to parse --index {} as a registry index",
+                args.index.display()
+            ),
+            field: Some(args.index.display().to_string()),
+            details: None,
+            diagnostics,
+            cause: vec![],
+        })
+    })?;
+
+    // (c) Create --out directory.
+    std::fs::create_dir_all(&args.out).map_err(|e| {
+        CliError::runtime(JsonError {
+            code: "io::write_failed".into(),
+            message: format!("failed to create --out {}: {e}", args.out.display()),
+            field: Some(args.out.display().to_string()),
+            details: Some(serde_json::json!({
+                "path": args.out.display().to_string(),
+                "io_kind": format!("{:?}", e.kind()),
+            })),
+            diagnostics: vec![],
+            cause: vec![e.to_string()],
+        })
+    })?;
+
+    // (d) Path-equivalence check (S2-12).
     if paths_overlap(&args.index, &args.out)? {
-        return Err(crate::cli_error::CliError::usage_msg(format!(
-            "--out {} resolves to the directory containing --index {}; \
-             they must be disjoint (Spec 2 § S2-12)",
-            args.out.display(),
-            args.index.display(),
-        )));
+        return Err(CliError::usage(JsonError {
+            code: "usage::input_output_overlap".into(),
+            message: format!(
+                "--out {} resolves to the directory containing --index {}; \
+                 they must be disjoint (Spec 2 § S2-12)",
+                args.out.display(),
+                args.index.display(),
+            ),
+            field: None,
+            details: Some(serde_json::json!({
+                "index": args.index.display().to_string(),
+                "out": args.out.display().to_string(),
+            })),
+            diagnostics: vec![],
+            cause: vec![],
+        }));
     }
 
+    // (e) Yank / unyank via SDK.
     let sdk_outcome = if args.undo {
-        mutate_index::unyank(&mut index, name.as_str(), &version)?
+        mutate_index::unyank(&mut index, name.as_str(), &version)
+            .map_err(|e| CliError::runtime(json_error_from_sdk(&e, ErrorContext::Yank)))?
     } else {
-        mutate_index::yank(&mut index, name.as_str(), &version)?
+        mutate_index::yank(&mut index, name.as_str(), &version)
+            .map_err(|e| CliError::runtime(json_error_from_sdk(&e, ErrorContext::Yank)))?
     };
 
-    let derived_index_json = index.to_canonical_json().map_err(SdkError::from)?;
+    // (f) Canonical JSON serialization.
+    let derived_index_json = index.to_canonical_json().map_err(|e| {
+        let sdk_err = SdkError::from(e);
+        CliError::runtime(json_error_from_sdk(&sdk_err, ErrorContext::Yank))
+    })?;
+
     let derived_index_path = args.out.join("index.json");
+
+    // (g) Write derived index.
     std::fs::write(&derived_index_path, &derived_index_json).map_err(|e| {
-        anyhow::anyhow!(
-            "failed to write derived index {}: {e}",
-            derived_index_path.display()
-        )
+        CliError::runtime(JsonError {
+            code: "io::write_failed".into(),
+            message: format!(
+                "failed to write derived index {}: {e}",
+                derived_index_path.display()
+            ),
+            field: Some(derived_index_path.display().to_string()),
+            details: Some(serde_json::json!({
+                "path": derived_index_path.display().to_string(),
+                "io_kind": format!("{:?}", e.kind()),
+            })),
+            diagnostics: vec![],
+            cause: vec![e.to_string()],
+        })
     })?;
 
     let payload = YankOutput {
@@ -111,7 +181,15 @@ fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
         index_path: canonicalize_or_keep(&derived_index_path),
     };
 
-    render(&payload, mode, stdout_palette)
+    match mode {
+        OutputMode::Human => {
+            render_human(&payload, stdout_palette, &mut std::io::stdout())?;
+        }
+        OutputMode::Json => {
+            write_envelope_ok(&mut std::io::stdout(), &payload)?;
+        }
+    }
+    Ok(())
 }
 
 fn outcome_wire(outcome: mutate_index::YankOutcome, undo: bool) -> YankOutcomeWire {
@@ -196,28 +274,42 @@ impl TypedValueParser for NameAtVersionParser {
 
 // Same shape as the helper in `commands::package`.
 fn paths_overlap(index_path: &Path, out_dir: &Path) -> anyhow::Result<bool> {
+    // (h) Canonicalize failures.
     let idx = std::fs::canonicalize(index_path).map_err(|e| {
-        anyhow::anyhow!(
-            "failed to canonicalize --index {}: {e}",
-            index_path.display()
-        )
+        CliError::runtime(JsonError {
+            code: "io::canonicalize_failed".into(),
+            message: format!(
+                "failed to canonicalize --index {}: {e}",
+                index_path.display()
+            ),
+            field: Some(index_path.display().to_string()),
+            details: Some(serde_json::json!({
+                "path": index_path.display().to_string(),
+                "io_kind": format!("{:?}", e.kind()),
+            })),
+            diagnostics: vec![],
+            cause: vec![e.to_string()],
+        })
     })?;
-    let out = std::fs::canonicalize(out_dir)
-        .map_err(|e| anyhow::anyhow!("failed to canonicalize --out {}: {e}", out_dir.display()))?;
+    let out = std::fs::canonicalize(out_dir).map_err(|e| {
+        CliError::runtime(JsonError {
+            code: "io::canonicalize_failed".into(),
+            message: format!("failed to canonicalize --out {}: {e}", out_dir.display()),
+            field: Some(out_dir.display().to_string()),
+            details: Some(serde_json::json!({
+                "path": out_dir.display().to_string(),
+                "io_kind": format!("{:?}", e.kind()),
+            })),
+            diagnostics: vec![],
+            cause: vec![e.to_string()],
+        })
+    })?;
     let idx_parent = idx.parent().unwrap_or_else(|| Path::new("/"));
     Ok(idx_parent == out)
 }
 
 fn canonicalize_or_keep(p: &Path) -> PathBuf {
     std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf())
-}
-
-fn render(payload: &YankOutput, mode: OutputMode, stdout_palette: Palette) -> anyhow::Result<()> {
-    match mode {
-        OutputMode::Human => render_human(payload, stdout_palette, &mut std::io::stdout())?,
-        OutputMode::Json => render_json(payload, &mut std::io::stdout())?,
-    }
-    Ok(())
 }
 
 fn render_human(
@@ -252,8 +344,3 @@ fn render_human(
     Ok(())
 }
 
-fn render_json(payload: &YankOutput, writer: &mut impl std::io::Write) -> anyhow::Result<()> {
-    serde_json::to_writer_pretty(&mut *writer, payload)?;
-    writeln!(writer)?;
-    Ok(())
-}
