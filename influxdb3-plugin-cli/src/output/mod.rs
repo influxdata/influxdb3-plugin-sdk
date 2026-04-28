@@ -77,6 +77,7 @@ pub(crate) fn resolve_output_mode(explicit: Option<OutputMode>, env: &dyn Env) -
     OutputMode::Human
 }
 
+pub(crate) mod error_mapping;
 pub(crate) mod human;
 pub(crate) mod json;
 
