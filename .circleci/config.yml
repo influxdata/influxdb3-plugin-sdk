@@ -151,9 +151,17 @@ jobs:
       - run:
           name: Generate WIF cred config
           command: |
-            # Pick whichever OIDC token env var is set
-            TOKEN="${CIRCLE_OIDC_TOKEN_V2:-${CIRCLE_OIDC_TOKEN:-}}"
+            # Try V1 OIDC token first — V2's sub claim is longer and
+            # exceeds GCP's 127-byte mapped-attribute limit on this pool.
+            TOKEN="${CIRCLE_OIDC_TOKEN:-${CIRCLE_OIDC_TOKEN_V2:-}}"
             [ -n "$TOKEN" ] || { echo "ERROR: no OIDC token in env"; exit 1; }
+            # Decode the JWT payload to inspect the sub claim length
+            PAYLOAD="$(echo "$TOKEN" | cut -d. -f2)"
+            # Add base64 padding
+            PADLEN=$(( 4 - ${#PAYLOAD} % 4 ))
+            if [ "$PADLEN" -ne 4 ]; then PAYLOAD="${PAYLOAD}$(printf '=%.0s' $(seq 1 $PADLEN))"; fi
+            SUB="$(echo "$PAYLOAD" | base64 -d 2>/dev/null | jq -r '.sub // "?"' 2>/dev/null || echo "?")"
+            echo "OIDC sub claim: $SUB (length=${#SUB})"
             umask 077
             echo "$TOKEN" > /tmp/circleci_oidc_token
             cat > /tmp/gcp_cred_config.json \<<JSON
