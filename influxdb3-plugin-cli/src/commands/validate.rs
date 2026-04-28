@@ -127,10 +127,7 @@ fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
     }
 }
 
-fn run_validation(
-    plugin_dir: &std::path::Path,
-    index: Option<&Index>,
-) -> Result<(), SdkError> {
+fn run_validation(plugin_dir: &std::path::Path, index: Option<&Index>) -> Result<(), SdkError> {
     let result = match index {
         Some(idx) => validate::plugin_dir_with_index(plugin_dir, idx),
         None => validate::plugin_dir(plugin_dir),
