@@ -410,7 +410,8 @@ fn package_failure_in_json_mode_emits_error_envelope() {
 }
 
 /// JSON success snapshot — strip the per-machine paths so the snapshot
-/// is reproducible.
+/// is reproducible. Output is now an envelope:
+/// `{"status":"ok","result":{...PackageOutput...}}`
 #[test]
 fn package_json_success_snapshot() {
     let td = tempfile::tempdir().unwrap();
@@ -424,20 +425,29 @@ fn package_json_success_snapshot() {
 
     let assert = spawn_package(&plugin_dir, &index_path, &out_dir, &["--output", "json"]).success();
     let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
-    let mut payload: serde_json::Value = serde_json::from_str(&stdout).unwrap();
-    let obj = payload.as_object_mut().unwrap();
-    obj.insert(
+    let mut envelope: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(
+        envelope.get("status").and_then(|v| v.as_str()),
+        Some("ok"),
+        "envelope status must be \"ok\"; got:\n{stdout}"
+    );
+    let result = envelope
+        .get_mut("result")
+        .expect("envelope must have \"result\" key")
+        .as_object_mut()
+        .expect("result must be an object");
+    result.insert(
         "artifact_path".into(),
         "<TMPDIR>/build/downsampler-1.2.0.tar.gz".into(),
     );
-    obj.insert("index_path".into(), "<TMPDIR>/build/index.json".into());
+    result.insert("index_path".into(), "<TMPDIR>/build/index.json".into());
     // Hash depends on archive bytes; assert format then strip.
-    let hash = obj["hash"].as_str().unwrap().to_owned();
+    let hash = result["hash"].as_str().unwrap().to_owned();
     assert!(
         hash.starts_with("sha256:") && hash.len() == "sha256:".len() + 64,
         "hash format unexpected: {hash}"
     );
-    obj.insert("hash".into(), "sha256:<64 hex>".into());
+    result.insert("hash".into(), "sha256:<64 hex>".into());
 
-    insta::assert_json_snapshot!("package_success", payload);
+    insta::assert_json_snapshot!("package_success", envelope);
 }
