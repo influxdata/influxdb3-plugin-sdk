@@ -1,0 +1,6 @@
+---
+source: influxdb3-plugin-cli/src/output/json.rs
+expression: err_keys
+---
+- error
+- status

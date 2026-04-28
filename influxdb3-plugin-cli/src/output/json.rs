@@ -385,4 +385,39 @@ mod envelope_tests {
     fn code_allocations_stable() {
         insta::assert_yaml_snapshot!(super::ALL_WIRE_CODES);
     }
+
+    #[test]
+    fn envelope_field_names_stable() {
+        let ok = serde_json::to_value(Envelope::Ok { result: Demo { a: 0 } }).unwrap();
+        let err: serde_json::Value = serde_json::to_value(Envelope::<()>::Error {
+            error: JsonError {
+                code: "c".into(), message: "m".into(),
+                field: None, details: None,
+                diagnostics: vec![], cause: vec![],
+            },
+        }).unwrap();
+        let ok_keys: Vec<_> = ok.as_object().unwrap().keys().cloned().collect();
+        let err_keys: Vec<_> = err.as_object().unwrap().keys().cloned().collect();
+        insta::assert_yaml_snapshot!("envelope_ok_keys", ok_keys);
+        insta::assert_yaml_snapshot!("envelope_error_keys", err_keys);
+    }
+
+    #[test]
+    fn json_error_field_names_stable() {
+        let e = JsonError {
+            code: "c".into(),
+            message: "m".into(),
+            field: Some("f".into()),
+            details: Some(serde_json::json!({})),
+            diagnostics: vec![JsonError {
+                code: "s".into(), message: "sm".into(),
+                field: None, details: None,
+                diagnostics: vec![], cause: vec![],
+            }],
+            cause: vec!["c1".into()],
+        };
+        let v = serde_json::to_value(&e).unwrap();
+        let keys: Vec<_> = v.as_object().unwrap().keys().cloned().collect();
+        insta::assert_yaml_snapshot!("json_error_keys", keys);
+    }
 }
