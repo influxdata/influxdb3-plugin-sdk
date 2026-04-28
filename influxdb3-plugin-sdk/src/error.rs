@@ -191,13 +191,6 @@ pub enum ValidationError {
     )]
     NameVersionConflict { name: String, version: String },
 
-    /// I/O failure reading the `--index` file. Distinct from a parsable
-    /// index containing schema errors — those flow through `SchemaReported`.
-    #[error("failed to read --index {path}: {message}")]
-    IndexReadFailed {
-        path: std::path::PathBuf,
-        message: String,
-    },
 }
 
 impl ValidationError {
@@ -210,7 +203,6 @@ impl ValidationError {
             Self::TriggerNotImplemented { .. } => "TriggerNotImplemented",
             Self::AsyncTriggerFn { .. } => "AsyncTriggerFn",
             Self::NameVersionConflict { .. } => "NameVersionConflict",
-            Self::IndexReadFailed { .. } => "IndexReadFailed",
         }
     }
 }
@@ -320,10 +312,6 @@ mod tests {
             ValidationError::NameVersionConflict {
                 name: "downsampler".into(),
                 version: "1.2.0".into(),
-            },
-            ValidationError::IndexReadFailed {
-                path: std::path::PathBuf::from("/tmp/nope.json"),
-                message: "No such file or directory (os error 2)".into(),
             },
         ]
     }

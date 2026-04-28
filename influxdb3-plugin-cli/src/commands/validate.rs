@@ -11,7 +11,7 @@
 
 use clap::Args as ClapArgs;
 use influxdb3_plugin_schemas::Index;
-use influxdb3_plugin_sdk::{SdkError, ValidationError, validate};
+use influxdb3_plugin_sdk::{SdkError, validate};
 use std::io::Write;
 use std::path::PathBuf;
 
@@ -94,12 +94,10 @@ fn run_validation(args: &Args) -> Result<(), SdkError> {
                 Ok(index) => validate::plugin_dir_with_index(&args.plugin_dir, &index),
                 Err(schema_errors) => Err(SdkError::from(schema_errors)),
             },
-            Err(io_err) => Err(SdkError::ValidationErrors(vec![
-                ValidationError::IndexReadFailed {
-                    path: index_path.clone(),
-                    message: io_err.to_string(),
-                },
-            ])),
+            Err(io_err) => Err(SdkError::Io {
+                source: io_err,
+                path: Some(index_path.clone()),
+            }),
         },
         None => validate::plugin_dir(&args.plugin_dir),
     };
