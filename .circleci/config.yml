@@ -189,6 +189,156 @@ jobs:
           command: cargo package --no-verify -p influxdb3-plugin-schemas
       - save-cargo-cache
 
+  # --------------- Release jobs ---------------
+
+  build-release:
+    executor: self-hosted-amd
+    parameters:
+      target:
+        type: string
+    steps:
+      - checkout
+      - run:
+          name: Isolate gcloud config (prevent concurrent-job interference on shared runners)
+          command: |
+            export CLOUDSDK_CONFIG=/tmp/workspace/<< pipeline.id >>/gcloud
+            mkdir -p "$CLOUDSDK_CONFIG"
+            echo "export CLOUDSDK_CONFIG=$CLOUDSDK_CONFIG" >> "$BASH_ENV"
+      - run:
+          name: Install gcloud
+          no_output_timeout: 5m
+          command: |
+            source "$BASH_ENV"
+            curl -fsSL \
+              https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-linux-x86_64.tar.gz \
+              | tar xz -C $HOME
+            echo 'export PATH=$HOME/google-cloud-sdk/bin:$PATH' >> "$BASH_ENV"
+      - run:
+          name: WIF login as dedicated SA
+          command: |
+            source "$BASH_ENV"
+            TOKEN="${CIRCLE_OIDC_TOKEN:-}"
+            [ -n "$TOKEN" ] || { echo "ERROR: no V1 OIDC token"; exit 1; }
+            umask 077
+            echo "$TOKEN" > /tmp/circleci_oidc_token
+            cat > /tmp/gcp_cred_config.json \<<JSON
+            {
+              "type": "external_account",
+              "audience": "//iam.googleapis.com/projects/${GCP_PROJECT_ID}/locations/global/workloadIdentityPools/${GCP_WIP_ID}/providers/${GCP_WIP_PROVIDER_ID}",
+              "subject_token_type": "urn:ietf:params:oauth:token-type:jwt",
+              "service_account_impersonation_url": "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${GCP_SERVICE_ACCOUNT_EMAIL}:generateAccessToken",
+              "token_url": "https://sts.googleapis.com/v1/token",
+              "credential_source": { "file": "/tmp/circleci_oidc_token" }
+            }
+            JSON
+            gcloud auth login --cred-file=/tmp/gcp_cred_config.json
+      - run:
+          name: Pull cross-builder image
+          no_output_timeout: 15m
+          command: |
+            source "$BASH_ENV"
+            docker pull us-east1-docker.pkg.dev/influxdata-team-edge/ci-support/ci-cross-influxdb3@sha256:98b05538182a2e4eac5ce96150a1f5c552de48a7d3ea8d312d38e45f0dd42611
+      - run:
+          name: Fetch latest influxdb3 version for INFLUXDB3_PLUGIN_SDK_KNOWN_LATEST_DB
+          command: |
+            TAG="$(curl -fsSL https://api.github.com/repos/influxdata/influxdb/releases/latest \
+                   | jq -r '.tag_name')" || { echo "ERROR: failed to fetch latest influxdb3 release tag" >&2; exit 1; }
+            if [ -z "$TAG" ] || [ "$TAG" = "null" ]; then
+              echo "ERROR: empty/null tag_name from GitHub API" >&2; exit 1
+            fi
+            VERSION="${TAG#v}"
+            echo "export INFLUXDB3_PLUGIN_SDK_KNOWN_LATEST_DB=$VERSION" >> "$BASH_ENV"
+            echo "INFLUXDB3_PLUGIN_SDK_KNOWN_LATEST_DB=$VERSION"
+      - run:
+          name: Cross-compile << parameters.target >>
+          no_output_timeout: 60m
+          command: |
+            source "$BASH_ENV"
+            IMAGE="us-east1-docker.pkg.dev/influxdata-team-edge/ci-support/ci-cross-influxdb3@sha256:98b05538182a2e4eac5ce96150a1f5c552de48a7d3ea8d312d38e45f0dd42611"
+            docker run --rm \
+              -v "$(pwd)":/workspace \
+              -w /workspace \
+              -e "GIT_HASH=$CIRCLE_SHA1" \
+              -e "INFLUXDB3_PLUGIN_SDK_KNOWN_LATEST_DB=$INFLUXDB3_PLUGIN_SDK_KNOWN_LATEST_DB" \
+              -e "RUSTC_WRAPPER=" \
+              "$IMAGE" \
+              bash -c "rustup target add << parameters.target >> && target-env cargo build --release --target << parameters.target >> -p influxdb3-plugin-cli"
+      - run:
+          name: Tarball the binary
+          command: |
+            mkdir -p artifacts
+            BINARY_NAME=influxdb3-plugin
+            case "<< parameters.target >>" in
+              *windows*) BINARY_NAME=influxdb3-plugin.exe ;;
+            esac
+            tar -czf "artifacts/influxdb3-plugin-<< parameters.target >>.tar.gz" \
+              -C "target/<< parameters.target >>/release" "$BINARY_NAME"
+      - persist_to_workspace:
+          root: .
+          paths:
+            - artifacts/
+
+  generate-checksums:
+    docker:
+      - image: cimg/base:current
+    steps:
+      - attach_workspace:
+          at: .
+      - run:
+          name: Generate SHA256SUMS
+          command: |
+            cd artifacts
+            sha256sum *.tar.gz > SHA256SUMS
+            cat SHA256SUMS
+      - persist_to_workspace:
+          root: .
+          paths:
+            - artifacts/SHA256SUMS
+
+  publish-github-release:
+    docker:
+      - image: cimg/base:current
+    steps:
+      - checkout
+      - attach_workspace:
+          at: .
+      - run:
+          name: Install gh CLI
+          command: |
+            GH_VERSION="2.65.0"
+            curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_amd64.tar.gz" \
+              | tar xz -C /tmp
+            sudo mv "/tmp/gh_${GH_VERSION}_linux_amd64/bin/gh" /usr/local/bin/gh
+            gh --version
+      - run:
+          name: Extract release notes from CHANGELOG.md
+          command: |
+            VERSION="${CIRCLE_TAG#v}"
+            awk -v ver="$VERSION" '
+              $0 ~ "^## \\[" ver "\\]" { in_section=1; next }
+              in_section && /^## \[/ { exit }
+              in_section { print }
+            ' CHANGELOG.md > /tmp/release-notes.md
+            if [ ! -s /tmp/release-notes.md ]; then
+              echo "WARNING: no CHANGELOG.md section for [$VERSION]; release will have minimal notes." >&2
+              echo "Release v$VERSION" > /tmp/release-notes.md
+            fi
+            cat /tmp/release-notes.md
+      - run:
+          name: Create GitHub Release and upload assets
+          command: |
+            PRERELEASE_FLAG=""
+            if [[ "$CIRCLE_TAG" == *-* ]]; then
+              PRERELEASE_FLAG="--prerelease"
+              echo "Tag $CIRCLE_TAG is a prerelease (contains '-')."
+            fi
+            gh release create "$CIRCLE_TAG" \
+              --repo influxdata/influxdb3-plugin-sdk \
+              --title "$CIRCLE_TAG" \
+              --notes-file /tmp/release-notes.md \
+              $PRERELEASE_FLAG \
+              artifacts/*
+
 workflows:
   ci:
     jobs:
@@ -200,3 +350,37 @@ workflows:
       - cargo-doc
       - manifest-invariants
       - cargo-package-check
+
+  release:
+    jobs:
+      - build-release:
+          context: [influxdb3-plugin-sdk-gcp]
+          matrix:
+            parameters:
+              target:
+                - x86_64-unknown-linux-gnu
+                - aarch64-unknown-linux-gnu
+                - aarch64-apple-darwin
+                - x86_64-pc-windows-gnu
+          filters:
+            tags:
+              only: /^v\d+\.\d+\.\d+(-[0-9]+\.(alpha|beta|rc)\.[0-9]+)?$/
+            branches:
+              ignore: /.*/
+      - generate-checksums:
+          requires:
+            - build-release
+          filters:
+            tags:
+              only: /^v\d+\.\d+\.\d+(-[0-9]+\.(alpha|beta|rc)\.[0-9]+)?$/
+            branches:
+              ignore: /.*/
+      - publish-github-release:
+          requires:
+            - generate-checksums
+          context: [influxdb3-plugin-sdk-github]
+          filters:
+            tags:
+              only: /^v\d+\.\d+\.\d+(-[0-9]+\.(alpha|beta|rc)\.[0-9]+)?$/
+            branches:
+              ignore: /.*/
