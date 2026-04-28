@@ -60,7 +60,7 @@ pub struct IndexInfoQuery {
 /// Info result distinguishing found, absent, and filtered-out states.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub enum IndexInfoResult {
-    Found(IndexInfo),
+    Found(Box<IndexInfo>),
     NotFound {
         name: PluginName,
         version: Option<semver::Version>,
@@ -95,13 +95,11 @@ pub(crate) fn visibility_for(
     if entry.yanked {
         reasons.push(IndexVisibilityReason::Yanked);
     }
-    if let Some(db_ver) = database_version {
-        if !entry.dependencies.database_version.matches(db_ver) {
-            reasons.push(IndexVisibilityReason::IncompatibleDatabaseVersion {
-                required: entry.dependencies.database_version.clone(),
-                actual: db_ver.clone(),
-            });
-        }
+    if let Some(db_ver) = database_version.filter(|v| !entry.dependencies.database_version.matches(v)) {
+        reasons.push(IndexVisibilityReason::IncompatibleDatabaseVersion {
+            required: entry.dependencies.database_version.clone(),
+            actual: db_ver.clone(),
+        });
     }
     if reasons.is_empty() {
         IndexVersionVisibility::Visible
@@ -170,10 +168,8 @@ impl crate::Index {
                 }
             }
 
-            if let Some(ref trigger) = query.trigger_type {
-                if !entry.triggers.contains(trigger) {
-                    continue;
-                }
+            if matches!(&query.trigger_type, Some(t) if !entry.triggers.contains(t)) {
+                continue;
             }
 
             groups
@@ -214,7 +210,7 @@ impl crate::Index {
             return match found {
                 Some(entry) => {
                     let vis = visibility_for(entry, query.database_version.as_ref());
-                    IndexInfoResult::Found(info_from_entry(entry, vis))
+                    IndexInfoResult::Found(Box::new(info_from_entry(entry, vis)))
                 }
                 None => IndexInfoResult::NotFound {
                     name: query.name.clone(),
@@ -292,7 +288,7 @@ impl crate::Index {
                 .then_with(|| b.0.version.cmp(&a.0.version))
         });
         let (entry, vis) = &selectable[0];
-        IndexInfoResult::Found(info_from_entry(entry, vis.clone()))
+        IndexInfoResult::Found(Box::new(info_from_entry(entry, vis.clone())))
     }
 }
 
