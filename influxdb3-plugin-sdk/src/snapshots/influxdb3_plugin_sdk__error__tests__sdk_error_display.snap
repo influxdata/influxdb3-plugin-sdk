@@ -9,6 +9,6 @@ expression: rendered
 - "archive construction failed: path too long"
 - "archive path \"plugin-name-0.1.0/a/b/c/extremely/deep/path/leaf\" exceeds ustar split-path limit (255 bytes); shorten file paths or the plugin name/version"
 - hash computation failed
-- "plugin (\"downsampler\", \"1.2.0\") already exists in the target index. Existing versions of \"downsampler\" in this index: [\"1.0.0\", \"1.1.0\", \"1.2.0\"]. Increment version in manifest.toml or run `yank` instead."
-- "canonical collision: plugin name \"my-plugin\" conflicts with existing entries sharing canonical form \"my_plugin\": [(\"my_plugin\", Version { major: 1, minor: 0, patch: 0 }), (\"my_plugin\", Version { major: 1, minor: 1, patch: 0 })]. Rename to one of the existing spellings or choose a distinct name."
+- "plugin (\"downsampler\", \"1.2.0\") already exists in the target index; existing versions: [\"1.0.0\", \"1.1.0\", \"1.2.0\"]"
+- "canonical collision: plugin name \"my-plugin\" conflicts with existing entries sharing canonical form \"my_plugin\": [(\"my_plugin\", Version { major: 1, minor: 0, patch: 0 }), (\"my_plugin\", Version { major: 1, minor: 1, patch: 0 })]"
 - "plugin (\"downsampler\", \"1.2.0\") is not present in the target index"

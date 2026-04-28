@@ -48,9 +48,8 @@ pub enum SdkError {
     /// enumerates every version of `name` already in the index (in index order)
     /// so the author can pick a higher version or `yank` the conflicting one.
     #[error(
-        "plugin ({name:?}, {version:?}) already exists in the target index. \
-         Existing versions of {name:?} in this index: {existing_versions:?}. \
-         Increment version in manifest.toml or run `yank` instead."
+        "plugin ({name:?}, {version:?}) already exists in the target index; \
+         existing versions: {existing_versions:?}"
     )]
     AlreadyPublished {
         name: String,
@@ -66,8 +65,7 @@ pub enum SdkError {
     /// order.
     #[error(
         "canonical collision: plugin name {name:?} conflicts with existing \
-         entries sharing canonical form {canonical:?}: {existing:?}. \
-         Rename to one of the existing spellings or choose a distinct name."
+         entries sharing canonical form {canonical:?}: {existing:?}"
     )]
     CanonicalCollision {
         name: String,
@@ -186,8 +184,7 @@ pub enum ValidationError {
     /// The mutation-boundary check in `mutate_index::add_entry` returns the
     /// distinct [`SdkError::AlreadyPublished`] instead.
     #[error(
-        "plugin ({name:?}, {version:?}) already exists in the target index; \
-         increment version or run `yank` instead"
+        "plugin ({name:?}, {version:?}) already exists in the target index"
     )]
     NameVersionConflict { name: String, version: String },
 
