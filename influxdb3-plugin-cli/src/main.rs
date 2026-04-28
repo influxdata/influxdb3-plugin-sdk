@@ -55,15 +55,7 @@ fn render_error_and_exit(e: anyhow::Error) -> std::process::ExitCode {
         use influxdb3_plugin_cli::__private::write_envelope_error;
         let mut stdout = std::io::stdout().lock();
         let je = match CliError::json_error_of(&e) {
-            Some(typed) => {
-                // "cli::output_already_written" signals that the command has
-                // already written its output to stdout (e.g. validate's
-                // diagnostics document). Skip writing another envelope.
-                if typed.code == "cli::output_already_written" {
-                    return exit_code(kind);
-                }
-                typed
-            }
+            Some(typed) => typed,
             None => {
                 let fallback = fallback_json_error(&e);
                 let _ = write_envelope_error(&mut stdout, &fallback);

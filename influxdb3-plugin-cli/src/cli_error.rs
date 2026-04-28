@@ -24,47 +24,6 @@ impl CliError {
         CliError::Runtime(Box::new(je)).into()
     }
 
-    /// Temporary bridge: wraps a plain message string in a `cli::unknown`
-    /// JsonError. Callers will be migrated to construct proper JsonError
-    /// with specific wire codes in Chunks 5-8.
-    pub(crate) fn usage_msg(msg: impl Into<String>) -> anyhow::Error {
-        Self::usage(JsonError {
-            code: "cli::unknown".into(),
-            message: msg.into(),
-            field: None,
-            details: None,
-            diagnostics: vec![],
-            cause: vec![],
-        })
-    }
-
-    /// Temporary bridge for runtime errors from plain messages.
-    pub(crate) fn runtime_msg(msg: impl Into<String>) -> anyhow::Error {
-        Self::runtime(JsonError {
-            code: "cli::unknown".into(),
-            message: msg.into(),
-            field: None,
-            details: None,
-            diagnostics: vec![],
-            cause: vec![],
-        })
-    }
-
-    /// Runtime error whose output has already been written to stdout.
-    /// `main.rs` detects this code and skips writing another envelope.
-    /// Used by `validate --output json` where the diagnostics document
-    /// is the primary output.
-    pub(crate) fn runtime_silent(msg: impl Into<String>) -> anyhow::Error {
-        Self::runtime(JsonError {
-            code: "cli::output_already_written".into(),
-            message: msg.into(),
-            field: None,
-            details: None,
-            diagnostics: vec![],
-            cause: vec![],
-        })
-    }
-
     pub fn json_error_of(e: &anyhow::Error) -> Option<&JsonError> {
         match e.downcast_ref::<CliError>() {
             Some(CliError::Usage(je) | CliError::Runtime(je)) => Some(je),
@@ -129,11 +88,4 @@ mod tests {
         assert!(CliError::json_error_of(&e).is_none());
     }
 
-    #[test]
-    fn usage_msg_bridge_creates_cli_unknown() {
-        let e = CliError::usage_msg("test message");
-        let je = CliError::json_error_of(&e).unwrap();
-        assert_eq!(je.code, "cli::unknown");
-        assert_eq!(je.message, "test message");
-    }
 }
