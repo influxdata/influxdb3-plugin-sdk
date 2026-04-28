@@ -3,23 +3,23 @@
 //! Wraps [`influxdb3_plugin_sdk::validate::plugin_dir`] and, when
 //! `--index <path>` is supplied, [`influxdb3_plugin_sdk::validate::plugin_dir_with_index`].
 //!
-//! Validator idiom: in `--output json` mode, stdout always emits a
-//! single `{ "diagnostics": [...] }` document on both pass and fail
-//! paths, including index read failures, index parse failures, and
-//! per-entry index schema defects. Stderr stays empty in JSON mode.
-//! The exit code redundantly signals the outcome (0 / 1).
-//!
-//! Truly unrecoverable runtime errors that cannot be shaped as a
-//! diagnostic (e.g., I/O on the plugin directory itself) still bubble up
-//! as [`anyhow::Error`] and follow the standard failure path.
+//! Envelope idiom: in JSON mode, stdout always emits a single envelope
+//! document. Success: `{"status":"ok","result":{}}`. Failure:
+//! `{"status":"error","error":{"code":"validate::failed",...,"diagnostics":[...]}}`.
+//! Human mode renders the same error tree via `render_human_error` in
+//! `main.rs`.
 
 use clap::Args as ClapArgs;
 use influxdb3_plugin_schemas::Index;
 use influxdb3_plugin_sdk::{SdkError, ValidationError, validate};
+use std::io::Write;
 use std::path::PathBuf;
 
+use crate::cli_error::CliError;
 use crate::color::Stream;
-use crate::output::{Env, OutputMode, RealEnv, json::ValidateOutput, resolve_output_mode};
+use crate::output::error_mapping::{ErrorContext, json_error_from_sdk, json_error_from_validation};
+use crate::output::json::{JsonError, ValidateResult, write_envelope_ok};
+use crate::output::{Env, OutputMode, RealEnv, resolve_output_mode};
 use crate::style::Palette;
 
 /// Parsed `validate` arguments.
@@ -42,10 +42,7 @@ pub(crate) struct Args {
 }
 
 impl Args {
-    /// Runs `validate` per the parsed args. Returns `Ok(())` only when
-    /// the diagnostics array is empty; populated diagnostics surface as
-    /// `Err(anyhow::Error)` after the JSON document is written so
-    /// `main.rs`'s exit-code mapping fires (exit 1).
+    /// Runs `validate` per the parsed args.
     pub(crate) fn run(self) -> anyhow::Result<()> {
         run_with_env(self, &RealEnv)
     }
@@ -53,38 +50,44 @@ impl Args {
 
 fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
     let mode = resolve_output_mode(args.output, env);
-    // Diagnostics render to stdout (Task 4.1 stream routing). The summary
-    // anyhow error goes to stderr via `main.rs`'s `eprintln!("{e:#}")`.
     let stdout_palette = Palette::for_stream(Stream::Stdout, mode, env, env.stdout_is_terminal());
-    let outcome = run_validation(&args)?;
-
-    render(&outcome, mode, stdout_palette)?;
-
-    if outcome.diagnostics.is_empty() {
-        return Ok(());
-    }
-
-    let inner = anyhow::anyhow!(
-        "validation failed: {} diagnostic(s)",
-        outcome.diagnostics.len()
-    );
-    match mode {
-        // JSON mode: stdout already carries the diagnostics document, so
-        // main.rs must keep stderr silent.
-        OutputMode::Json => Err(crate::cli_error::CliError::runtime_silent(
-            inner.to_string(),
-        )),
-        // Human mode: stderr carries the summary line.
-        OutputMode::Human => Err(inner),
+    let result = run_validation(&args);
+    match (mode, result) {
+        (OutputMode::Json, Ok(())) => {
+            write_envelope_ok(&mut std::io::stdout(), ValidateResult {})?;
+            Ok(())
+        }
+        (OutputMode::Human, Ok(())) => {
+            let ok = stdout_palette.success.render();
+            let ok_reset = stdout_palette.success.render_reset();
+            writeln!(
+                std::io::stdout(),
+                "{ok}validation passed: 0 diagnostics{ok_reset}"
+            )?;
+            Ok(())
+        }
+        (_, Err(SdkError::ValidationErrors(errs))) => {
+            let je = JsonError {
+                code: "validate::failed".into(),
+                message: format!("{} validation diagnostic(s)", errs.len()),
+                field: None,
+                details: None,
+                diagnostics: errs.iter().map(json_error_from_validation).collect(),
+                cause: vec![],
+            };
+            Err(CliError::runtime(je))
+        }
+        (_, Err(other)) => {
+            let je = json_error_from_sdk(&other, ErrorContext::Validate);
+            Err(CliError::runtime(je))
+        }
     }
 }
 
-/// Runs the SDK validation pipeline and converts the result to
-/// [`ValidateOutput`]. Distinguishes validation failures (collected into
-/// the diagnostics array) from runtime errors (returned as
-/// `Err(anyhow::Error)` so the standard failure path renders them on
-/// stderr).
-fn run_validation(args: &Args) -> anyhow::Result<ValidateOutput> {
+/// Runs the SDK validation pipeline and returns `Ok(())` on success or
+/// `Err(SdkError)` on any validation / runtime failure. The caller
+/// converts the error into the envelope shape.
+fn run_validation(args: &Args) -> Result<(), SdkError> {
     let result = match &args.index {
         Some(index_path) => match std::fs::read_to_string(index_path) {
             Ok(raw) => match Index::parse_json(&raw) {
@@ -100,52 +103,5 @@ fn run_validation(args: &Args) -> anyhow::Result<ValidateOutput> {
         },
         None => validate::plugin_dir(&args.plugin_dir),
     };
-
-    match result {
-        Ok(_manifest) => Ok(ValidateOutput {
-            diagnostics: Vec::new(),
-        }),
-        Err(SdkError::ValidationErrors(errs)) => Ok(ValidateOutput {
-            diagnostics: errs
-                .iter()
-                .map(crate::diag_render::diagnostic_from)
-                .collect(),
-        }),
-        Err(other) => Err(other.into()),
-    }
-}
-
-fn render(
-    outcome: &ValidateOutput,
-    mode: OutputMode,
-    stdout_palette: Palette,
-) -> anyhow::Result<()> {
-    match mode {
-        OutputMode::Human => {
-            render_human(outcome, stdout_palette, &mut std::io::stdout())?;
-        }
-        OutputMode::Json => render_json(outcome, &mut std::io::stdout())?,
-    }
-    Ok(())
-}
-
-fn render_human(
-    outcome: &ValidateOutput,
-    palette: Palette,
-    writer: &mut impl std::io::Write,
-) -> std::io::Result<()> {
-    if outcome.diagnostics.is_empty() {
-        let ok = palette.success.render();
-        let ok_reset = palette.success.render_reset();
-        writeln!(writer, "{ok}validation passed: 0 diagnostics{ok_reset}")?;
-    } else {
-        crate::diag_render::render_human(&outcome.diagnostics, palette, writer)?;
-    }
-    Ok(())
-}
-
-fn render_json(outcome: &ValidateOutput, writer: &mut impl std::io::Write) -> anyhow::Result<()> {
-    serde_json::to_writer_pretty(&mut *writer, outcome)?;
-    writeln!(writer)?;
-    Ok(())
+    result.map(|_manifest| ())
 }
