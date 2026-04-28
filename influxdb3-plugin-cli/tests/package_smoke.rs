@@ -13,7 +13,7 @@ use rstest::rstest;
 use std::path::{Path, PathBuf};
 
 mod common;
-use common::{cli_cmd, write_valid_plugin, EMPTY_INDEX};
+use common::{EMPTY_INDEX, cli_cmd, write_valid_plugin};
 
 fn write_empty_index(path: &Path) {
     std::fs::write(path, EMPTY_INDEX).unwrap();

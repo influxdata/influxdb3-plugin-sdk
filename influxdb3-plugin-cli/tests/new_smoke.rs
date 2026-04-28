@@ -916,7 +916,10 @@ fn new_rejects_sibling_canonical_collision_hyphen_underscore() {
         stderr.contains("my_plugin"),
         "stderr should name existing sibling: {stderr}"
     );
-    assert!(!target.exists(), "no files/dirs written under target on rejection");
+    assert!(
+        !target.exists(),
+        "no files/dirs written under target on rejection"
+    );
 }
 
 /// Exercises the lowercase branch of canonicalization. `My-Plugin` and

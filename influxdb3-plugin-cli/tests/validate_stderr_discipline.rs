@@ -49,12 +49,7 @@ fn validate_json_failure_stderr_is_silent() {
     let tmp = scaffold_bad_plugin();
     let plugin_dir = tmp.path().join("bad");
     plugin()
-        .args([
-            "validate",
-            plugin_dir.to_str().unwrap(),
-            "--output",
-            "json",
-        ])
+        .args(["validate", plugin_dir.to_str().unwrap(), "--output", "json"])
         .assert()
         .code(1)
         .stdout(predicate::str::contains("\"diagnostics\""))

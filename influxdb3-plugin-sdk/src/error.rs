@@ -32,11 +32,10 @@ pub enum SdkError {
     #[error("archive construction failed: {message}")]
     Archive { message: String },
 
-    #[error("archive path {archive_path:?} exceeds ustar split-path limit ({limit} bytes); shorten file paths or the plugin name/version")]
-    PathTooLong {
-        archive_path: String,
-        limit: usize,
-    },
+    #[error(
+        "archive path {archive_path:?} exceeds ustar split-path limit ({limit} bytes); shorten file paths or the plugin name/version"
+    )]
+    PathTooLong { archive_path: String, limit: usize },
 
     #[error("hash computation failed")]
     Hash {

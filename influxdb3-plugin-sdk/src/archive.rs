@@ -278,7 +278,10 @@ mod archive_path_tests {
         let p = PathBuf::from("sub\\leaf");
         let result = to_archive_path(&p);
         assert_eq!(result, "sub\\leaf", "single component preserved verbatim");
-        assert!(!result.contains('/'), "single component must not introduce `/`");
+        assert!(
+            !result.contains('/'),
+            "single component must not introduce `/`"
+        );
 
         // Multi-component path with a backslash in one component: the component
         // separator is `/`, component content is preserved byte-for-byte.

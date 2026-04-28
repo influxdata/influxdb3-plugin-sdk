@@ -16,9 +16,9 @@
 // `proptest` is used only by the integration test `tests/archive_determinism.rs`;
 // this guard keeps `unused_crate_dependencies` satisfied on the lib test build.
 #[cfg(test)]
-use proptest as _;
-#[cfg(test)]
 use filetime as _;
+#[cfg(test)]
+use proptest as _;
 
 mod error;
 

@@ -238,8 +238,7 @@ fn resolve_plugin_name(dir: &Path, name_arg: Option<String>) -> anyhow::Result<S
 /// const is only the alphabet/length portion — kept as a single `const`
 /// so the explicit-`--name` and basename-derived error paths stay in
 /// lockstep if the rule ever changes.
-const PLUGIN_NAME_RULE: &str =
-    "plugin names must match `[a-zA-Z][a-zA-Z0-9_-]*` (1-64 chars, ASCII \
+const PLUGIN_NAME_RULE: &str = "plugin names must match `[a-zA-Z][a-zA-Z0-9_-]*` (1-64 chars, ASCII \
      alphanumerics / `-` / `_`, starting with a letter)";
 
 /// Scans `parent` for sibling directories whose basenames canonicalize to
@@ -281,9 +280,7 @@ fn check_sibling_canonical_collision(
         let Ok(sibling_name) = PluginName::from_str(basename) else {
             continue;
         };
-        if sibling_name.canonical() == target_canonical
-            && sibling_name.as_str() != resolved_name
-        {
+        if sibling_name.canonical() == target_canonical && sibling_name.as_str() != resolved_name {
             return Err(crate::cli_error::CliError::usage(anyhow::anyhow!(
                 "plugin name {resolved_name:?} canonically collides with existing \
                  sibling directory {basename:?} (both normalize to {target_canonical:?}). \

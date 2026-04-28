@@ -44,7 +44,8 @@ use crate::{SdkError, ValidationError, ValidationReport};
 pub fn plugin_dir(dir: &Path) -> Result<Manifest, SdkError> {
     let mut report = ValidationReport::new();
 
-    let manifest_raw = read_optional_required(&dir.join("manifest.toml"), "manifest.toml", &mut report)?;
+    let manifest_raw =
+        read_optional_required(&dir.join("manifest.toml"), "manifest.toml", &mut report)?;
     let init_raw = read_optional_required(&dir.join("__init__.py"), "__init__.py", &mut report)?;
 
     // Without manifest contents, the trigger list is unknown, so cross-file
@@ -74,9 +75,7 @@ fn read_optional_required(
     match std::fs::read_to_string(path) {
         Ok(s) => Ok(Some(s)),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            report.push(ValidationError::MissingRequiredFile {
-                file: label.into(),
-            });
+            report.push(ValidationError::MissingRequiredFile { file: label.into() });
             Ok(None)
         }
         Err(source) => Err(SdkError::Io {
@@ -108,9 +107,10 @@ pub fn plugin_dir_with_index(
     // so `foo-bar`/`foo_bar` and `Foo`/`foo` collide. Matches the rule used at
     // `Index::parse_json` time and `mutate_index::add_entry`.
     let manifest_canonical = manifest.plugin.name.canonical();
-    let collision = index.plugins.iter().any(|e| {
-        e.name.canonical() == manifest_canonical && e.version == manifest.plugin.version
-    });
+    let collision = index
+        .plugins
+        .iter()
+        .any(|e| e.name.canonical() == manifest_canonical && e.version == manifest.plugin.version);
     if collision {
         let mut report = ValidationReport::new();
         report.push(ValidationError::NameVersionConflict {
@@ -291,7 +291,9 @@ mod tests {
         };
         assert!(matches!(
             errs[0],
-            ValidationError::TriggerNotImplemented { trigger: TriggerType::ProcessWrites }
+            ValidationError::TriggerNotImplemented {
+                trigger: TriggerType::ProcessWrites
+            }
         ));
     }
 
@@ -352,7 +354,9 @@ mod tests {
         };
         assert!(matches!(
             errs[0],
-            ValidationError::TriggerNotImplemented { trigger: TriggerType::ProcessWrites }
+            ValidationError::TriggerNotImplemented {
+                trigger: TriggerType::ProcessWrites
+            }
         ));
     }
 
@@ -379,7 +383,9 @@ def process_writes():
         };
         assert!(matches!(
             errs[0],
-            ValidationError::TriggerNotImplemented { trigger: TriggerType::ProcessWrites }
+            ValidationError::TriggerNotImplemented {
+                trigger: TriggerType::ProcessWrites
+            }
         ));
     }
 
@@ -541,7 +547,11 @@ database_version = ">=3.0.0"
 "#
         );
         std::fs::write(dir.join("manifest.toml"), manifest).unwrap();
-        std::fs::write(dir.join("__init__.py"), "def process_writes(a, b, c):\n    pass\n").unwrap();
+        std::fs::write(
+            dir.join("__init__.py"),
+            "def process_writes(a, b, c):\n    pass\n",
+        )
+        .unwrap();
     }
 
     fn assert_canonical_collision(manifest_name: &str, index_name: &str) {
@@ -549,8 +559,8 @@ database_version = ">=3.0.0"
         write_plugin_with_name(td.path(), manifest_name, "0.1.0");
         let index = build_index_with_one_entry(index_name, "0.1.0");
 
-        let err = plugin_dir_with_index(td.path(), &index)
-            .expect_err("canonical collision must fail");
+        let err =
+            plugin_dir_with_index(td.path(), &index).expect_err("canonical collision must fail");
         let SdkError::ValidationErrors(errs) = err else {
             panic!("expected ValidationErrors, got {err:?}");
         };
@@ -558,7 +568,10 @@ database_version = ">=3.0.0"
         let ValidationError::NameVersionConflict { name, version } = &errs[0] else {
             panic!("expected NameVersionConflict, got {:?}", errs[0]);
         };
-        assert_eq!(name, manifest_name, "diagnostic should pin the manifest's spelling");
+        assert_eq!(
+            name, manifest_name,
+            "diagnostic should pin the manifest's spelling"
+        );
         assert_eq!(version, "0.1.0");
     }
 
@@ -600,7 +613,11 @@ database_version = ">=3.0.0"
         let SdkError::ValidationErrors(errs) = err else {
             panic!("expected ValidationErrors, got {err:?}");
         };
-        assert_eq!(errs.len(), 2, "expected exactly two diagnostics, got {errs:?}");
+        assert_eq!(
+            errs.len(),
+            2,
+            "expected exactly two diagnostics, got {errs:?}"
+        );
         let files: std::collections::BTreeSet<&str> = errs
             .iter()
             .map(|e| match e {

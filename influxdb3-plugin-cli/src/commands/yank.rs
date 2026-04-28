@@ -61,8 +61,7 @@ impl Args {
 
 fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
     let mode = resolve_output_mode(args.output, env);
-    let stdout_palette =
-        Palette::for_stream(Stream::Stdout, mode, env, env.stdout_is_terminal());
+    let stdout_palette = Palette::for_stream(Stream::Stdout, mode, env, env.stdout_is_terminal());
     let NameAtVersion { name, version } = args.target;
 
     let index_raw = std::fs::read_to_string(&args.index)
@@ -206,11 +205,7 @@ fn canonicalize_or_keep(p: &Path) -> PathBuf {
     std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf())
 }
 
-fn render(
-    payload: &YankOutput,
-    mode: OutputMode,
-    stdout_palette: Palette,
-) -> anyhow::Result<()> {
+fn render(payload: &YankOutput, mode: OutputMode, stdout_palette: Palette) -> anyhow::Result<()> {
     match mode {
         OutputMode::Human => render_human(payload, stdout_palette, &mut std::io::stdout())?,
         OutputMode::Json => render_json(payload, &mut std::io::stdout())?,

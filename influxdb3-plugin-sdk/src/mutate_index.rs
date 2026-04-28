@@ -65,9 +65,7 @@ pub fn add_entry(idx: &mut Index, entry: IndexEntry) -> Result<(), SdkError> {
         });
     }
 
-    let same_version_dup = existing_canonical
-        .iter()
-        .any(|(_, v)| v == &entry.version);
+    let same_version_dup = existing_canonical.iter().any(|(_, v)| v == &entry.version);
     if same_version_dup {
         let existing_versions: Vec<String> = existing_canonical
             .iter()
@@ -222,8 +220,7 @@ mod tests {
     fn add_entry_rejects_hyphen_underscore_canonical_collision() {
         let mut idx = empty_index();
         add_entry(&mut idx, make_entry("my-plugin", Version::new(1, 0, 0))).unwrap();
-        let err =
-            add_entry(&mut idx, make_entry("my_plugin", Version::new(1, 0, 0))).unwrap_err();
+        let err = add_entry(&mut idx, make_entry("my_plugin", Version::new(1, 0, 0))).unwrap_err();
         match err {
             SdkError::CanonicalCollision {
                 name,
@@ -232,7 +229,10 @@ mod tests {
             } => {
                 assert_eq!(name, "my_plugin");
                 assert_eq!(canonical, "my_plugin");
-                assert_eq!(existing, vec![("my-plugin".to_owned(), Version::new(1, 0, 0))]);
+                assert_eq!(
+                    existing,
+                    vec![("my-plugin".to_owned(), Version::new(1, 0, 0))]
+                );
             }
             other => panic!("expected CanonicalCollision, got {other:?}"),
         }
@@ -244,8 +244,7 @@ mod tests {
     fn add_entry_rejects_case_canonical_collision() {
         let mut idx = empty_index();
         add_entry(&mut idx, make_entry("myplugin", Version::new(1, 0, 0))).unwrap();
-        let err =
-            add_entry(&mut idx, make_entry("MyPlugin", Version::new(1, 0, 0))).unwrap_err();
+        let err = add_entry(&mut idx, make_entry("MyPlugin", Version::new(1, 0, 0))).unwrap_err();
         match err {
             SdkError::CanonicalCollision {
                 name,
@@ -254,7 +253,10 @@ mod tests {
             } => {
                 assert_eq!(name, "MyPlugin");
                 assert_eq!(canonical, "myplugin");
-                assert_eq!(existing, vec![("myplugin".to_owned(), Version::new(1, 0, 0))]);
+                assert_eq!(
+                    existing,
+                    vec![("myplugin".to_owned(), Version::new(1, 0, 0))]
+                );
             }
             other => panic!("expected CanonicalCollision, got {other:?}"),
         }
@@ -268,9 +270,7 @@ mod tests {
     #[rstest]
     #[case::same_version(Version::new(1, 0, 0))]
     #[case::different_version(Version::new(1, 0, 1))]
-    fn add_entry_returns_canonical_collision_when_spellings_differ(
-        #[case] new_version: Version,
-    ) {
+    fn add_entry_returns_canonical_collision_when_spellings_differ(#[case] new_version: Version) {
         let mut idx = empty_index();
         add_entry(&mut idx, make_entry("my_plugin", Version::new(1, 0, 0))).unwrap();
         let err = add_entry(&mut idx, make_entry("my-plugin", new_version.clone())).unwrap_err();

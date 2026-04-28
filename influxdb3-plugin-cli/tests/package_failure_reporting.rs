@@ -91,10 +91,7 @@ fn package_json_failure_keeps_stdout_empty_and_stderr_is_one_line() {
     // on stderr — singular. Enforce one meaningful line and no JSON escape
     // on stderr so the data-tool contract stays tight.
     let stderr = String::from_utf8_lossy(&assert.get_output().stderr);
-    let lines: Vec<&str> = stderr
-        .lines()
-        .filter(|l| !l.trim().is_empty())
-        .collect();
+    let lines: Vec<&str> = stderr.lines().filter(|l| !l.trim().is_empty()).collect();
     assert_eq!(lines.len(), 1, "expected 1 stderr line, got: {stderr:?}");
     assert!(
         !stderr.contains('{'),

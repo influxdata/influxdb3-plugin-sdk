@@ -39,7 +39,11 @@ fn invariant_under_absolute_path() {
     let db = b.path().join("plugin");
     plant(&da);
     plant(&db);
-    assert_eq!(build(&da), build(&db), "archive bytes must not depend on absolute path");
+    assert_eq!(
+        build(&da),
+        build(&db),
+        "archive bytes must not depend on absolute path"
+    );
 }
 
 #[test]
@@ -57,7 +61,11 @@ fn invariant_under_source_mtime() {
     filetime::set_file_mtime(db.join("manifest.toml"), future.into()).unwrap();
     filetime::set_file_mtime(db.join("__init__.py"), future.into()).unwrap();
 
-    assert_eq!(build(&da), build(&db), "archive bytes must not depend on source mtime");
+    assert_eq!(
+        build(&da),
+        build(&db),
+        "archive bytes must not depend on source mtime"
+    );
 }
 
 #[test]
@@ -81,7 +89,10 @@ fn invariant_under_source_date_epoch_env_var() {
     let bytes_b = build(&db);
     unsafe { std::env::remove_var("SOURCE_DATE_EPOCH") };
 
-    assert_eq!(bytes_a, bytes_b, "archive bytes must not depend on SOURCE_DATE_EPOCH");
+    assert_eq!(
+        bytes_a, bytes_b,
+        "archive bytes must not depend on SOURCE_DATE_EPOCH"
+    );
 }
 
 #[test]
@@ -124,7 +135,10 @@ fn invariant_under_uid_gid_in_source() {
     // code newly reads source UID.
     let uid_a = fs::metadata(da.join("manifest.toml")).unwrap().uid();
     let uid_b = fs::metadata(db.join("manifest.toml")).unwrap().uid();
-    assert_eq!(uid_a, uid_b, "test requires both tempdirs to have same owner UID");
+    assert_eq!(
+        uid_a, uid_b,
+        "test requires both tempdirs to have same owner UID"
+    );
     assert_eq!(build(&da), build(&db));
 }
 
@@ -144,5 +158,9 @@ fn non_exec_file_mode_does_not_leak() {
     // Both should produce 0644 in the archive per the canonicalization rule.
     fs::set_permissions(db.join("manifest.toml"), fs::Permissions::from_mode(0o600)).unwrap();
 
-    assert_eq!(build(&da), build(&db), "non-exec source modes must all canonicalize to 0644");
+    assert_eq!(
+        build(&da),
+        build(&db),
+        "non-exec source modes must all canonicalize to 0644"
+    );
 }

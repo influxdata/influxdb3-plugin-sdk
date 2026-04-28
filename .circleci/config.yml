@@ -70,9 +70,22 @@ jobs:
           name: cargo clippy --workspace --all-targets -- -D warnings
           command: cargo clippy --workspace --all-targets -- -D warnings
 
+  cargo-fmt:
+    executor: self-hosted-amd
+    steps:
+      - checkout
+      - setup-rust
+      - run:
+          name: rustup add rustfmt component
+          command: rustup component add rustfmt
+      - run:
+          name: cargo fmt --all -- --check
+          command: cargo fmt --all -- --check
+
 workflows:
   ci:
     jobs:
       - cargo-build
       - cargo-test
       - cargo-clippy
+      - cargo-fmt

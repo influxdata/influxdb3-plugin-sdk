@@ -19,15 +19,17 @@ pub(crate) fn field_of(err: &ValidationError) -> Option<String> {
     match err {
         ValidationError::SchemaReported(r) => {
             let p = r.path.as_str();
-            if p.is_empty() { None } else { Some(p.to_owned()) }
+            if p.is_empty() {
+                None
+            } else {
+                Some(p.to_owned())
+            }
         }
         ValidationError::MissingRequiredFile { file } => Some(file.clone()),
         ValidationError::PythonParse { .. }
         | ValidationError::TriggerNotImplemented { .. }
         | ValidationError::AsyncTriggerFn { .. } => Some("__init__.py".to_owned()),
-        ValidationError::NameVersionConflict { name, version } => {
-            Some(format!("{name}@{version}"))
-        }
+        ValidationError::NameVersionConflict { name, version } => Some(format!("{name}@{version}")),
         ValidationError::IndexReadFailed { path, .. } => Some(path.display().to_string()),
         _ => None,
     }
@@ -163,7 +165,11 @@ mod tests {
     fn multiple_diagnostics_numbered() {
         let diag = vec![
             d("SchemaReported", "plugin.name: bad", Some("plugin.name")),
-            d("SchemaReported", "plugin.version: bad", Some("plugin.version")),
+            d(
+                "SchemaReported",
+                "plugin.version: bad",
+                Some("plugin.version"),
+            ),
         ];
         let mut buf = Vec::<u8>::new();
         render_human(&diag, plain(), &mut buf).unwrap();

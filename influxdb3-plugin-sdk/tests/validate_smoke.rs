@@ -170,35 +170,49 @@ fn validate_with_index_returns_manifest_when_no_collision() {
     let plugin_dir = fixtures().join("valid_plugin");
     let index = empty_index();
 
-    let manifest = validate::plugin_dir_with_index(&plugin_dir, &index)
-        .expect("no collision; should pass");
+    let manifest =
+        validate::plugin_dir_with_index(&plugin_dir, &index).expect("no collision; should pass");
     assert_eq!(manifest.plugin.name.as_str(), "valid-plugin");
 }
 
 #[test]
 fn multi_cross_file_defects_collected_in_one_pass() {
-    let err = validate::plugin_dir(
-        &fixtures().join("invalid_plugins/multi_cross_file_defect"),
-    )
-    .unwrap_err();
+    let err = validate::plugin_dir(&fixtures().join("invalid_plugins/multi_cross_file_defect"))
+        .unwrap_err();
 
     let SdkError::ValidationErrors(errs) = err else {
         panic!("expected ValidationErrors, got {err:?}");
     };
-    assert_eq!(errs.len(), 2, "expected 2 errors, got {}: {:?}", errs.len(), errs);
+    assert_eq!(
+        errs.len(),
+        2,
+        "expected 2 errors, got {}: {:?}",
+        errs.len(),
+        errs
+    );
 
     let async_found = errs.iter().any(|e| {
         matches!(
             e,
-            ValidationError::AsyncTriggerFn { trigger: TriggerType::ProcessWrites }
+            ValidationError::AsyncTriggerFn {
+                trigger: TriggerType::ProcessWrites
+            }
         )
     });
     let missing_found = errs.iter().any(|e| {
         matches!(
             e,
-            ValidationError::TriggerNotImplemented { trigger: TriggerType::ProcessScheduledCall }
+            ValidationError::TriggerNotImplemented {
+                trigger: TriggerType::ProcessScheduledCall
+            }
         )
     });
-    assert!(async_found, "expected AsyncTriggerFn(ProcessWrites) among {errs:?}");
-    assert!(missing_found, "expected TriggerNotImplemented(ProcessScheduledCall) among {errs:?}");
+    assert!(
+        async_found,
+        "expected AsyncTriggerFn(ProcessWrites) among {errs:?}"
+    );
+    assert!(
+        missing_found,
+        "expected TriggerNotImplemented(ProcessScheduledCall) among {errs:?}"
+    );
 }

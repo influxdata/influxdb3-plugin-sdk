@@ -15,7 +15,7 @@
 use std::path::Path;
 
 mod common;
-use common::{cli_cmd, write_valid_plugin, SEEDED_INDEX, VALID_INIT, VALID_MANIFEST};
+use common::{SEEDED_INDEX, VALID_INIT, VALID_MANIFEST, cli_cmd, write_valid_plugin};
 
 fn spawn_validate<P: AsRef<Path>>(target: P, extra: &[&str]) -> assert_cmd::assert::Assert {
     let mut cmd = cli_cmd();
@@ -309,7 +309,10 @@ database_version = ">=3.0.0"
     assert_eq!(diags.len(), 1);
     assert_eq!(diags[0]["variant"], "NameVersionConflict");
     let field = diags[0]["field"].as_str().unwrap();
-    assert!(field.ends_with("@0.1.0"), "field should pin version: {field}");
+    assert!(
+        field.ends_with("@0.1.0"),
+        "field should pin version: {field}"
+    );
     assert!(assert.get_output().stderr.is_empty());
 }
 
@@ -384,7 +387,9 @@ database_version = ">=3.0.0"
     std::fs::write(dir.join("manifest.toml"), manifest).unwrap();
     std::fs::write(dir.join("__init__.py"), VALID_INIT).unwrap();
 
-    let assert = spawn_validate(&dir, &["--output", "json"]).failure().code(1);
+    let assert = spawn_validate(&dir, &["--output", "json"])
+        .failure()
+        .code(1);
     let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
     let payload: serde_json::Value = serde_json::from_str(&stdout).unwrap();
     let diags = payload["diagnostics"].as_array().expect("array");
@@ -418,8 +423,8 @@ fn validate_with_malformed_index_emits_json_diagnostic() {
         String::from_utf8_lossy(&out.stderr)
     );
     let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
-    let payload: serde_json::Value = serde_json::from_str(&stdout)
-        .expect("stdout must be one JSON document on parse failure");
+    let payload: serde_json::Value =
+        serde_json::from_str(&stdout).expect("stdout must be one JSON document on parse failure");
     let diags = payload["diagnostics"].as_array().expect("array");
     assert!(
         !diags.is_empty(),
@@ -475,7 +480,11 @@ fn validate_with_index_schema_errors_emits_all_diagnostics() {
         }]
     });
     let index_path = td.path().join("bad-schema.json");
-    std::fs::write(&index_path, serde_json::to_string_pretty(&bad_index).unwrap()).unwrap();
+    std::fs::write(
+        &index_path,
+        serde_json::to_string_pretty(&bad_index).unwrap(),
+    )
+    .unwrap();
 
     let assert = spawn_validate(
         &plugin_dir,
@@ -488,15 +497,16 @@ fn validate_with_index_schema_errors_emits_all_diagnostics() {
     let payload: serde_json::Value =
         serde_json::from_str(&String::from_utf8_lossy(&out.stdout)).unwrap();
     let diags = payload["diagnostics"].as_array().unwrap();
-    assert_eq!(diags.len(), 2, "expected exactly two diagnostics, got {payload}");
+    assert_eq!(
+        diags.len(),
+        2,
+        "expected exactly two diagnostics, got {payload}"
+    );
     assert!(
         diags.iter().all(|d| d["variant"] == "SchemaReported"),
         "all index schema errors should be SchemaReported, got {payload}"
     );
-    let mut fields: Vec<&str> = diags
-        .iter()
-        .map(|d| d["field"].as_str().unwrap())
-        .collect();
+    let mut fields: Vec<&str> = diags.iter().map(|d| d["field"].as_str().unwrap()).collect();
     fields.sort();
     assert_eq!(fields, vec!["artifacts_url", "plugins[0].version"]);
 }

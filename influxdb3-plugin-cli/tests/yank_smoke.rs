@@ -11,7 +11,7 @@
 use std::path::Path;
 
 mod common;
-use common::{cli_cmd, SEEDED_INDEX};
+use common::{SEEDED_INDEX, cli_cmd};
 
 fn write_index(path: &Path, body: &str) {
     std::fs::write(path, body).unwrap();

@@ -18,8 +18,7 @@ use assert_cmd::Command;
 use predicates::Predicate as _;
 use predicates::str::is_match;
 
-const VERSION_RE: &str =
-    r"^influxdb3-plugin \d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?, revision ([a-f0-9]{40}|unknown)\n$";
+const VERSION_RE: &str = r"^influxdb3-plugin \d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?, revision ([a-f0-9]{40}|unknown)\n$";
 
 /// Exercises `VERSION_RE` directly so coverage of the full SemVer
 /// grammar (pre-release identifiers + build metadata) and the SHA
@@ -43,11 +42,15 @@ fn version_re_accepts_full_semver_grammar() {
     // Org tag convention is `vX.Y.Z-N.(alpha|beta|rc).N` — pin all three
     // channels so a single-channel grammar regression is caught.
     assert!(
-        predicate.eval(&format!("influxdb3-plugin 1.0.0-1.alpha.0, revision {sha}\n")),
+        predicate.eval(&format!(
+            "influxdb3-plugin 1.0.0-1.alpha.0, revision {sha}\n"
+        )),
         "alpha channel pre-release must match"
     );
     assert!(
-        predicate.eval(&format!("influxdb3-plugin 1.0.0-1.beta.5, revision {sha}\n")),
+        predicate.eval(&format!(
+            "influxdb3-plugin 1.0.0-1.beta.5, revision {sha}\n"
+        )),
         "beta channel pre-release must match"
     );
     assert!(
@@ -64,13 +67,17 @@ fn version_re_accepts_full_semver_grammar() {
 
     // Build metadata.
     assert!(
-        predicate.eval(&format!("influxdb3-plugin 1.2.3+build.42, revision {sha}\n")),
+        predicate.eval(&format!(
+            "influxdb3-plugin 1.2.3+build.42, revision {sha}\n"
+        )),
         "build metadata must match"
     );
 
     // Pre-release plus build metadata.
     assert!(
-        predicate.eval(&format!("influxdb3-plugin 1.2.3-rc.1+sha.deadbee, revision {sha}\n")),
+        predicate.eval(&format!(
+            "influxdb3-plugin 1.2.3-rc.1+sha.deadbee, revision {sha}\n"
+        )),
         "combined pre-release + build metadata must match"
     );
 
