@@ -110,6 +110,18 @@ jobs:
           name: cargo doc --workspace --no-deps
           command: cargo doc --workspace --no-deps
 
+  manifest-invariants:
+    executor: self-hosted-amd
+    steps:
+      - checkout
+      - setup-rust   # need cargo for cargo metadata in the second script
+      - run:
+          name: scripts/check-manifest-invariants.sh
+          command: ./scripts/check-manifest-invariants.sh
+      - run:
+          name: scripts/check-cargo-metadata.sh
+          command: ./scripts/check-cargo-metadata.sh
+
   cargo-package-check:
     executor: self-hosted-amd
     steps:
@@ -143,4 +155,5 @@ workflows:
       - cargo-fmt
       - cargo-deny
       - cargo-doc
+      - manifest-invariants
       - cargo-package-check
