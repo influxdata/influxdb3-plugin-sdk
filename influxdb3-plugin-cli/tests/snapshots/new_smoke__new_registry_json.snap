@@ -3,10 +3,13 @@ source: influxdb3-plugin-cli/tests/new_smoke.rs
 expression: payload
 ---
 {
-  "files_written": [
-    "index.json"
-  ],
-  "kind": "registry",
-  "target_dir": "<TMPDIR>/reg",
-  "template": "registry"
+  "result": {
+    "files_written": [
+      "index.json"
+    ],
+    "kind": "registry",
+    "target_dir": "<TMPDIR>/reg",
+    "template": "registry"
+  },
+  "status": "ok"
 }

@@ -76,9 +76,14 @@ fn new_process_writes_happy_path_json_mode() {
 
     let stdout = std::str::from_utf8(&out.stdout).unwrap();
     let mut payload: serde_json::Value = serde_json::from_str(stdout).expect("stdout is JSON");
-    // Strip the absolute path before snapshotting so the snapshot is
-    // machine-independent.
-    payload
+    assert_eq!(
+        payload.get("status").and_then(|v| v.as_str()),
+        Some("ok"),
+        "envelope status must be \"ok\"; got:\n{stdout}"
+    );
+    // Strip the absolute path inside `result` before snapshotting so the
+    // snapshot is machine-independent.
+    payload["result"]
         .as_object_mut()
         .unwrap()
         .insert("target_dir".into(), "<TMPDIR>/downsampler".into());
@@ -95,8 +100,13 @@ fn snapshot_new_template(template: &str, target: &str, snapshot_name: &str) {
     let assert = spawn_new(&target_path, &[template, "--output", "json"]).success();
     let stdout = std::str::from_utf8(&assert.get_output().stdout).unwrap();
     let mut payload: serde_json::Value = serde_json::from_str(stdout).expect("stdout is JSON");
+    assert_eq!(
+        payload.get("status").and_then(|v| v.as_str()),
+        Some("ok"),
+        "envelope status must be \"ok\"; got:\n{stdout}"
+    );
     let placeholder = format!("<TMPDIR>/{target}");
-    payload
+    payload["result"]
         .as_object_mut()
         .unwrap()
         .insert("target_dir".into(), placeholder.into());
@@ -459,6 +469,11 @@ fn new_list_json_mode_is_stable_schema() {
 
     let stdout = std::str::from_utf8(&out.stdout).unwrap();
     let payload: serde_json::Value = serde_json::from_str(stdout).expect("stdout is JSON");
+    assert_eq!(
+        payload.get("status").and_then(|v| v.as_str()),
+        Some("ok"),
+        "envelope status must be \"ok\"; got:\n{stdout}"
+    );
     insta::assert_json_snapshot!("new_list_json", payload);
 }
 

@@ -3,13 +3,16 @@ source: influxdb3-plugin-cli/tests/new_smoke.rs
 expression: payload
 ---
 {
-  "files_written": [
-    "manifest.toml",
-    "__init__.py",
-    "README.md"
-  ],
-  "kind": "plugin",
-  "name": "downsampler",
-  "target_dir": "<TMPDIR>/downsampler",
-  "template": "process_request"
+  "result": {
+    "files_written": [
+      "manifest.toml",
+      "__init__.py",
+      "README.md"
+    ],
+    "kind": "plugin",
+    "name": "downsampler",
+    "target_dir": "<TMPDIR>/downsampler",
+    "template": "process_request"
+  },
+  "status": "ok"
 }
