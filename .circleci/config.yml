@@ -48,14 +48,16 @@ commands:
             - cargo-v2-x86_64-unknown-linux-gnu-
 
   save-cargo-cache:
-    description: "Persist cargo registry/git/target/sccache caches keyed on Cargo.lock checksum."
+    description: "Persist cargo registry/git/bin/target/sccache and rustup caches keyed on Cargo.lock checksum."
     steps:
       - save_cache:
           key: cargo-v2-x86_64-unknown-linux-gnu-{{ checksum "Cargo.lock" }}
           paths:
             - ~/.cargo/registry
             - ~/.cargo/git
+            - ~/.cargo/bin
             - ~/.cache/sccache
+            - ~/.rustup
             - target
 
 jobs:
