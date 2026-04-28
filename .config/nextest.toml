@@ -1,0 +1,22 @@
+# Nextest profiles for influxdb3-plugin-sdk.
+#
+# `default` is used for local `cargo nextest run` invocations.
+# `ci` is used by the `cargo-test` job in .circleci/config.yml. It emits
+# JUnit XML to junit.xml and captures stdout/stderr from any failed test
+# so CircleCI's `store_artifacts` step can preserve it for post-mortem
+# inspection.
+[profile.default]
+retries = 0
+slow-timeout = "30s"
+
+[profile.ci]
+retries = 0
+fail-fast = false
+slow-timeout = { period = "60s", terminate-after = 2 }
+status-level = "fail"
+final-status-level = "slow"
+
+[profile.ci.junit]
+path = "junit.xml"
+report-name = "influxdb3-plugin-sdk"
+store-failure-output = true

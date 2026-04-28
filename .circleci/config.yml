@@ -59,15 +59,17 @@ commands:
             - target
 
 jobs:
-  cargo-build:
+  cargo-check:
     executor: self-hosted-amd
     steps:
       - checkout
       - restore-cargo-cache
       - setup-rust
       - run:
-          name: cargo build --workspace
-          command: cargo build --workspace
+          name: cargo check --workspace --all-targets
+          # Faster than `cargo build` and covers binaries (which `cargo
+          # nextest run` does not). Replaces the previous cargo-build job.
+          command: cargo check --workspace --all-targets
       - save-cargo-cache
 
   cargo-test:
@@ -83,10 +85,21 @@ jobs:
               | tar zxf - -C "$HOME/.cargo/bin"
             cargo nextest --version
       - run:
-          name: cargo nextest run --workspace
+          name: cargo nextest run --profile ci --workspace
           environment:
             INSTA_UPDATE: "no"
-          command: cargo nextest run --workspace --no-fail-fast
+          # `--profile ci` selects [profile.ci] from .config/nextest.toml,
+          # which sets fail-fast=false, slow-timeout, JUnit emission, and
+          # stdout/stderr capture for failed tests.
+          command: cargo nextest run --profile ci --workspace
+      - store_test_results:
+          # CircleCI parses JUnit XML and surfaces per-test failures in
+          # the UI. Path matches [profile.ci.junit].path resolved relative
+          # to target/nextest/ci/.
+          path: target/nextest/ci/
+      - store_artifacts:
+          path: target/nextest/ci/
+          destination: nextest
       - save-cargo-cache
 
   cargo-clippy:
@@ -192,7 +205,7 @@ jobs:
 workflows:
   ci:
     jobs:
-      - cargo-build
+      - cargo-check
       - cargo-test
       - cargo-clippy
       - cargo-fmt
