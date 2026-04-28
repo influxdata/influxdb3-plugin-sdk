@@ -247,7 +247,7 @@ pub(crate) fn schema_error_details(err: &SchemaError) -> serde_json::Value {
 /// `ValueValidation` with `ContextKind::InvalidArg == "<NAME@VERSION>"` refines
 /// to `usage::invalid_target`.
 pub(crate) fn json_error_from_clap(err: &clap::Error) -> JsonError {
-    use clap::error::{ContextKind, ErrorKind};
+    use clap::error::ErrorKind;
     let message = collapse_clap_message(err);
     let kind = err.kind();
     match kind {
