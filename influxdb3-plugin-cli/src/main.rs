@@ -17,6 +17,8 @@ use assert_cmd as _;
 #[cfg(test)]
 use insta as _;
 #[cfg(test)]
+use pep508_rs as _;
+#[cfg(test)]
 use predicates as _;
 #[cfg(test)]
 use rstest as _;
@@ -24,6 +26,8 @@ use rstest as _;
 use tempfile as _;
 #[cfg(test)]
 use toml as _;
+#[cfg(test)]
+use url as _;
 
 use clap::Parser;
 use influxdb3_plugin_cli::PluginConfig;
