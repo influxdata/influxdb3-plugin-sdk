@@ -34,17 +34,33 @@ pub(crate) struct Diagnostic {
     pub field: Option<String>,
 }
 
-/// `--output json` payload emitted by `yank`.
-/// `outcome` is the [`influxdb3_plugin_sdk::mutate_index::YankOutcome`]
-/// rendered as `"transitioned"` or `"already_in_desired_state"`.
-/// `target_state` is `true` after `yank`, `false` after `yank --undo`.
+/// `--output json` payload emitted by `yank` on success.
+/// `outcome` collapses the (target_state, transition vs no-op) cross
+/// product into one four-case enum. The wire form is the snake_case
+/// representation per spec § 4.2.
 #[derive(Debug, Serialize)]
 pub(crate) struct YankOutput {
     pub name: String,
     pub version: String,
-    pub outcome: &'static str,
-    pub target_state: bool,
+    pub outcome: YankOutcomeWire,
     pub index_path: PathBuf,
+}
+
+/// Wire-stable enum for `YankOutput.outcome`. The four values cover
+/// every (action × pre-existing-state) cross product:
+/// - `Yanked` — yank operation that actually flipped the bit.
+/// - `Unyanked` — `--undo` operation that actually flipped the bit.
+/// - `AlreadyYanked` — yank operation, entry was already yanked (no-op).
+/// - `AlreadyUnyanked` — `--undo` operation, entry was already not yanked (no-op).
+///
+/// Stable per spec § 6.2.
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum YankOutcomeWire {
+    Yanked,
+    Unyanked,
+    AlreadyYanked,
+    AlreadyUnyanked,
 }
 
 /// `--output json` payload emitted by `package` on success. Carries the
@@ -305,5 +321,40 @@ mod envelope_tests {
         write_envelope_error(&mut buf, &je).unwrap();
         let helper_json = std::str::from_utf8(&buf).unwrap().trim_end();
         assert_eq!(envelope_json, helper_json);
+    }
+
+    #[test]
+    fn yank_output_outcome_serializes_four_case_enum() {
+        let payload = YankOutput {
+            name: "p".into(),
+            version: "1.0.0".into(),
+            outcome: YankOutcomeWire::Yanked,
+            index_path: std::path::PathBuf::from("/abs/idx.json"),
+        };
+        let s = serde_json::to_string(&payload).unwrap();
+        assert!(s.contains(r#""outcome":"yanked""#));
+        assert!(!s.contains("target_state"));
+    }
+
+    #[test]
+    fn yank_outcome_values_stable() {
+        let cases = [
+            YankOutcomeWire::Yanked,
+            YankOutcomeWire::Unyanked,
+            YankOutcomeWire::AlreadyYanked,
+            YankOutcomeWire::AlreadyUnyanked,
+        ];
+        let strings: Vec<String> = cases.iter()
+            .map(|c| serde_json::to_string(c).unwrap())
+            .collect();
+        assert_eq!(
+            strings,
+            vec![
+                r#""yanked""#,
+                r#""unyanked""#,
+                r#""already_yanked""#,
+                r#""already_unyanked""#,
+            ],
+        );
     }
 }
