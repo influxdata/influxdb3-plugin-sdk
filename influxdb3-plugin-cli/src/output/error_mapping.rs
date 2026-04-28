@@ -4,7 +4,7 @@
 
 use crate::output::json::JsonError;
 use influxdb3_plugin_schemas::SchemaError;
-use influxdb3_plugin_sdk::ValidationError;
+use influxdb3_plugin_sdk::{SdkError, ValidationError};
 
 /// Identifies the calling command so the error mapper can pick the
 /// correct namespace for variants whose code dispatches by call site
@@ -238,6 +238,193 @@ pub(crate) fn schema_error_details(err: &SchemaError) -> serde_json::Value {
                 "display": err.to_string(),
             })
         }
+    }
+}
+
+/// Returns `"{namespace}::{suffix}"` where namespace is derived from the
+/// [`ErrorContext`] per spec § 4.4.
+fn namespace_for(ctx: ErrorContext, suffix: &str) -> String {
+    let ns = match ctx {
+        ErrorContext::Validate => "validate",
+        ErrorContext::Package => "package",
+        ErrorContext::Yank => "yank",
+        ErrorContext::NewPlugin | ErrorContext::NewRegistry => "new",
+        ErrorContext::NewList | ErrorContext::Cli => "cli",
+    };
+    format!("{ns}::{suffix}")
+}
+
+/// Maps an I/O error to [`JsonError`], picking the wire code from context.
+///
+/// Spec § 4.5: context-dependent `io_failed` / `scaffold_failed` / `unknown`.
+fn io_error_to_json(
+    source: &std::io::Error,
+    path: Option<&std::path::Path>,
+    ctx: ErrorContext,
+) -> JsonError {
+    let code = match ctx {
+        ErrorContext::Validate => "validate::io_failed",
+        ErrorContext::Package => "package::io_failed",
+        ErrorContext::Yank => "yank::io_failed",
+        ErrorContext::NewPlugin | ErrorContext::NewRegistry => "new::scaffold_failed",
+        ErrorContext::NewList | ErrorContext::Cli => "cli::unknown",
+    };
+    let field = path.map(|p| p.display().to_string());
+    let details = Some(serde_json::json!({
+        "path": path.map(|p| p.display().to_string()),
+        "io_kind": format!("{:?}", source.kind()),
+    }));
+    JsonError {
+        code: code.into(),
+        message: source.to_string(),
+        field,
+        details,
+        diagnostics: vec![],
+        cause: vec![source.to_string()],
+    }
+}
+
+/// Maps an [`SdkError`] to the wire-stable [`JsonError`] shape.
+///
+/// Context-dispatched variants (`Io`, `Archive`, `PathOverlap`) pick their
+/// namespace from [`ErrorContext`] per spec § 4.5.
+pub(crate) fn json_error_from_sdk(err: &SdkError, ctx: ErrorContext) -> JsonError {
+    match err {
+        SdkError::Io { source, path } => io_error_to_json(source, path.as_deref(), ctx),
+
+        SdkError::Schema(schema_err) => JsonError {
+            code: namespace_for(ctx, "schema_error"),
+            message: err.to_string(),
+            field: None,
+            details: Some(schema_error_details(schema_err)),
+            diagnostics: vec![],
+            cause: vec![],
+        },
+
+        SdkError::ValidationErrors(errs) => JsonError {
+            code: "validate::failed".into(),
+            message: err.to_string(),
+            field: None,
+            details: None,
+            diagnostics: errs.iter().map(json_error_from_validation).collect(),
+            cause: vec![],
+        },
+
+        SdkError::Archive { message } => match ctx {
+            ErrorContext::NewPlugin | ErrorContext::NewRegistry => JsonError {
+                code: "new::scaffold_failed".into(),
+                message: err.to_string(),
+                field: None,
+                details: None,
+                diagnostics: vec![],
+                cause: vec![],
+            },
+            _ => JsonError {
+                code: "package::archive_failed".into(),
+                message: err.to_string(),
+                field: None,
+                details: Some(serde_json::json!({ "archive_message": message })),
+                diagnostics: vec![],
+                cause: vec![],
+            },
+        },
+
+        SdkError::PathTooLong {
+            archive_path,
+            limit,
+        } => JsonError {
+            code: "package::path_too_long".into(),
+            message: err.to_string(),
+            field: Some(archive_path.clone()),
+            details: Some(serde_json::json!({
+                "archive_path": archive_path,
+                "limit_bytes": limit,
+            })),
+            diagnostics: vec![],
+            cause: vec![],
+        },
+
+        SdkError::Hash { source } => JsonError {
+            code: "package::hash_failed".into(),
+            message: err.to_string(),
+            field: None,
+            details: None,
+            diagnostics: vec![],
+            cause: vec![source.to_string()],
+        },
+
+        SdkError::AlreadyPublished {
+            name,
+            version,
+            existing_versions,
+        } => JsonError {
+            code: "package::already_published".into(),
+            message: err.to_string(),
+            field: Some(format!("{name}@{version}")),
+            details: Some(serde_json::json!({
+                "name": name,
+                "version": version,
+                "existing_versions": existing_versions,
+            })),
+            diagnostics: vec![],
+            cause: vec![],
+        },
+
+        SdkError::CanonicalCollision {
+            name,
+            canonical,
+            existing,
+        } => {
+            let existing_arr: Vec<serde_json::Value> = existing
+                .iter()
+                .map(|(n, v)| serde_json::json!({"name": n, "version": v.to_string()}))
+                .collect();
+            JsonError {
+                code: "package::canonical_collision".into(),
+                message: err.to_string(),
+                field: Some("plugin.name".into()),
+                details: Some(serde_json::json!({
+                    "name": name,
+                    "canonical": canonical,
+                    "existing": existing_arr,
+                })),
+                diagnostics: vec![],
+                cause: vec![],
+            }
+        }
+
+        SdkError::EntryNotFound { name, version } => JsonError {
+            code: "yank::entry_not_found".into(),
+            message: err.to_string(),
+            field: Some(format!("{name}@{version}")),
+            details: Some(serde_json::json!({
+                "name": name,
+                "version": version,
+            })),
+            diagnostics: vec![],
+            cause: vec![],
+        },
+
+        SdkError::PathOverlap { input, output } => JsonError {
+            code: "package::path_overlap".into(),
+            message: err.to_string(),
+            field: None,
+            details: Some(serde_json::json!({
+                "input": input.display().to_string(),
+                "output": output.display().to_string(),
+            })),
+            diagnostics: vec![],
+            cause: vec![],
+        },
+
+        _ => JsonError {
+            code: "cli::unknown".into(),
+            message: err.to_string(),
+            field: None,
+            details: None,
+            diagnostics: vec![],
+            cause: vec![],
+        },
     }
 }
 
@@ -502,5 +689,169 @@ mod tests {
                 "schema_variant must match SchemaError::variant_name()"
             );
         }
+    }
+
+    // ------------------------------------------------------------------
+    // json_error_from_sdk tests
+    // ------------------------------------------------------------------
+
+    use influxdb3_plugin_sdk::SdkError;
+
+    #[test]
+    fn sdk_error_variants_map_to_codes_package_context() {
+        let cases: Vec<(SdkError, &str)> = vec![
+            (
+                SdkError::Io {
+                    source: std::io::Error::other("boom"),
+                    path: Some(std::path::PathBuf::from("/tmp/x")),
+                },
+                "package::io_failed",
+            ),
+            (
+                SdkError::Schema(SchemaError::DescriptionEmpty),
+                "package::schema_error",
+            ),
+            (
+                SdkError::ValidationErrors(vec![ValidationError::MissingRequiredFile {
+                    file: "__init__.py".into(),
+                }]),
+                "validate::failed",
+            ),
+            (
+                SdkError::Archive {
+                    message: "tar fail".into(),
+                },
+                "package::archive_failed",
+            ),
+            (
+                SdkError::PathTooLong {
+                    archive_path: "long/path".into(),
+                    limit: 255,
+                },
+                "package::path_too_long",
+            ),
+            (
+                SdkError::Hash {
+                    source: std::io::Error::other("read failed"),
+                },
+                "package::hash_failed",
+            ),
+            (
+                SdkError::AlreadyPublished {
+                    name: "p".into(),
+                    version: "1.0.0".into(),
+                    existing_versions: vec!["1.0.0".into()],
+                },
+                "package::already_published",
+            ),
+            (
+                SdkError::CanonicalCollision {
+                    name: "my-plugin".into(),
+                    canonical: "my_plugin".into(),
+                    existing: vec![("my_plugin".into(), semver::Version::new(1, 0, 0))],
+                },
+                "package::canonical_collision",
+            ),
+            (
+                SdkError::EntryNotFound {
+                    name: "p".into(),
+                    version: "1.0.0".into(),
+                },
+                "yank::entry_not_found",
+            ),
+            (
+                SdkError::PathOverlap {
+                    input: std::path::PathBuf::from("/a"),
+                    output: std::path::PathBuf::from("/b"),
+                },
+                "package::path_overlap",
+            ),
+        ];
+
+        for (err, expected_code) in &cases {
+            let je = json_error_from_sdk(err, ErrorContext::Package);
+            assert_eq!(
+                &je.code,
+                expected_code,
+                "SdkError::{} with Package context produced wrong code",
+                err.variant_name()
+            );
+        }
+    }
+
+    #[test]
+    fn io_error_code_depends_on_context() {
+        let err = SdkError::Io {
+            source: std::io::Error::other("boom"),
+            path: Some(std::path::PathBuf::from("/tmp/x")),
+        };
+        let cases = [
+            (ErrorContext::Validate, "validate::io_failed"),
+            (ErrorContext::Package, "package::io_failed"),
+            (ErrorContext::Yank, "yank::io_failed"),
+            (ErrorContext::NewPlugin, "new::scaffold_failed"),
+            (ErrorContext::NewRegistry, "new::scaffold_failed"),
+            (ErrorContext::NewList, "cli::unknown"),
+            (ErrorContext::Cli, "cli::unknown"),
+        ];
+        for (ctx, expected_code) in &cases {
+            let je = json_error_from_sdk(&err, *ctx);
+            assert_eq!(
+                &je.code, expected_code,
+                "Io with context {:?} produced wrong code",
+                ctx
+            );
+            // field should be the path
+            assert_eq!(je.field.as_deref(), Some("/tmp/x"));
+            // cause should contain the io error message
+            assert!(!je.cause.is_empty(), "cause should not be empty for Io");
+        }
+    }
+
+    #[test]
+    fn archive_code_depends_on_context() {
+        let err = SdkError::Archive {
+            message: "tar fail".into(),
+        };
+        // Package context → package::archive_failed with details
+        let je_pkg = json_error_from_sdk(&err, ErrorContext::Package);
+        assert_eq!(je_pkg.code, "package::archive_failed");
+        let details = je_pkg.details.as_ref().expect("details should exist");
+        assert_eq!(details["archive_message"], "tar fail");
+
+        // NewPlugin context → new::scaffold_failed without details
+        let je_new = json_error_from_sdk(&err, ErrorContext::NewPlugin);
+        assert_eq!(je_new.code, "new::scaffold_failed");
+        assert!(
+            je_new.details.is_none(),
+            "scaffold_failed should have no details"
+        );
+
+        // NewRegistry context → new::scaffold_failed
+        let je_reg = json_error_from_sdk(&err, ErrorContext::NewRegistry);
+        assert_eq!(je_reg.code, "new::scaffold_failed");
+    }
+
+    #[test]
+    fn yank_entry_not_found_maps() {
+        let err = SdkError::EntryNotFound {
+            name: "downsampler".into(),
+            version: "1.2.0".into(),
+        };
+        let je = json_error_from_sdk(&err, ErrorContext::Yank);
+        assert_eq!(je.code, "yank::entry_not_found");
+        assert_eq!(je.field.as_deref(), Some("downsampler@1.2.0"));
+        let details = je.details.as_ref().expect("details should exist");
+        assert_eq!(details["name"], "downsampler");
+        assert_eq!(details["version"], "1.2.0");
+    }
+
+    #[test]
+    fn schema_error_in_package_context_maps_to_package_schema_error() {
+        let err = SdkError::Schema(SchemaError::DescriptionEmpty);
+        let je = json_error_from_sdk(&err, ErrorContext::Package);
+        assert_eq!(je.code, "package::schema_error");
+        let details = je.details.as_ref().expect("details should exist");
+        assert_eq!(details["schema_variant"], "DescriptionEmpty");
     }
 }
