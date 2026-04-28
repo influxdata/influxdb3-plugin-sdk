@@ -43,43 +43,7 @@ pub enum YankOutcome {
 /// existing plugin). Mirrors the parse-layer check in
 /// [`influxdb3_plugin_schemas::Index::parse_json`].
 pub fn add_entry(idx: &mut Index, entry: IndexEntry) -> Result<(), SdkError> {
-    let new_canonical = entry.name.canonical();
-
-    // Index order is load-bearing: both error variants expose it as part
-    // of their payload contract so callers can render actionable guidance.
-    let existing_canonical: Vec<(String, Version)> = idx
-        .plugins
-        .iter()
-        .filter(|e| e.name.canonical() == new_canonical)
-        .map(|e| (e.name.as_str().to_owned(), e.version.clone()))
-        .collect();
-
-    let any_spelling_differs = existing_canonical
-        .iter()
-        .any(|(n, _)| n != entry.name.as_str());
-    if any_spelling_differs {
-        return Err(SdkError::CanonicalCollision {
-            name: entry.name.as_str().to_owned(),
-            canonical: new_canonical,
-            existing: existing_canonical,
-        });
-    }
-
-    let same_version_dup = existing_canonical.iter().any(|(_, v)| v == &entry.version);
-    if same_version_dup {
-        let existing_versions: Vec<String> = existing_canonical
-            .iter()
-            .map(|(_, v)| v.to_string())
-            .collect();
-        return Err(SdkError::AlreadyPublished {
-            name: entry.name.as_str().to_owned(),
-            version: entry.version.to_string(),
-            existing_versions,
-        });
-    }
-
-    idx.plugins.push(entry);
-    Ok(())
+    idx.push_entry(entry).map_err(SdkError::from)
 }
 
 /// Sets `yanked = true` on the entry identified by `(name, version)`.

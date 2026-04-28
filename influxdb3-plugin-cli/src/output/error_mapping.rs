@@ -8,7 +8,7 @@ use influxdb3_plugin_sdk::{SdkError, ValidationError};
 
 /// Identifies the calling command so the error mapper can pick the
 /// correct namespace for variants whose code dispatches by call site
-/// (`SdkError::Io`, `SdkError::Archive`, `SdkError::PathOverlap`).
+/// (`SdkError::Io`, `SdkError::Archive`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ErrorContext {
     Validate,
@@ -78,21 +78,14 @@ pub(crate) fn json_error_from_validation(err: &ValidationError) -> JsonError {
         },
         ValidationError::NameVersionConflict { name, version } => JsonError {
             code: "validate::name_version_conflict".into(),
-            message: err.to_string(),
+            message: format!(
+                "{}; increment version in manifest.toml or run `yank` instead",
+                err
+            ),
             field: Some(format!("{name}@{version}")),
             details: Some(serde_json::json!({ "name": name, "version": version })),
             diagnostics: vec![],
             cause: vec![],
-        },
-        ValidationError::IndexReadFailed { path, message } => JsonError {
-            code: "validate::index_read_failed".into(),
-            message: err.to_string(),
-            field: Some(path.display().to_string()),
-            details: Some(
-                serde_json::json!({ "path": path.display().to_string(), "io_message": message }),
-            ),
-            diagnostics: vec![],
-            cause: vec![message.clone()],
         },
         _ => JsonError {
             code: "validate::unknown".into(),
@@ -536,7 +529,11 @@ pub(crate) fn json_error_from_sdk(err: &SdkError, ctx: ErrorContext) -> JsonErro
             existing_versions,
         } => JsonError {
             code: "package::already_published".into(),
-            message: err.to_string(),
+            message: format!(
+                "plugin ({name:?}, {version:?}) already exists in the target index; \
+                 existing versions: {existing_versions:?}. \
+                 Increment version in manifest.toml or run `yank` instead."
+            ),
             field: Some(format!("{name}@{version}")),
             details: Some(serde_json::json!({
                 "name": name,
@@ -558,7 +555,11 @@ pub(crate) fn json_error_from_sdk(err: &SdkError, ctx: ErrorContext) -> JsonErro
                 .collect();
             JsonError {
                 code: "package::canonical_collision".into(),
-                message: err.to_string(),
+                message: format!(
+                    "canonical collision: plugin name {name:?} conflicts with existing \
+                     entries sharing canonical form {canonical:?}: {existing:?}. \
+                     Rename to one of the existing spellings or choose a distinct name."
+                ),
                 field: Some("plugin.name".into()),
                 details: Some(serde_json::json!({
                     "name": name,
@@ -577,18 +578,6 @@ pub(crate) fn json_error_from_sdk(err: &SdkError, ctx: ErrorContext) -> JsonErro
             details: Some(serde_json::json!({
                 "name": name,
                 "version": version,
-            })),
-            diagnostics: vec![],
-            cause: vec![],
-        },
-
-        SdkError::PathOverlap { input, output } => JsonError {
-            code: "package::path_overlap".into(),
-            message: err.to_string(),
-            field: None,
-            details: Some(serde_json::json!({
-                "input": input.display().to_string(),
-                "output": output.display().to_string(),
             })),
             diagnostics: vec![],
             cause: vec![],
@@ -636,10 +625,6 @@ mod tests {
                 name: "downsampler".into(),
                 version: "1.2.0".into(),
             },
-            ValidationError::IndexReadFailed {
-                path: std::path::PathBuf::from("/tmp/nope.json"),
-                message: "No such file or directory (os error 2)".into(),
-            },
         ]
     }
 
@@ -652,7 +637,6 @@ mod tests {
             "validate::trigger_not_implemented",
             "validate::async_trigger_fn",
             "validate::name_version_conflict",
-            "validate::index_read_failed",
         ];
         let variants = every_validation_variant();
         assert_eq!(variants.len(), expected_codes.len());
@@ -905,13 +889,6 @@ mod tests {
                     version: "1.0.0".into(),
                 },
                 "yank::entry_not_found",
-            ),
-            (
-                SdkError::PathOverlap {
-                    input: std::path::PathBuf::from("/a"),
-                    output: std::path::PathBuf::from("/b"),
-                },
-                "package::path_overlap",
             ),
         ];
 

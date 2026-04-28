@@ -13,7 +13,7 @@ expression: payload
           "version": "1.2.0"
         },
         "field": "downsampler@1.2.0",
-        "message": "plugin (\"downsampler\", \"1.2.0\") already exists in the target index; increment version or run `yank` instead"
+        "message": "plugin (\"downsampler\", \"1.2.0\") already exists in the target index; increment version in manifest.toml or run `yank` instead"
       }
     ],
     "message": "1 validation diagnostic(s)"

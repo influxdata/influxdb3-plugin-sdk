@@ -11,7 +11,7 @@
 
 use clap::Args as ClapArgs;
 use influxdb3_plugin_schemas::Index;
-use influxdb3_plugin_sdk::{SdkError, ValidationError, validate};
+use influxdb3_plugin_sdk::{SdkError, validate};
 use std::io::Write;
 use std::path::PathBuf;
 
@@ -51,7 +51,50 @@ impl Args {
 fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
     let mode = resolve_output_mode(args.output, env);
     let stdout_palette = Palette::for_stream(Stream::Stdout, mode, env, env.stdout_is_terminal());
-    let result = run_validation(&args);
+    // Read and parse --index before validation so CLI owns the read-failure
+    // diagnostic (SDK no longer has IndexReadFailed).
+    let parsed_index = match &args.index {
+        Some(index_path) => match std::fs::read_to_string(index_path) {
+            Ok(raw) => match Index::parse_json(&raw) {
+                Ok(index) => Some(index),
+                Err(schema_errors) => {
+                    return Err(CliError::runtime(json_error_from_sdk(
+                        &SdkError::from(schema_errors),
+                        ErrorContext::Validate,
+                    )));
+                }
+            },
+            Err(io_err) => {
+                let diag = JsonError {
+                    code: "validate::index_read_failed".into(),
+                    message: format!(
+                        "failed to read --index {}: {}",
+                        index_path.display(),
+                        io_err
+                    ),
+                    field: Some(index_path.display().to_string()),
+                    details: Some(serde_json::json!({
+                        "path": index_path.display().to_string(),
+                        "io_message": io_err.to_string(),
+                    })),
+                    diagnostics: vec![],
+                    cause: vec![io_err.to_string()],
+                };
+                let je = JsonError {
+                    code: "validate::failed".into(),
+                    message: "1 validation diagnostic(s)".into(),
+                    field: None,
+                    details: None,
+                    diagnostics: vec![diag],
+                    cause: vec![],
+                };
+                return Err(CliError::runtime(je));
+            }
+        },
+        None => None,
+    };
+
+    let result = run_validation(&args.plugin_dir, parsed_index.as_ref());
     match (mode, result) {
         (OutputMode::Json, Ok(())) => {
             write_envelope_ok(&mut std::io::stdout(), ValidateResult {})?;
@@ -84,24 +127,10 @@ fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
     }
 }
 
-/// Runs the SDK validation pipeline and returns `Ok(())` on success or
-/// `Err(SdkError)` on any validation / runtime failure. The caller
-/// converts the error into the envelope shape.
-fn run_validation(args: &Args) -> Result<(), SdkError> {
-    let result = match &args.index {
-        Some(index_path) => match std::fs::read_to_string(index_path) {
-            Ok(raw) => match Index::parse_json(&raw) {
-                Ok(index) => validate::plugin_dir_with_index(&args.plugin_dir, &index),
-                Err(schema_errors) => Err(SdkError::from(schema_errors)),
-            },
-            Err(io_err) => Err(SdkError::ValidationErrors(vec![
-                ValidationError::IndexReadFailed {
-                    path: index_path.clone(),
-                    message: io_err.to_string(),
-                },
-            ])),
-        },
-        None => validate::plugin_dir(&args.plugin_dir),
+fn run_validation(plugin_dir: &std::path::Path, index: Option<&Index>) -> Result<(), SdkError> {
+    let result = match index {
+        Some(idx) => validate::plugin_dir_with_index(plugin_dir, idx),
+        None => validate::plugin_dir(plugin_dir),
     };
     result.map(|_manifest| ())
 }

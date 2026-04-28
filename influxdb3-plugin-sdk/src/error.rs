@@ -48,9 +48,8 @@ pub enum SdkError {
     /// enumerates every version of `name` already in the index (in index order)
     /// so the author can pick a higher version or `yank` the conflicting one.
     #[error(
-        "plugin ({name:?}, {version:?}) already exists in the target index. \
-         Existing versions of {name:?} in this index: {existing_versions:?}. \
-         Increment version in manifest.toml or run `yank` instead."
+        "plugin ({name:?}, {version:?}) already exists in the target index; \
+         existing versions: {existing_versions:?}"
     )]
     AlreadyPublished {
         name: String,
@@ -66,8 +65,7 @@ pub enum SdkError {
     /// order.
     #[error(
         "canonical collision: plugin name {name:?} conflicts with existing \
-         entries sharing canonical form {canonical:?}: {existing:?}. \
-         Rename to one of the existing spellings or choose a distinct name."
+         entries sharing canonical form {canonical:?}: {existing:?}"
     )]
     CanonicalCollision {
         name: String,
@@ -77,12 +75,6 @@ pub enum SdkError {
 
     #[error("plugin ({name:?}, {version:?}) is not present in the target index")]
     EntryNotFound { name: String, version: String },
-
-    #[error(
-        "output directory {output:?} overlaps with input path {input:?}; \
-         they must be disjoint"
-    )]
-    PathOverlap { input: PathBuf, output: PathBuf },
 }
 
 impl SdkError {
@@ -99,7 +91,6 @@ impl SdkError {
             Self::AlreadyPublished { .. } => "AlreadyPublished",
             Self::CanonicalCollision { .. } => "CanonicalCollision",
             Self::EntryNotFound { .. } => "EntryNotFound",
-            Self::PathOverlap { .. } => "PathOverlap",
         }
     }
 }
@@ -123,6 +114,35 @@ impl From<SchemaErrors> for SdkError {
             .map(ValidationError::SchemaReported)
             .collect();
         SdkError::ValidationErrors(diagnostics)
+    }
+}
+
+impl From<influxdb3_plugin_schemas::IndexInsertError> for SdkError {
+    fn from(err: influxdb3_plugin_schemas::IndexInsertError) -> Self {
+        use influxdb3_plugin_schemas::IndexInsertError;
+        match err {
+            IndexInsertError::Duplicate {
+                name,
+                version,
+                existing_versions,
+            } => SdkError::AlreadyPublished {
+                name,
+                version: version.to_string(),
+                existing_versions: existing_versions.iter().map(|v| v.to_string()).collect(),
+            },
+            IndexInsertError::CanonicalCollision {
+                name,
+                canonical,
+                existing,
+            } => SdkError::CanonicalCollision {
+                name,
+                canonical,
+                existing,
+            },
+            _ => unreachable!(
+                "IndexInsertError has no other variants in the current schemas version"
+            ),
+        }
     }
 }
 
@@ -160,23 +180,12 @@ pub enum ValidationError {
     AsyncTriggerFn { trigger: TriggerType },
 
     /// Plugin `(name, version)` already exists in the target index. Surfaces
-    /// from [`crate::validate::plugin_dir_with_index`] so `validate --index`
-    /// can collect uniqueness conflicts alongside other validation errors.
-    /// The mutation-boundary check in `mutate_index::add_entry` returns the
-    /// distinct [`SdkError::AlreadyPublished`] instead.
-    #[error(
-        "plugin ({name:?}, {version:?}) already exists in the target index; \
-         increment version or run `yank` instead"
-    )]
+    /// from [`crate::validate::plugin_dir_with_index`] so index-aware
+    /// validation can collect uniqueness conflicts alongside other validation
+    /// errors. The mutation-boundary check in `mutate_index::add_entry`
+    /// returns the distinct [`SdkError::AlreadyPublished`] instead.
+    #[error("plugin ({name:?}, {version:?}) already exists in the target index")]
     NameVersionConflict { name: String, version: String },
-
-    /// I/O failure reading the `--index` file. Distinct from a parsable
-    /// index containing schema errors — those flow through `SchemaReported`.
-    #[error("failed to read --index {path}: {message}")]
-    IndexReadFailed {
-        path: std::path::PathBuf,
-        message: String,
-    },
 }
 
 impl ValidationError {
@@ -189,7 +198,6 @@ impl ValidationError {
             Self::TriggerNotImplemented { .. } => "TriggerNotImplemented",
             Self::AsyncTriggerFn { .. } => "AsyncTriggerFn",
             Self::NameVersionConflict { .. } => "NameVersionConflict",
-            Self::IndexReadFailed { .. } => "IndexReadFailed",
         }
     }
 }
@@ -274,10 +282,6 @@ mod tests {
                 name: "downsampler".into(),
                 version: "1.2.0".into(),
             },
-            SdkError::PathOverlap {
-                input: PathBuf::from("/a/index.json"),
-                output: PathBuf::from("/a"),
-            },
         ]
     }
 
@@ -303,10 +307,6 @@ mod tests {
             ValidationError::NameVersionConflict {
                 name: "downsampler".into(),
                 version: "1.2.0".into(),
-            },
-            ValidationError::IndexReadFailed {
-                path: std::path::PathBuf::from("/tmp/nope.json"),
-                message: "No such file or directory (os error 2)".into(),
             },
         ]
     }

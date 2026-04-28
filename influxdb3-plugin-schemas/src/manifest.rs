@@ -19,6 +19,8 @@ pub struct ManifestSchemaVersion {
 }
 
 impl ManifestSchemaVersion {
+    pub const CURRENT: Self = Self { major: 1, minor: 1 };
+
     pub fn new(major: u32, minor: u32) -> Self {
         Self { major, minor }
     }
@@ -509,6 +511,21 @@ mod schema_version_tests {
         assert_eq!(format!("{v}"), "1.3");
         let parsed: ManifestSchemaVersion = "1.3".parse().unwrap();
         assert_eq!(parsed, v);
+    }
+
+    #[test]
+    fn current_major_equals_supported() {
+        assert_eq!(
+            ManifestSchemaVersion::CURRENT.major(),
+            SUPPORTED_MANIFEST_MAJOR
+        );
+    }
+
+    #[test]
+    fn current_to_string_round_trips() {
+        let s = ManifestSchemaVersion::CURRENT.to_string();
+        let parsed: ManifestSchemaVersion = s.parse().unwrap();
+        assert_eq!(parsed, ManifestSchemaVersion::CURRENT);
     }
 }
 

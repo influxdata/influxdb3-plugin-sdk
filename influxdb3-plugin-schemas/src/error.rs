@@ -299,6 +299,33 @@ impl<'a> IntoIterator for &'a SchemaErrors {
     }
 }
 
+/// Errors returned by [`crate::Index::check_entry_insert`] and [`crate::Index::push_entry`].
+///
+/// Adding variants is a minor-version change; renaming, removing, reshaping,
+/// or adding fields to existing variants is a major-version change.
+///
+/// `#[non_exhaustive]`: downstream matches must include a `_ =>` arm.
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum IndexInsertError {
+    #[error("plugin ({name:?}, {version:?}) already exists in the target index")]
+    Duplicate {
+        name: String,
+        version: semver::Version,
+        existing_versions: Vec<semver::Version>,
+    },
+
+    #[error(
+        "canonical collision: plugin name {name:?} conflicts with existing \
+         entries sharing canonical form {canonical:?}: {existing:?}"
+    )]
+    CanonicalCollision {
+        name: String,
+        canonical: String,
+        existing: Vec<(String, semver::Version)>,
+    },
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

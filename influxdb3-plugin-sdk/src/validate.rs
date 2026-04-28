@@ -22,7 +22,7 @@
 //! `tree-sitter-python` — rationale for this pick over pyo3, shell-out, and
 //! other Rust parsers lives in the core design-decisions doc.
 
-use influxdb3_plugin_schemas::{Manifest, TriggerType};
+use influxdb3_plugin_schemas::{IndexEntry, Manifest, TriggerType};
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -93,7 +93,7 @@ fn read_optional_required(
 /// surfaces as `SdkError::ValidationErrors` carrying a single
 /// [`ValidationError::NameVersionConflict`].
 ///
-/// Backs `validate --index`, letting uniqueness conflicts appear in the
+/// Backs index-aware validation, letting uniqueness conflicts appear in the
 /// same diagnostics array as other validation errors. The distinct
 /// mutation-boundary check in `mutate_index::add_entry` returns
 /// `SdkError::AlreadyPublished` instead.
@@ -103,22 +103,30 @@ pub fn plugin_dir_with_index(
 ) -> Result<Manifest, SdkError> {
     let manifest = plugin_dir(dir)?;
 
-    // Compare canonical forms (lowercase, hyphens replaced with underscores)
-    // so `foo-bar`/`foo_bar` and `Foo`/`foo` collide. Matches the rule used at
-    // `Index::parse_json` time and `mutate_index::add_entry`.
-    let manifest_canonical = manifest.plugin.name.canonical();
-    let collision = index
-        .plugins
-        .iter()
-        .any(|e| e.name.canonical() == manifest_canonical && e.version == manifest.plugin.version);
-    if collision {
-        let mut report = ValidationReport::new();
-        report.push(ValidationError::NameVersionConflict {
-            name: manifest.plugin.name.as_str().to_owned(),
-            version: manifest.plugin.version.to_string(),
-        });
-        report.into_result()?;
-        unreachable!("non-empty report always returns Err");
+    let probe_entry = IndexEntry::from_manifest(manifest.clone(), crate::hash::zero_hash());
+    if let Err(err) = index.check_entry_insert(&probe_entry) {
+        use influxdb3_plugin_schemas::IndexInsertError;
+        // Surface a conflict only when the (canonical-name, version) pair
+        // already exists in the index — matching the original inline check of
+        // `canonical_match && version_match`. `CanonicalCollision` with a
+        // *different* version is intentionally not flagged here; that stricter
+        // spelling check runs at publish time in `mutate_index::add_entry`.
+        let version_conflict = match &err {
+            IndexInsertError::Duplicate { .. } => true,
+            IndexInsertError::CanonicalCollision { existing, .. } => {
+                existing.iter().any(|(_, v)| v == &probe_entry.version)
+            }
+            _ => false,
+        };
+        if version_conflict {
+            let mut report = ValidationReport::new();
+            report.push(ValidationError::NameVersionConflict {
+                name: manifest.plugin.name.as_str().to_owned(),
+                version: manifest.plugin.version.to_string(),
+            });
+            report.into_result()?;
+            unreachable!("non-empty report always returns Err");
+        }
     }
 
     Ok(manifest)

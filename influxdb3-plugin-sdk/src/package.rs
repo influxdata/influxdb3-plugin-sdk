@@ -17,10 +17,10 @@
 //! # I/O scope
 //!
 //! [`package_plugin`] performs no output-side I/O — it reads the plugin
-//! directory but does not write the archive or index. The CLI owns the
-//! `--out` target so input/output separation can be enforced there.
+//! directory but does not write the archive or index. The caller owns the
+//! output target so input/output separation can be enforced there.
 
-use influxdb3_plugin_schemas::{ArtifactHash, Index, IndexEntry, Manifest};
+use influxdb3_plugin_schemas::{ArtifactHash, Index, IndexEntry};
 use std::path::Path;
 
 use crate::{SdkError, archive, hash, mutate_index, validate};
@@ -62,7 +62,7 @@ pub fn package_plugin(plugin_dir: &Path, input_index: Index) -> Result<PackageOu
 
     let hash_value = hash::sha256_of_bytes(&archive_bytes);
 
-    let new_entry = entry_from_manifest(manifest, hash_value.clone());
+    let new_entry = IndexEntry::from_manifest(manifest, hash_value.clone());
 
     // Append to a clone; duplicate `(name, version)` fires here.
     let mut derived_index = input_index;
@@ -74,22 +74,6 @@ pub fn package_plugin(plugin_dir: &Path, input_index: Index) -> Result<PackageOu
         derived_index,
         new_entry,
     })
-}
-
-fn entry_from_manifest(manifest: Manifest, hash: ArtifactHash) -> IndexEntry {
-    let plugin = manifest.plugin;
-    IndexEntry {
-        name: plugin.name,
-        version: plugin.version,
-        description: plugin.description,
-        triggers: plugin.triggers,
-        homepage: plugin.homepage,
-        repository: plugin.repository,
-        documentation: plugin.documentation,
-        dependencies: manifest.dependencies,
-        hash,
-        yanked: false,
-    }
 }
 
 #[cfg(test)]
