@@ -30,8 +30,8 @@ fn missing_required_flag_exits_two() {
 fn plain_runtime_failure_exits_one() {
     // Runtime failure path: `yank` against a nonexistent `--index` hits the
     // "failed to read --index" anyhow branch in commands/yank.rs, which
-    // surfaces as CliError::Runtime (exit 1) with stderr content. Avoids the
-    // silent JSON-mode validation path that `validate` would take.
+    // surfaces as CliError::Runtime (exit 1). In piped (non-TTY) mode the
+    // error is rendered as a JSON envelope on stdout.
     let tmp = TempDir::new().unwrap();
     plugin()
         .args([
@@ -44,14 +44,14 @@ fn plain_runtime_failure_exits_one() {
         ])
         .assert()
         .code(1)
-        .stderr(predicates::str::contains("failed to read --index"));
+        .stdout(predicates::str::contains("failed to read --index"));
 }
 
 #[test]
 fn new_database_version_on_registry_template_exits_two() {
     // `registry`'s Args omits `--database-version`, so clap rejects it
-    // at parse time. We pin exit 2 and a flag mention, not clap's exact
-    // wording.
+    // at parse time. We pin exit 2. In piped (non-TTY) mode the error
+    // is rendered as a JSON envelope on stdout.
     let tmp = TempDir::new().unwrap();
     plugin()
         .args([
@@ -63,7 +63,7 @@ fn new_database_version_on_registry_template_exits_two() {
         ])
         .assert()
         .code(2)
-        .stderr(predicates::str::contains("--database-version"));
+        .stdout(predicates::str::contains("--database-version"));
 }
 
 #[test]
@@ -90,7 +90,7 @@ fn package_self_overwrite_exits_two() {
         ])
         .assert()
         .code(2)
-        .stderr(predicates::str::contains("S2-12"));
+        .stdout(predicates::str::contains("S2-12"));
 }
 
 #[test]
@@ -114,7 +114,7 @@ fn yank_self_overwrite_exits_two() {
         ])
         .assert()
         .code(2)
-        .stderr(predicates::str::contains("S2-12"));
+        .stdout(predicates::str::contains("S2-12"));
 }
 
 #[test]
@@ -136,7 +136,7 @@ fn yank_malformed_target_exits_two() {
         ])
         .assert()
         .code(2)
-        .stderr(
+        .stdout(
             predicates::str::contains("name:version")
                 .and(predicates::str::contains("<name>@<version>")),
         );

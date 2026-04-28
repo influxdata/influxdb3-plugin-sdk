@@ -151,7 +151,7 @@ fn yank_already_yanked_is_no_op_with_marker() {
     insta::assert_json_snapshot!("yank_already_yanked_json", payload);
 }
 
-/// Missing entry → exit 1 + stderr message.
+/// Missing entry -> exit 1 + error envelope on stdout in JSON mode.
 #[test]
 fn yank_missing_entry_exits_one() {
     let td = tempfile::tempdir().unwrap();
@@ -165,15 +165,10 @@ fn yank_missing_entry_exits_one() {
         .failure()
         .code(1);
     let out_bytes = assert.get_output();
+    let stdout = String::from_utf8_lossy(&out_bytes.stdout).into_owned();
     assert!(
-        out_bytes.stdout.is_empty(),
-        "stdout must be empty on failure (data-tool idiom), got {:?}",
-        String::from_utf8_lossy(&out_bytes.stdout)
-    );
-    let stderr = String::from_utf8_lossy(&out_bytes.stderr).into_owned();
-    assert!(
-        stderr.contains("not present"),
-        "stderr should reference the missing entry, got: {stderr}"
+        stdout.contains("not present"),
+        "output should reference the missing entry, got: {stdout}"
     );
 }
 
@@ -195,23 +190,21 @@ fn yank_malformed_target_exits_two() {
     let assert = spawn_yank("no-at-sign", &index_path, &out, &[])
         .failure()
         .code(2);
-    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).into_owned();
+    // Under piped stdout, errors render as JSON envelopes on stdout.
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
     assert!(
-        stderr.contains("no-at-sign"),
-        "stderr should echo the malformed argument value, got: {stderr}"
-    );
-    // The FromStr detail ("no '@' separator" / "invalid plugin name" /
-    // "invalid version") is now inside the InvalidValue field, which clap
-    // renders as part of the error line.
-    assert!(
-        stderr.contains("<NAME@VERSION>"),
-        "stderr should name the positional placeholder, got: {stderr}"
+        stdout.contains("no-at-sign"),
+        "output should echo the malformed argument value, got: {stdout}"
     );
     assert!(
-        stderr.contains("no `@` separator")
-            || stderr.contains("invalid plugin name")
-            || stderr.contains("invalid SemVer version"),
-        "stderr should include the FromStr failure detail, got: {stderr}"
+        stdout.contains("<NAME@VERSION>"),
+        "output should name the positional placeholder, got: {stdout}"
+    );
+    assert!(
+        stdout.contains("no `@` separator")
+            || stdout.contains("invalid plugin name")
+            || stdout.contains("invalid SemVer version"),
+        "output should include the FromStr failure detail, got: {stdout}"
     );
 }
 
@@ -238,18 +231,19 @@ fn yank_parses_underscore_name() {
     let assert = spawn_yank("my_plugin@1.0.0", &index_path, &out, &[])
         .failure()
         .code(1);
-    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).into_owned();
+    // Under piped stdout, errors render as JSON envelopes on stdout.
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
     assert!(
-        !stderr.contains("starting with a letter"),
-        "parser rejected `my_plugin` — new rule should accept it; stderr: {stderr}"
+        !stdout.contains("starting with a letter"),
+        "parser rejected `my_plugin` -- new rule should accept it; stdout: {stdout}"
     );
     assert!(
-        !stderr.contains("Windows reserved"),
-        "stderr should not flag `my_plugin` as reserved; stderr: {stderr}"
+        !stdout.contains("Windows reserved"),
+        "output should not flag `my_plugin` as reserved; stdout: {stdout}"
     );
     assert!(
-        stderr.contains("not present"),
-        "downstream failure expected (entry absent); stderr: {stderr}"
+        stdout.contains("not present"),
+        "downstream failure expected (entry absent); stdout: {stdout}"
     );
 }
 
@@ -268,7 +262,7 @@ fn yank_rejects_digit_leading_name_regression() {
     spawn_yank("7plugin@1.0.0", &index_path, &out, &[])
         .failure()
         .code(2)
-        .stderr(predicates::str::contains("starting with a letter"));
+        .stdout(predicates::str::contains("starting with a letter"));
 }
 
 #[test]
@@ -283,7 +277,7 @@ fn yank_rejects_reserved_name() {
     spawn_yank("con@1.0.0", &index_path, &out, &[])
         .failure()
         .code(2)
-        .stderr(predicates::str::contains("Windows reserved"));
+        .stdout(predicates::str::contains("Windows reserved"));
 }
 
 /// The input `--index` is byte-identical pre/post.
@@ -316,10 +310,10 @@ fn yank_rejects_out_overlapping_index_dir() {
     let assert = spawn_yank("downsampler@1.2.0", &index_path, &index_dir, &[])
         .failure()
         .code(2);
-    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).into_owned();
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
     assert!(
-        stderr.contains("S2-12"),
-        "stderr should reference S2-12 by identifier, got: {stderr}"
+        stdout.contains("S2-12"),
+        "output should reference S2-12 by identifier, got: {stdout}"
     );
     // Input index untouched.
     assert_eq!(std::fs::read_to_string(&index_path).unwrap(), SEEDED_INDEX);

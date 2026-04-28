@@ -69,7 +69,7 @@ fn package_human_failure_lists_each_diagnostic() {
 }
 
 #[test]
-fn package_json_failure_keeps_stdout_empty_and_stderr_is_one_line() {
+fn package_json_failure_emits_error_envelope_on_stdout() {
     let tmp = setup();
     let reg = tmp.path().join("reg");
     let bad = tmp.path().join("bad");
@@ -85,16 +85,21 @@ fn package_json_failure_keeps_stdout_empty_and_stderr_is_one_line() {
             "json",
         ])
         .assert()
-        .code(1)
-        .stdout(predicate::str::is_empty());
-    // `package`'s JSON failure path emits the human-readable error line
-    // on stderr — singular. Enforce one meaningful line and no JSON escape
-    // on stderr so the data-tool contract stays tight.
-    let stderr = String::from_utf8_lossy(&assert.get_output().stderr);
-    let lines: Vec<&str> = stderr.lines().filter(|l| !l.trim().is_empty()).collect();
-    assert_eq!(lines.len(), 1, "expected 1 stderr line, got: {stderr:?}");
+        .code(1);
+    // In JSON mode, errors are rendered as a JSON envelope on stdout.
+    // stderr must be empty.
+    let out = assert.get_output();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let doc: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|e| panic!("stdout must be valid JSON: {e}\n{stdout}"));
+    assert_eq!(
+        doc.get("status").and_then(|v| v.as_str()),
+        Some("error"),
+        "envelope status must be \"error\"; got:\n{stdout}"
+    );
     assert!(
-        !stderr.contains('{'),
-        "stderr should not contain JSON, got: {stderr}"
+        out.stderr.is_empty(),
+        "stderr MUST be empty in JSON-mode envelope dispatch, got: {:?}",
+        String::from_utf8_lossy(&out.stderr)
     );
 }

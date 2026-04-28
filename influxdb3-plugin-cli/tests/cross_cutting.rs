@@ -210,27 +210,31 @@ fn help_text_snapshots() {
     }
 }
 
-/// Asserts that `stderr` has exactly one non-empty line and that the
-/// clap `For more information, try '--help'.` footer is absent — the
-/// pair of conditions that define JSON-mode's collapsed error shape.
-fn assert_single_meaningful_stderr_line(stderr: &str) {
-    let meaningful: Vec<&str> = stderr.lines().filter(|l| !l.trim().is_empty()).collect();
+/// Asserts that `stdout` contains a valid JSON envelope with
+/// `"status":"error"` and that stderr is empty — the envelope-mode
+/// contract for clap parse failures in JSON mode.
+fn assert_json_error_envelope(output: &std::process::Output) {
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.is_empty(),
+        "stderr must be empty in JSON-mode envelope dispatch; got:\n{stderr}"
+    );
+    let doc: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|e| panic!("stdout must be valid JSON: {e}\n{stdout}"));
     assert_eq!(
-        meaningful.len(),
-        1,
-        "stderr must have exactly one meaningful line; got {} lines:\n{}",
-        meaningful.len(),
-        stderr
+        doc.get("status").and_then(|v| v.as_str()),
+        Some("error"),
+        "envelope status must be \"error\"; got:\n{stdout}"
     );
     assert!(
-        !meaningful[0].contains("For more information"),
-        "stderr must not include the clap help footer; got: {stderr}"
+        doc.get("error").is_some(),
+        "envelope must carry an \"error\" field; got:\n{stdout}"
     );
 }
 
-/// `--output json` usage errors must emit empty stdout and exactly one
-/// meaningful stderr line. Applies to clap parse failures as well as
-/// runtime failures.
+/// `--output json` usage errors must emit a JSON error envelope on
+/// stdout and empty stderr. Applies to clap parse failures.
 #[test]
 fn json_mode_usage_error_stderr_is_single_line_for_new() {
     let assert = Command::cargo_bin("influxdb3-plugin")
@@ -240,12 +244,7 @@ fn json_mode_usage_error_stderr_is_single_line_for_new() {
         .failure();
 
     assert_eq!(assert.get_output().status.code(), Some(2));
-    assert!(
-        assert.get_output().stdout.is_empty(),
-        "stdout must be empty on JSON-mode usage error, got: {:?}",
-        String::from_utf8_lossy(&assert.get_output().stdout)
-    );
-    assert_single_meaningful_stderr_line(&String::from_utf8_lossy(&assert.get_output().stderr));
+    assert_json_error_envelope(assert.get_output());
 }
 
 #[test]
@@ -258,7 +257,7 @@ fn ci_env_triggers_single_line_stderr_for_usage_errors() {
         .failure();
 
     assert_eq!(assert.get_output().status.code(), Some(2));
-    assert_single_meaningful_stderr_line(&String::from_utf8_lossy(&assert.get_output().stderr));
+    assert_json_error_envelope(assert.get_output());
 }
 
 /// validate with an unknown flag — confirms main-level interception
@@ -270,7 +269,7 @@ fn json_mode_validate_unknown_flag_is_single_line() {
         .args(["validate", "--nope", "--output", "json"])
         .assert()
         .failure();
-    assert_single_meaningful_stderr_line(&String::from_utf8_lossy(&assert.get_output().stderr));
+    assert_json_error_envelope(assert.get_output());
 }
 
 /// package with no positional — confirms the collapse covers the
@@ -282,7 +281,7 @@ fn json_mode_package_missing_required_is_single_line() {
         .args(["package", "--output", "json"])
         .assert()
         .failure();
-    assert_single_meaningful_stderr_line(&String::from_utf8_lossy(&assert.get_output().stderr));
+    assert_json_error_envelope(assert.get_output());
 }
 
 /// Human mode must keep clap's full multi-line diagnostic — including the

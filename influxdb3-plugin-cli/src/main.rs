@@ -41,52 +41,80 @@ async fn main() -> std::process::ExitCode {
     };
     match config.run().await {
         Ok(()) => std::process::ExitCode::SUCCESS,
-        Err(e) => {
-            use influxdb3_plugin_cli::__private::CliErrorKind;
-            match CliErrorKind::of(&e) {
-                CliErrorKind::Silent => {
-                    // stdout already carried the signal (e.g. validate's
-                    // diagnostics doc in JSON mode). Do not pollute stderr.
-                    std::process::ExitCode::from(1)
-                }
-                CliErrorKind::Usage => {
-                    eprintln!("{e:#}");
-                    std::process::ExitCode::from(2)
-                }
-                CliErrorKind::Runtime => {
-                    eprintln!("{e:#}");
-                    std::process::ExitCode::from(1)
-                }
-            }
-        }
+        Err(e) => render_error_and_exit(e),
     }
 }
 
-/// Renders a clap error, honoring JSON-mode single-line-stderr discipline
-/// when JSON mode is in effect.
-///
-/// `--help` / `--version` branches are printed on stdout and exit 0
-/// (matching `Parser::parse`'s default). Error branches are printed on
-/// stderr: full multi-line rendering in human mode, or one non-empty,
-/// footer-stripped line in JSON mode.
-///
-/// The `new list`-hint on unknown-template errors is preserved in human
-/// mode (on a second stderr line) but suppressed in JSON mode — a second
-/// line would violate the single-meaningful-line contract, and JSON-mode
-/// consumers key off the error discriminator rather than handholding.
+fn render_error_and_exit(e: anyhow::Error) -> std::process::ExitCode {
+    use influxdb3_plugin_cli::__private::{CliError, CliErrorKind};
+
+    let mode_is_json = json_mode_active();
+    let kind = CliErrorKind::of(&e);
+
+    if mode_is_json {
+        use influxdb3_plugin_cli::__private::write_envelope_error;
+        let mut stdout = std::io::stdout().lock();
+        let je = match CliError::json_error_of(&e) {
+            Some(typed) => {
+                // "cli::output_already_written" signals that the command has
+                // already written its output to stdout (e.g. validate's
+                // diagnostics document). Skip writing another envelope.
+                if typed.code == "cli::output_already_written" {
+                    return exit_code(kind);
+                }
+                typed
+            }
+            None => {
+                let fallback = fallback_json_error(&e);
+                let _ = write_envelope_error(&mut stdout, &fallback);
+                return exit_code(kind);
+            }
+        };
+        let _ = write_envelope_error(&mut stdout, je);
+    } else {
+        // Human mode: use anyhow's Display chain for now.
+        // Chunk 4 adds render_human_error for structured JsonError display.
+        eprintln!("{e:#}");
+    }
+
+    exit_code(kind)
+}
+
+fn exit_code(kind: influxdb3_plugin_cli::__private::CliErrorKind) -> std::process::ExitCode {
+    use influxdb3_plugin_cli::__private::CliErrorKind;
+    match kind {
+        CliErrorKind::Usage => std::process::ExitCode::from(2),
+        CliErrorKind::Runtime => std::process::ExitCode::from(1),
+    }
+}
+
+fn fallback_json_error(e: &anyhow::Error) -> influxdb3_plugin_cli::__private::JsonError {
+    use influxdb3_plugin_cli::__private::JsonError;
+    let causes: Vec<String> = e.chain().skip(1).map(|c| c.to_string()).collect();
+    JsonError {
+        code: "cli::unknown".into(),
+        message: format!("{e:#}"),
+        field: None,
+        details: None,
+        diagnostics: vec![],
+        cause: causes,
+    }
+}
+
 fn handle_clap_error(e: clap::Error) -> std::process::ExitCode {
-    use clap::error::ErrorKind;
+    use influxdb3_plugin_cli::__private::{json_error_from_clap, write_envelope_error};
     if !e.use_stderr() {
-        // `--help` / `--version` paths.
         let _ = e.print();
         return std::process::ExitCode::from(0);
     }
-    let is_unknown_new_template = e.kind() == ErrorKind::InvalidSubcommand
-        && std::env::args().nth(1).as_deref() == Some("new");
     if json_mode_active() {
-        eprintln!("{}", collapse_clap_error(&e));
+        let je = json_error_from_clap(&e);
+        let mut stdout = std::io::stdout().lock();
+        let _ = write_envelope_error(&mut stdout, &je);
     } else {
         let _ = e.print();
+        let is_unknown_new_template = e.kind() == clap::error::ErrorKind::InvalidSubcommand
+            && std::env::args().nth(1).as_deref() == Some("new");
         if is_unknown_new_template {
             eprintln!("Run `influxdb3-plugin new list` to see available templates.");
         }
@@ -94,15 +122,6 @@ fn handle_clap_error(e: clap::Error) -> std::process::ExitCode {
     std::process::ExitCode::from(2)
 }
 
-/// Mirrors `resolve_output_mode`'s precedence for the case where
-/// `PluginConfig` isn't yet constructed (clap parse failed).
-///
-/// 1. Explicit `--output json` in argv wins.
-/// 2. Explicit `--output <other>` in argv forces non-JSON (lets users opt
-///    out of the collapsed rendering on demand).
-/// 3. `!isatty(stdout)` → JSON.
-/// 4. `CI=true|1` → JSON.
-/// 5. Otherwise → human.
 fn json_mode_active() -> bool {
     let mut iter = std::env::args().skip(1);
     while let Some(a) = iter.next() {
@@ -120,25 +139,4 @@ fn json_mode_active() -> bool {
         return true;
     }
     matches!(std::env::var("CI").as_deref(), Ok("true" | "1"))
-}
-
-/// Collapses clap's multi-line error rendering into one meaningful line.
-///
-/// Strips blank lines and the `For more information, try '--help'.`
-/// footer (uninteresting in JSON mode, always the last line). Joins the
-/// remaining lines with single spaces.
-fn collapse_clap_error(err: &clap::Error) -> String {
-    let rendered = err.render().to_string();
-    let parts: Vec<&str> = rendered
-        .lines()
-        .map(str::trim)
-        .filter(|l| !l.is_empty())
-        .filter(|l| !l.starts_with("For more information"))
-        .collect();
-    if parts.is_empty() {
-        // Defensive: clap always renders at least `error: ...`; if it
-        // somehow returns nothing, fall back to `err`'s Display.
-        return err.to_string();
-    }
-    parts.join(" ")
 }

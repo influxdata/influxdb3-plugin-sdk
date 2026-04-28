@@ -132,21 +132,23 @@ fn package_rejects_duplicate_name_version() {
         .failure()
         .code(1);
 
-    // Payload contract: stderr must enumerate the existing versions of
+    // Payload contract: output must enumerate the existing versions of
     // `downsampler` AND direct the author to the actionable remediation.
-    // The unrelated `other@9.9.9` must NOT appear.
-    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).into_owned();
+    // The unrelated `other@9.9.9` must NOT appear. Under piped stdout,
+    // errors render as JSON envelopes on stdout; version strings appear
+    // inside the JSON message field with escaped quotes.
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
     assert!(
-        stderr.contains("\"1.0.0\"") && stderr.contains("\"1.2.0\""),
-        "stderr must list every existing version of `downsampler` (S2-2), got: {stderr}"
+        stdout.contains("1.0.0") && stdout.contains("1.2.0"),
+        "output must list every existing version of `downsampler` (S2-2), got: {stdout}"
     );
     assert!(
-        !stderr.contains("9.9.9"),
-        "stderr must NOT list versions of unrelated plugins, got: {stderr}"
+        !stdout.contains("9.9.9"),
+        "output must NOT list versions of unrelated plugins, got: {stdout}"
     );
     assert!(
-        stderr.contains("yank"),
-        "stderr must direct the author to `yank` per S2-2, got: {stderr}"
+        stdout.contains("yank"),
+        "output must direct the author to `yank` per S2-2, got: {stdout}"
     );
 
     // No artifact / derived index written.
@@ -221,22 +223,22 @@ fn package_rejects_hyphen_underscore_collision() {
     let assert = spawn_package(&plugin_dir, &index_path, &out_dir, &[])
         .failure()
         .code(1);
-    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).into_owned();
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
     assert!(
-        stderr.contains("canonical collision"),
-        "stderr must name the collision class, got: {stderr}"
+        stdout.contains("canonical collision"),
+        "output must name the collision class, got: {stdout}"
     );
     assert!(
-        stderr.contains("\"my_plugin\""),
-        "stderr must name the rejected spelling, got: {stderr}"
+        stdout.contains("my_plugin"),
+        "output must name the rejected spelling, got: {stdout}"
     );
     assert!(
-        stderr.contains("\"my-plugin\""),
-        "stderr must name the existing spelling, got: {stderr}"
+        stdout.contains("my-plugin"),
+        "output must name the existing spelling, got: {stdout}"
     );
     assert!(
-        stderr.contains("Rename"),
-        "stderr must direct the author to rename, got: {stderr}"
+        stdout.contains("Rename"),
+        "output must direct the author to rename, got: {stdout}"
     );
 
     assert!(!out_dir.join("my_plugin-1.0.0.tar.gz").exists());
@@ -257,22 +259,22 @@ fn package_rejects_case_collision() {
     let assert = spawn_package(&plugin_dir, &index_path, &out_dir, &[])
         .failure()
         .code(1);
-    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).into_owned();
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
     assert!(
-        stderr.contains("canonical collision"),
-        "stderr must name the collision class, got: {stderr}"
+        stdout.contains("canonical collision"),
+        "output must name the collision class, got: {stdout}"
     );
     assert!(
-        stderr.contains("\"MyPlugin\""),
-        "stderr must name the rejected spelling, got: {stderr}"
+        stdout.contains("MyPlugin"),
+        "output must name the rejected spelling, got: {stdout}"
     );
     assert!(
-        stderr.contains("\"myplugin\""),
-        "stderr must name the existing spelling, got: {stderr}"
+        stdout.contains("myplugin"),
+        "output must name the existing spelling, got: {stdout}"
     );
     assert!(
-        stderr.contains("Rename"),
-        "stderr must direct the author to rename, got: {stderr}"
+        stdout.contains("Rename"),
+        "output must direct the author to rename, got: {stdout}"
     );
 
     assert!(!out_dir.join("MyPlugin-1.0.0.tar.gz").exists());
@@ -330,10 +332,10 @@ fn package_rejects_out_overlapping_index_dir(#[case] mode: &str) {
     let assert = spawn_package(&plugin_dir, &index_path, &out_dir, &[])
         .failure()
         .code(2);
-    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).into_owned();
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
     assert!(
-        stderr.contains("S2-12"),
-        "stderr should reference the S2-12 contract by identifier, got: {stderr}"
+        stdout.contains("S2-12"),
+        "output should reference the S2-12 contract by identifier, got: {stdout}"
     );
 
     // Critical corollary: the input index file is unchanged.
@@ -362,10 +364,10 @@ fn package_rejects_out_via_symlink_to_index_dir() {
     let assert = spawn_package(&plugin_dir, &index_path, &out_link, &[])
         .failure()
         .code(2);
-    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).into_owned();
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
     assert!(
-        stderr.contains("S2-12"),
-        "symlink rejection should reference S2-12, got: {stderr}"
+        stdout.contains("S2-12"),
+        "symlink rejection should reference S2-12, got: {stdout}"
     );
     assert_eq!(
         std::fs::read_to_string(&index_path).unwrap(),
@@ -374,13 +376,13 @@ fn package_rejects_out_via_symlink_to_index_dir() {
     );
 }
 
-/// JSON-mode failure path: stdout MUST be empty (data-tool idiom);
-/// stderr carries the human error.
+/// JSON-mode failure path: errors render as JSON envelope on stdout;
+/// stderr empty.
 #[test]
-fn package_failure_in_json_mode_keeps_stdout_empty() {
+fn package_failure_in_json_mode_emits_error_envelope() {
     let td = tempfile::tempdir().unwrap();
     let plugin_dir = td.path().join("p");
-    // Plugin dir intentionally missing → MissingRequiredFile failure.
+    // Plugin dir intentionally missing -> MissingRequiredFile failure.
     std::fs::create_dir_all(&plugin_dir).unwrap();
     let index_dir = td.path().join("reg");
     std::fs::create_dir_all(&index_dir).unwrap();
@@ -392,14 +394,18 @@ fn package_failure_in_json_mode_keeps_stdout_empty() {
         .failure()
         .code(1);
     let out = assert.get_output();
-    assert!(
-        out.stdout.is_empty(),
-        "stdout MUST be empty on data-tool failure (S2-15), got {:?}",
-        String::from_utf8_lossy(&out.stdout)
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let doc: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|e| panic!("stdout must be valid JSON: {e}\n{stdout}"));
+    assert_eq!(
+        doc.get("status").and_then(|v| v.as_str()),
+        Some("error"),
+        "envelope status must be \"error\"; got:\n{stdout}"
     );
     assert!(
-        !out.stderr.is_empty(),
-        "stderr MUST carry the human error on failure (S2-15)"
+        out.stderr.is_empty(),
+        "stderr MUST be empty in JSON-mode envelope dispatch, got: {:?}",
+        String::from_utf8_lossy(&out.stderr)
     );
 }
 
