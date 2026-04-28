@@ -95,3 +95,128 @@ pub(crate) struct NewOutput {
     /// the SDK scaffold's documented write order.
     pub files_written: Vec<PathBuf>,
 }
+
+/// Universal `--output json` envelope. Every command emits exactly one
+/// document of this shape on stdout. `R` is the per-command success
+/// payload type; failure paths use the `Error` variant whose payload type
+/// is fixed (`JsonError`).
+///
+/// Serialized form:
+/// - `Envelope::Ok { result }`  → `{"status":"ok","result":{...}}`
+/// - `Envelope::Error { error }` → `{"status":"error","error":{...}}`
+///
+/// Per spec § 4.1 / § 6.1.
+#[derive(Debug, Serialize)]
+#[serde(tag = "status", rename_all = "lowercase")]
+pub(crate) enum Envelope<R: Serialize> {
+    Ok { result: R },
+    Error { error: JsonError },
+}
+
+/// Structured error payload for `Envelope::Error`. Carries the stable
+/// `code`, human `message`, and optional structured fields per spec § 4.3
+/// and § 4.5.1.
+#[derive(Debug, Serialize)]
+pub(crate) struct JsonError {
+    /// Stable namespaced identifier from a closed enum (spec § 4.5).
+    pub code: String,
+    /// Source error's `Display` text, English.
+    pub message: String,
+    /// Dotted-path location, filename, or target identifier when applicable.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub field: Option<String>,
+    /// Variant-specific structured payload per spec § 4.5.1.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub details: Option<serde_json::Value>,
+    /// Sub-error array used by `validate::failed` and the `<command>::index_parse_failed` codes.
+    /// Sub-elements are themselves `JsonError` but never carry their own `diagnostics` or `cause`.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub diagnostics: Vec<JsonError>,
+    /// `Error::source()` chain rendered as Display strings, outermost-first
+    /// below the top-level message.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub cause: Vec<String>,
+}
+
+/// Empty named-field struct used as the success result for `validate`.
+/// Serializes as `{}` (empty object). A unit struct or `()` would
+/// serialize as `null`, which the envelope contract forbids.
+#[derive(Debug, Serialize)]
+pub(crate) struct ValidateResult {}
+
+#[cfg(test)]
+mod envelope_tests {
+    use super::*;
+    use serde::Serialize;
+
+    #[derive(Serialize)]
+    struct Demo { a: u32 }
+
+    #[test]
+    fn json_envelope_ok_serializes_shape() {
+        let env = Envelope::Ok { result: Demo { a: 7 } };
+        let s = serde_json::to_string(&env).unwrap();
+        assert_eq!(s, r#"{"status":"ok","result":{"a":7}}"#);
+    }
+
+    #[test]
+    fn json_envelope_error_serializes_shape() {
+        let env: Envelope<()> = Envelope::Error {
+            error: JsonError {
+                code: "x::y".into(),
+                message: "msg".into(),
+                field: None,
+                details: None,
+                diagnostics: vec![],
+                cause: vec![],
+            },
+        };
+        let s = serde_json::to_string(&env).unwrap();
+        assert_eq!(s, r#"{"status":"error","error":{"code":"x::y","message":"msg"}}"#);
+    }
+
+    #[test]
+    fn json_error_omits_empty_optional_fields() {
+        let e = JsonError {
+            code: "c".into(),
+            message: "m".into(),
+            field: None,
+            details: None,
+            diagnostics: vec![],
+            cause: vec![],
+        };
+        let s = serde_json::to_string(&e).unwrap();
+        assert_eq!(s, r#"{"code":"c","message":"m"}"#);
+    }
+
+    #[test]
+    fn json_error_keeps_non_empty_fields() {
+        let e = JsonError {
+            code: "c".into(),
+            message: "m".into(),
+            field: Some("f".into()),
+            details: Some(serde_json::json!({"k": "v"})),
+            diagnostics: vec![JsonError {
+                code: "sub::a".into(),
+                message: "sm".into(),
+                field: None,
+                details: None,
+                diagnostics: vec![],
+                cause: vec![],
+            }],
+            cause: vec!["root cause".into()],
+        };
+        let s = serde_json::to_string(&e).unwrap();
+        assert!(s.contains(r#""field":"f""#));
+        assert!(s.contains(r#""details":{"k":"v"}"#));
+        assert!(s.contains(r#""diagnostics":[{"code":"sub::a","message":"sm"}]"#));
+        assert!(s.contains(r#""cause":["root cause"]"#));
+    }
+
+    #[test]
+    fn validate_success_result_is_empty_object() {
+        let env = Envelope::Ok { result: ValidateResult {} };
+        let s = serde_json::to_string(&env).unwrap();
+        assert_eq!(s, r#"{"status":"ok","result":{}}"#);
+    }
+}
