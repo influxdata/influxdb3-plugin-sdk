@@ -123,7 +123,7 @@ fn run_plugin_with_env(
     if let Some(raw) = database_version.as_deref()
         && let Err(e) = semver::VersionReq::parse(raw)
     {
-        return Err(crate::cli_error::CliError::usage(anyhow::anyhow!(
+        return Err(crate::cli_error::CliError::usage_msg(format!(
             "invalid --database-version {raw:?}: {e}"
         )));
     }
@@ -168,7 +168,7 @@ fn run_registry_with_env(
     if let Some(raw) = artifacts_url.as_deref()
         && let Err(e) = ArtifactsUrl::try_new(raw)
     {
-        return Err(crate::cli_error::CliError::usage(anyhow::anyhow!(
+        return Err(crate::cli_error::CliError::usage_msg(format!(
             "invalid --artifacts-url {raw:?}: {e}"
         )));
     }
@@ -214,12 +214,12 @@ fn resolve_plugin_name(dir: &Path, name_arg: Option<String>) -> anyhow::Result<S
     match PluginName::from_str(&candidate) {
         Ok(_) => Ok(candidate),
         Err(SchemaError::ReservedPluginName { .. }) if source_was_explicit => {
-            Err(crate::cli_error::CliError::usage(anyhow::anyhow!(
+            Err(crate::cli_error::CliError::usage_msg(format!(
                 "--name {candidate:?} is a Windows reserved device name \
                  (case-insensitive); pick a different name"
             )))
         }
-        Err(_) if source_was_explicit => Err(crate::cli_error::CliError::usage(anyhow::anyhow!(
+        Err(_) if source_was_explicit => Err(crate::cli_error::CliError::usage_msg(format!(
             "--name {candidate:?} is not a valid plugin name; {PLUGIN_NAME_RULE}"
         ))),
         Err(SchemaError::ReservedPluginName { .. }) => Err(anyhow::anyhow!(
@@ -281,7 +281,7 @@ fn check_sibling_canonical_collision(
             continue;
         };
         if sibling_name.canonical() == target_canonical && sibling_name.as_str() != resolved_name {
-            return Err(crate::cli_error::CliError::usage(anyhow::anyhow!(
+            return Err(crate::cli_error::CliError::usage_msg(format!(
                 "plugin name {resolved_name:?} canonically collides with existing \
                  sibling directory {basename:?} (both normalize to {target_canonical:?}). \
                  Rename the new plugin or use the existing spelling."

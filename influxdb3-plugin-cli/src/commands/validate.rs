@@ -71,7 +71,9 @@ fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
     match mode {
         // JSON mode: stdout already carries the diagnostics document, so
         // main.rs must keep stderr silent.
-        OutputMode::Json => Err(crate::cli_error::CliError::silent(inner)),
+        OutputMode::Json => Err(crate::cli_error::CliError::runtime_silent(
+            inner.to_string(),
+        )),
         // Human mode: stderr carries the summary line.
         OutputMode::Human => Err(inner),
     }

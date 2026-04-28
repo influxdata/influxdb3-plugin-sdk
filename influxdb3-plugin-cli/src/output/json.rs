@@ -133,7 +133,7 @@ pub(crate) enum Envelope<R: Serialize> {
 /// `code`, human `message`, and optional structured fields per spec § 4.3
 /// and § 4.5.1.
 #[derive(Debug, Serialize)]
-pub(crate) struct JsonError {
+pub struct JsonError {
     /// Stable namespaced identifier from a closed enum (spec § 4.5).
     pub code: String,
     /// Source error's `Display` text, English.
@@ -173,7 +173,7 @@ pub(crate) fn write_envelope_ok<W: std::io::Write, R: Serialize>(
 
 /// Writes `Envelope::Error { error }` as compact JSON with a single
 /// trailing `\n`. Used by `main.rs`'s error dispatch.
-pub(crate) fn write_envelope_error<W: std::io::Write>(
+pub fn write_envelope_error<W: std::io::Write>(
     writer: &mut W,
     error: &JsonError,
 ) -> std::io::Result<()> {
