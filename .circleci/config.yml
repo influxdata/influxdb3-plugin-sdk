@@ -136,10 +136,16 @@ jobs:
                 fi
             done
       - run:
-          name: Install gcloud
+          name: Install gcloud (direct tarball)
+          # The interactive https://sdk.cloud.google.com installer hung
+          # for >10 min on the self-hosted runner. Direct tarball is
+          # ~30s and doesn't need an interactive shell.
+          no_output_timeout: 5m
           command: |
-            curl -sSL https://sdk.cloud.google.com | bash >/dev/null
-            echo 'source $HOME/google-cloud-sdk/path.bash.inc' >> "$BASH_ENV"
+            curl -fsSL \
+              https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-linux-x86_64.tar.gz \
+              | tar xz -C $HOME
+            echo 'export PATH=$HOME/google-cloud-sdk/bin:$PATH' >> "$BASH_ENV"
             source "$BASH_ENV"
             gcloud --version | head -1 && echo "GCLOUD_INSTALL_OK"
       - run:
