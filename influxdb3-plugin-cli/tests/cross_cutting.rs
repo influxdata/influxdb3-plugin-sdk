@@ -299,3 +299,31 @@ fn explicit_human_mode_preserves_multi_line_clap_output() {
         "human mode must preserve clap's full diagnostic (with help footer); got:\n{stderr}"
     );
 }
+
+/// Spec § 4.7 safety guard: no representative production path should emit
+/// `cli::unknown`. That code is the fallback for plain `anyhow::Error`
+/// escaping the typed `CliError` wiring. If this fires, a call site is
+/// returning a bare `anyhow!` instead of `CliError::runtime(JsonError)`.
+#[test]
+fn no_production_path_emits_cli_unknown() {
+    let cases: &[&[&str]] = &[
+        // Clap-detected usage failures (missing required args)
+        &["package"],
+        &["yank"],
+        // Runtime failure from a missing input
+        &["validate", "/path/that/definitely/does/not/exist/plugin"],
+        // Success: new list
+        &["new", "list", "--output", "json"],
+    ];
+    for argv in cases {
+        let mut cmd = Command::cargo_bin("influxdb3-plugin").unwrap();
+        cmd.args(*argv).env("CI", "true");
+        let out = cmd.output().unwrap();
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            !stdout.contains(r#""cli::unknown""#),
+            "argv {argv:?} produced a cli::unknown envelope; \
+             a typed CliError is missing somewhere. stdout:\n{stdout}"
+        );
+    }
+}
