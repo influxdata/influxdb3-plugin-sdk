@@ -76,9 +76,14 @@ fn new_process_writes_happy_path_json_mode() {
 
     let stdout = std::str::from_utf8(&out.stdout).unwrap();
     let mut payload: serde_json::Value = serde_json::from_str(stdout).expect("stdout is JSON");
-    // Strip the absolute path before snapshotting so the snapshot is
-    // machine-independent.
-    payload
+    assert_eq!(
+        payload.get("status").and_then(|v| v.as_str()),
+        Some("ok"),
+        "envelope status must be \"ok\"; got:\n{stdout}"
+    );
+    // Strip the absolute path inside `result` before snapshotting so the
+    // snapshot is machine-independent.
+    payload["result"]
         .as_object_mut()
         .unwrap()
         .insert("target_dir".into(), "<TMPDIR>/downsampler".into());
@@ -95,8 +100,13 @@ fn snapshot_new_template(template: &str, target: &str, snapshot_name: &str) {
     let assert = spawn_new(&target_path, &[template, "--output", "json"]).success();
     let stdout = std::str::from_utf8(&assert.get_output().stdout).unwrap();
     let mut payload: serde_json::Value = serde_json::from_str(stdout).expect("stdout is JSON");
+    assert_eq!(
+        payload.get("status").and_then(|v| v.as_str()),
+        Some("ok"),
+        "envelope status must be \"ok\"; got:\n{stdout}"
+    );
     let placeholder = format!("<TMPDIR>/{target}");
-    payload
+    payload["result"]
         .as_object_mut()
         .unwrap()
         .insert("target_dir".into(), placeholder.into());
@@ -251,10 +261,12 @@ fn new_errors_on_pre_existing_file() {
     assert!(!target.join("__init__.py").exists());
 }
 
-/// Invalid path basename → exit 1 with stderr instructing `--name`.
+/// Invalid path basename -> exit 1 with error mentioning `--name`.
 /// (clap's exit-2 path applies only to argument-parse failures; an
 /// invalid basename is a runtime-validation failure surfaced by the
 /// command body.)
+/// Under piped stdout (assert_cmd default), errors render as JSON
+/// envelopes on stdout.
 #[test]
 fn new_rejects_invalid_basename_without_name_override() {
     let td = tempfile::tempdir().unwrap();
@@ -262,15 +274,16 @@ fn new_rejects_invalid_basename_without_name_override() {
 
     let assert = spawn_new(&target, &["process_writes"]).failure().code(1);
 
-    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
     assert!(
-        stderr.contains("--name"),
-        "stderr should hint at --name, got: {stderr}"
+        stdout.contains("--name"),
+        "output should hint at --name, got: {stdout}"
     );
     assert!(!target.join("manifest.toml").exists());
 }
 
 /// Explicit `--name <bad>` also rejected, with a different message.
+/// Under piped stdout, errors render as JSON envelopes on stdout.
 #[test]
 fn new_rejects_invalid_explicit_name() {
     let td = tempfile::tempdir().unwrap();
@@ -280,10 +293,10 @@ fn new_rejects_invalid_explicit_name() {
         .failure()
         .code(2);
 
-    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
     assert!(
-        stderr.contains("1bad"),
-        "stderr should name the bad value, got: {stderr}"
+        stdout.contains("1bad"),
+        "output should name the bad value, got: {stdout}"
     );
     assert!(!target.join("manifest.toml").exists());
 }
@@ -302,7 +315,7 @@ fn new_rejects_artifacts_url_on_plugin_template() {
     )
     .failure()
     .code(2)
-    .stderr(predicates::str::contains("--artifacts-url"));
+    .stdout(predicates::str::contains("--artifacts-url"));
 }
 
 #[test]
@@ -313,7 +326,7 @@ fn new_rejects_name_on_registry_template() {
     spawn_new(&target, &["registry", "--name", "x"])
         .failure()
         .code(2)
-        .stderr(predicates::str::contains("--name"));
+        .stdout(predicates::str::contains("--name"));
 }
 
 /// Unknown template → clap parse error → exit code 2 (usage error), and
@@ -328,13 +341,13 @@ fn new_unknown_template_exits_two() {
         .assert()
         .failure()
         .code(2)
-        .stderr(predicates::str::contains("garbage_template"))
-        .stderr(predicates::str::contains("new list"));
+        .stdout(predicates::str::contains("garbage_template"));
 }
 
-/// Data-tool failure path: stdout empty, error on stderr.
+/// Data-tool failure path in JSON mode: error envelope on stdout,
+/// stderr empty.
 #[test]
-fn new_failure_in_json_mode_keeps_stdout_empty() {
+fn new_failure_in_json_mode_emits_error_envelope() {
     let td = tempfile::tempdir().unwrap();
     let target = td.path().join("p");
     std::fs::create_dir_all(&target).unwrap();
@@ -345,14 +358,18 @@ fn new_failure_in_json_mode_keeps_stdout_empty() {
         .code(1);
 
     let out = assert.get_output();
-    assert!(
-        out.stdout.is_empty(),
-        "stdout MUST be empty on data-tool failure (S2-15), got: {:?}",
-        String::from_utf8_lossy(&out.stdout)
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let doc: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|e| panic!("stdout must be valid JSON: {e}\n{stdout}"));
+    assert_eq!(
+        doc.get("status").and_then(|v| v.as_str()),
+        Some("error"),
+        "envelope status must be \"error\"; got:\n{stdout}"
     );
     assert!(
-        !out.stderr.is_empty(),
-        "stderr MUST carry the human-readable error (S2-15)"
+        out.stderr.is_empty(),
+        "stderr MUST be empty in JSON-mode envelope dispatch, got: {:?}",
+        String::from_utf8_lossy(&out.stderr)
     );
 }
 
@@ -393,9 +410,7 @@ fn new_conflict_error_mentions_path_once() {
         "stderr should mention the conflicting path exactly once; was:\n{stderr}"
     );
 
-    // After the Chunk 6 polish, "already exists" should appear exactly
-    // once in the rendered error chain (anyhow's source-walk plus
-    // `#[source]` no longer duplicates the inner io::Error's message).
+    // The error chain should not duplicate "already exists".
     let phrase_occurrences = stderr.matches("already exists").count();
     assert_eq!(
         phrase_occurrences, 1,
@@ -452,6 +467,11 @@ fn new_list_json_mode_is_stable_schema() {
 
     let stdout = std::str::from_utf8(&out.stdout).unwrap();
     let payload: serde_json::Value = serde_json::from_str(stdout).expect("stdout is JSON");
+    assert_eq!(
+        payload.get("status").and_then(|v| v.as_str()),
+        Some("ok"),
+        "envelope status must be \"ok\"; got:\n{stdout}"
+    );
     insta::assert_json_snapshot!("new_list_json", payload);
 }
 
@@ -596,11 +616,9 @@ fn new_registry_with_force_overwrites_index() {
     assert!(raw.contains("https://x.example/"), "index: {raw}");
 }
 
-// -----------------------------------------------------------------------
 // PluginName rule coverage — accept + reject paths under the new rule
 // (`[a-zA-Z][a-zA-Z0-9_-]*`, case-preserving, rejects Windows reserved
 // device names).
-// -----------------------------------------------------------------------
 
 #[test]
 fn new_accepts_underscore_name_via_flag() {
@@ -645,7 +663,7 @@ fn new_rejects_digit_leading_name_regression() {
     // reformats of the error copy.
     spawn_new(td.path(), &["process_writes", "--name", "7plugin"])
         .code(2)
-        .stderr(predicates::str::contains("starting with a letter"));
+        .stdout(predicates::str::contains("starting with a letter"));
 }
 
 #[test]
@@ -653,7 +671,7 @@ fn new_rejects_reserved_device_name() {
     let td = tempfile::tempdir().unwrap();
     spawn_new(td.path(), &["process_writes", "--name", "con"])
         .code(2)
-        .stderr(predicates::str::contains("Windows reserved"));
+        .stdout(predicates::str::contains("Windows reserved"));
 }
 
 #[test]
@@ -661,7 +679,7 @@ fn new_rejects_reserved_device_name_case_insensitive() {
     let td = tempfile::tempdir().unwrap();
     spawn_new(td.path(), &["process_writes", "--name", "CON"])
         .code(2)
-        .stderr(predicates::str::contains("Windows reserved"));
+        .stdout(predicates::str::contains("Windows reserved"));
 }
 
 /// Basename-derived invalid name surfaces as a runtime failure (exit 1,
@@ -673,7 +691,7 @@ fn new_rejects_invalid_basename_with_actionable_message() {
     let dir = td.path().join("7plugin");
     spawn_new(&dir, &["process_writes"])
         .code(1)
-        .stderr(predicates::str::contains("pass --name"));
+        .stdout(predicates::str::contains("pass --name"));
 }
 
 #[test]
@@ -682,7 +700,7 @@ fn new_rejects_reserved_basename_with_actionable_message() {
     let dir = td.path().join("con");
     spawn_new(&dir, &["process_writes"])
         .code(1)
-        .stderr(predicates::str::contains("pass --name"));
+        .stdout(predicates::str::contains("pass --name"));
 }
 
 #[test]
@@ -720,7 +738,7 @@ fn new_list_rejects_force_flag() {
         .assert()
         .failure()
         .code(2)
-        .stderr(predicates::str::contains("--force"));
+        .stdout(predicates::str::contains("--force"));
 }
 
 /// Discovery regression guard: a first-time user running `new --help`
@@ -805,10 +823,10 @@ fn new_plugin_omitted_path_with_invalid_cwd_basename_errors_helpfully() {
         .failure()
         .code(1);
 
-    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
     assert!(
-        stderr.contains("--name"),
-        "stderr should hint at --name when cwd basename is invalid; got: {stderr}"
+        stdout.contains("--name"),
+        "output should hint at --name when cwd basename is invalid; got: {stdout}"
     );
     assert!(!working.join("manifest.toml").exists());
 }
@@ -857,10 +875,10 @@ fn new_plugin_rejects_invalid_database_version() {
     .failure()
     .code(2);
 
-    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
     assert!(
-        stderr.contains("not-a-range"),
-        "stderr should surface the rejected value verbatim; got: {stderr}"
+        stdout.contains("not-a-range"),
+        "output should surface the rejected value verbatim; got: {stdout}"
     );
     assert!(!target.join("manifest.toml").exists());
     assert!(!target.join("__init__.py").exists());
@@ -884,10 +902,10 @@ fn new_registry_rejects_unsupported_artifacts_url_scheme() {
             .failure()
             .code(2);
 
-        let stderr = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
+        let stdout = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
         assert!(
-            stderr.contains(bad),
-            "stderr should surface the rejected value verbatim for {bad:?}; got: {stderr}"
+            stdout.contains(bad),
+            "output should surface the rejected value verbatim for {bad:?}; got: {stdout}"
         );
         assert!(
             !target.join("index.json").exists(),
@@ -907,14 +925,14 @@ fn new_rejects_sibling_canonical_collision_hyphen_underscore() {
 
     let assert = spawn_new(&target, &["process_writes"]).failure().code(2);
 
-    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
     assert!(
-        stderr.contains("my-plugin"),
-        "stderr should name requested: {stderr}"
+        stdout.contains("my-plugin"),
+        "output should name requested: {stdout}"
     );
     assert!(
-        stderr.contains("my_plugin"),
-        "stderr should name existing sibling: {stderr}"
+        stdout.contains("my_plugin"),
+        "output should name existing sibling: {stdout}"
     );
     assert!(
         !target.exists(),
@@ -932,9 +950,9 @@ fn new_rejects_sibling_canonical_collision_case_and_separator() {
     let target = td.path().join("my_plugin");
 
     let assert = spawn_new(&target, &["process_writes"]).failure().code(2);
-    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
-    assert!(stderr.contains("my_plugin"), "stderr: {stderr}");
-    assert!(stderr.contains("My-Plugin"), "stderr: {stderr}");
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    assert!(stdout.contains("my_plugin"), "output: {stdout}");
+    assert!(stdout.contains("My-Plugin"), "output: {stdout}");
     assert!(!target.exists());
 }
 
@@ -977,14 +995,14 @@ fn new_sibling_check_uses_resolved_name_not_basename() {
         .failure()
         .code(2);
 
-    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
     assert!(
-        stderr.contains("my-plugin"),
-        "stderr cites resolved name: {stderr}"
+        stdout.contains("my-plugin"),
+        "output cites resolved name: {stdout}"
     );
     assert!(
-        !stderr.contains("unrelated-dir"),
-        "stderr must not cite the target basename: {stderr}"
+        !stdout.contains("unrelated-dir"),
+        "output must not cite the target basename: {stdout}"
     );
     assert!(!target.exists());
 }
@@ -1002,10 +1020,10 @@ fn new_force_does_not_bypass_sibling_canonical_collision() {
     let assert = spawn_new(&target, &["process_writes", "--force"])
         .failure()
         .code(2);
-    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
     assert!(
-        stderr.contains("canonically collides"),
-        "must reject with the canonical-collision error, not some other exit-2 path: {stderr}"
+        stdout.contains("canonically collides"),
+        "must reject with the canonical-collision error, not some other exit-2 path: {stdout}"
     );
     assert!(!target.exists(), "--force must not bypass canonical check");
 }
@@ -1068,16 +1086,19 @@ fn new_template_unknown_flag_usage_line_matches_help() {
             .assert()
             .failure()
             .code(2);
-        let stderr = String::from_utf8_lossy(&assertion.get_output().stderr).to_string();
+        // Under piped stdout (assert_cmd default), clap errors are rendered
+        // as JSON envelopes on stdout. The usage line is embedded in the
+        // envelope's message field.
+        let stdout = String::from_utf8_lossy(&assertion.get_output().stdout).to_string();
         let expected = format!("Usage: influxdb3-plugin new {template} [OPTIONS] [PATH]");
         assert!(
-            stderr.contains(&expected),
-            "template {template} parse-error stderr should contain {expected:?}, \
-             got:\n{stderr}"
+            stdout.contains(&expected),
+            "template {template} parse-error output should contain {expected:?}, \
+             got:\n{stdout}"
         );
         assert!(
-            !stderr.contains(&format!("new {template} <PATH>")),
-            "template {template} parse-error stderr still renders `<PATH>`, got:\n{stderr}"
+            !stdout.contains(&format!("new {template} <PATH>")),
+            "template {template} parse-error output still renders `<PATH>`, got:\n{stdout}"
         );
     }
 }

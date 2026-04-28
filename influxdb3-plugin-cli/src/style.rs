@@ -4,11 +4,6 @@
 //! color is off, every style field is a no-op `Style::new()` so callers
 //! can write `palette.error.render()` unconditionally and get plain text
 //! on monochrome environments.
-//!
-//! # Spec alignment
-//! - color precedence table: fully delegated to `decide_color`.
-//! - Absolute JSON-stdout rule: caller passes `Stream::Stdout`/`Json`
-//!   combo and `decide_color` returns `false` — style fields collapse.
 
 use crate::color::{Stream, decide_color};
 use crate::output::{Env, OutputMode};
@@ -16,7 +11,7 @@ use anstyle::{AnsiColor, Color, Effects, Style};
 
 /// Styles used by the human renderers.
 #[derive(Debug, Clone, Copy, Default)]
-pub(crate) struct Palette {
+pub struct Palette {
     /// Red + bold. Used for `"validation failed: ..."` header lines and
     /// data-tool failure summaries.
     pub error: Style,
@@ -60,6 +55,19 @@ impl Palette {
     }
 }
 
+/// Builds the human-mode error palette for stderr, respecting the real
+/// environment's NO_COLOR / FORCE_COLOR / isatty rules.
+pub fn stderr_error_palette() -> Palette {
+    use crate::output::RealEnv;
+    use std::io::IsTerminal;
+    Palette::for_stream(
+        Stream::Stderr,
+        OutputMode::Human,
+        &RealEnv,
+        std::io::stderr().is_terminal(),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -80,9 +88,6 @@ mod tests {
             self.vars.get(name).cloned()
         }
         fn stdout_is_terminal(&self) -> bool {
-            true
-        }
-        fn stderr_is_terminal(&self) -> bool {
             true
         }
     }

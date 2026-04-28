@@ -33,12 +33,12 @@ fn spawn_yank(
     cmd.assert()
 }
 
-/// Strip the per-machine `index_path` field so the snapshot is
-/// reproducible across hosts.
-fn redact_index_path(payload: &mut serde_json::Value) {
-    payload
+/// Strip the per-machine `index_path` field inside the envelope's
+/// `result` object so the snapshot is reproducible across hosts.
+fn redact_index_path(envelope: &mut serde_json::Value) {
+    envelope["result"]
         .as_object_mut()
-        .expect("payload is a JSON object")
+        .expect("result is a JSON object")
         .insert("index_path".into(), "<TMPDIR>/build/index.json".into());
 }
 
@@ -71,19 +71,19 @@ fn yank_happy_path_sets_flag_and_emits_transitioned() {
     .success();
 
     let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
-    let mut payload: serde_json::Value = serde_json::from_str(&stdout).unwrap();
-    assert_eq!(payload["outcome"], "transitioned");
-    assert_eq!(payload["target_state"], true);
-    assert_eq!(payload["name"], "downsampler");
-    assert_eq!(payload["version"], "1.2.0");
+    let mut envelope: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(envelope["status"], "ok");
+    assert_eq!(envelope["result"]["outcome"], "yanked");
+    assert_eq!(envelope["result"]["name"], "downsampler");
+    assert_eq!(envelope["result"]["version"], "1.2.0");
 
     assert!(
         read_yanked_flag(&out.join("index.json"), "downsampler", "1.2.0"),
         "derived index must reflect yanked=true"
     );
 
-    redact_index_path(&mut payload);
-    insta::assert_json_snapshot!("yank_transitioned_json", payload);
+    redact_index_path(&mut envelope);
+    insta::assert_json_snapshot!("yank_transitioned_json", envelope);
 }
 
 #[test]
@@ -109,21 +109,21 @@ fn yank_undo_clears_flag() {
     .success();
 
     let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
-    let mut payload: serde_json::Value = serde_json::from_str(&stdout).unwrap();
-    assert_eq!(payload["outcome"], "transitioned");
-    assert_eq!(payload["target_state"], false);
+    let mut envelope: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(envelope["status"], "ok");
+    assert_eq!(envelope["result"]["outcome"], "unyanked");
 
     assert!(
         !read_yanked_flag(&out.join("index.json"), "downsampler", "1.2.0"),
         "derived index must reflect yanked=false after --undo"
     );
 
-    redact_index_path(&mut payload);
-    insta::assert_json_snapshot!("yank_undo_transitioned_json", payload);
+    redact_index_path(&mut envelope);
+    insta::assert_json_snapshot!("yank_undo_transitioned_json", envelope);
 }
 
 /// Idempotency: re-yanking an already-yanked entry exits 0 with the
-/// `already_in_desired_state` marker.
+/// `already_yanked` outcome.
 #[test]
 fn yank_already_yanked_is_no_op_with_marker() {
     let td = tempfile::tempdir().unwrap();
@@ -146,15 +146,15 @@ fn yank_already_yanked_is_no_op_with_marker() {
     )
     .success();
     let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
-    let mut payload: serde_json::Value = serde_json::from_str(&stdout).unwrap();
-    assert_eq!(payload["outcome"], "already_in_desired_state");
-    assert_eq!(payload["target_state"], true);
+    let mut envelope: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(envelope["status"], "ok");
+    assert_eq!(envelope["result"]["outcome"], "already_yanked");
 
-    redact_index_path(&mut payload);
-    insta::assert_json_snapshot!("yank_already_in_desired_state_json", payload);
+    redact_index_path(&mut envelope);
+    insta::assert_json_snapshot!("yank_already_yanked_json", envelope);
 }
 
-/// Missing entry → exit 1 + stderr message.
+/// Missing entry -> exit 1 + error envelope on stdout in JSON mode.
 #[test]
 fn yank_missing_entry_exits_one() {
     let td = tempfile::tempdir().unwrap();
@@ -168,15 +168,17 @@ fn yank_missing_entry_exits_one() {
         .failure()
         .code(1);
     let out_bytes = assert.get_output();
-    assert!(
-        out_bytes.stdout.is_empty(),
-        "stdout must be empty on failure (data-tool idiom), got {:?}",
-        String::from_utf8_lossy(&out_bytes.stdout)
+    let stdout = String::from_utf8_lossy(&out_bytes.stdout).into_owned();
+    let doc: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|e| panic!("stdout must be valid JSON: {e}\n{stdout}"));
+    assert_eq!(
+        doc.get("status").and_then(|v| v.as_str()),
+        Some("error"),
+        "envelope status must be \"error\"; got:\n{stdout}"
     );
-    let stderr = String::from_utf8_lossy(&out_bytes.stderr).into_owned();
     assert!(
-        stderr.contains("not present"),
-        "stderr should reference the missing entry, got: {stderr}"
+        stdout.contains("not present"),
+        "output should reference the missing entry, got: {stdout}"
     );
 }
 
@@ -198,31 +200,27 @@ fn yank_malformed_target_exits_two() {
     let assert = spawn_yank("no-at-sign", &index_path, &out, &[])
         .failure()
         .code(2);
-    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).into_owned();
+    // Under piped stdout, errors render as JSON envelopes on stdout.
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
     assert!(
-        stderr.contains("no-at-sign"),
-        "stderr should echo the malformed argument value, got: {stderr}"
-    );
-    // The FromStr detail ("no '@' separator" / "invalid plugin name" /
-    // "invalid version") is now inside the InvalidValue field, which clap
-    // renders as part of the error line.
-    assert!(
-        stderr.contains("<NAME@VERSION>"),
-        "stderr should name the positional placeholder, got: {stderr}"
+        stdout.contains("no-at-sign"),
+        "output should echo the malformed argument value, got: {stdout}"
     );
     assert!(
-        stderr.contains("no `@` separator")
-            || stderr.contains("invalid plugin name")
-            || stderr.contains("invalid SemVer version"),
-        "stderr should include the FromStr failure detail, got: {stderr}"
+        stdout.contains("<NAME@VERSION>"),
+        "output should name the positional placeholder, got: {stdout}"
+    );
+    assert!(
+        stdout.contains("no `@` separator")
+            || stdout.contains("invalid plugin name")
+            || stdout.contains("invalid SemVer version"),
+        "output should include the FromStr failure detail, got: {stdout}"
     );
 }
 
-// -----------------------------------------------------------------------
 // PluginName rule inheritance — `yank` parses `<name>@<version>` through
 // the same `PluginName::from_str` used by `package`, so the new Cargo
 // rule applies transparently. Cover one accept + two reject paths.
-// -----------------------------------------------------------------------
 
 /// `my_plugin` (underscore) parses cleanly through the clap value parser
 /// under the new rule. The entry is not in the seeded index, so the
@@ -241,18 +239,19 @@ fn yank_parses_underscore_name() {
     let assert = spawn_yank("my_plugin@1.0.0", &index_path, &out, &[])
         .failure()
         .code(1);
-    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).into_owned();
+    // Under piped stdout, errors render as JSON envelopes on stdout.
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
     assert!(
-        !stderr.contains("starting with a letter"),
-        "parser rejected `my_plugin` — new rule should accept it; stderr: {stderr}"
+        !stdout.contains("starting with a letter"),
+        "parser rejected `my_plugin` -- new rule should accept it; stdout: {stdout}"
     );
     assert!(
-        !stderr.contains("Windows reserved"),
-        "stderr should not flag `my_plugin` as reserved; stderr: {stderr}"
+        !stdout.contains("Windows reserved"),
+        "output should not flag `my_plugin` as reserved; stdout: {stdout}"
     );
     assert!(
-        stderr.contains("not present"),
-        "downstream failure expected (entry absent); stderr: {stderr}"
+        stdout.contains("not present"),
+        "downstream failure expected (entry absent); stdout: {stdout}"
     );
 }
 
@@ -271,7 +270,7 @@ fn yank_rejects_digit_leading_name_regression() {
     spawn_yank("7plugin@1.0.0", &index_path, &out, &[])
         .failure()
         .code(2)
-        .stderr(predicates::str::contains("starting with a letter"));
+        .stdout(predicates::str::contains("starting with a letter"));
 }
 
 #[test]
@@ -286,7 +285,7 @@ fn yank_rejects_reserved_name() {
     spawn_yank("con@1.0.0", &index_path, &out, &[])
         .failure()
         .code(2)
-        .stderr(predicates::str::contains("Windows reserved"));
+        .stdout(predicates::str::contains("Windows reserved"));
 }
 
 /// The input `--index` is byte-identical pre/post.
@@ -319,10 +318,10 @@ fn yank_rejects_out_overlapping_index_dir() {
     let assert = spawn_yank("downsampler@1.2.0", &index_path, &index_dir, &[])
         .failure()
         .code(2);
-    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).into_owned();
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
     assert!(
-        stderr.contains("S2-12"),
-        "stderr should reference S2-12 by identifier, got: {stderr}"
+        stdout.contains("S2-12"),
+        "output should reference S2-12 by identifier, got: {stdout}"
     );
     // Input index untouched.
     assert_eq!(std::fs::read_to_string(&index_path).unwrap(), SEEDED_INDEX);

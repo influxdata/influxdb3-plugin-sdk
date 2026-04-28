@@ -6,7 +6,7 @@ expression: envelope
   "result": {
     "index_path": "<TMPDIR>/build/index.json",
     "name": "downsampler",
-    "outcome": "unyanked",
+    "outcome": "already_yanked",
     "version": "1.2.0"
   },
   "status": "ok"

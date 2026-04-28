@@ -19,11 +19,15 @@ use assert_cmd as _;
 #[cfg(test)]
 use insta as _;
 #[cfg(test)]
+use pep508_rs as _;
+#[cfg(test)]
 use predicates as _;
 #[cfg(test)]
 use tempfile as _;
 #[cfg(test)]
 use toml as _;
+#[cfg(test)]
+use url as _;
 
 pub use config::PluginConfig;
 
@@ -47,6 +51,10 @@ pub use influxdb3_plugin_schemas::{
 #[doc(hidden)]
 pub mod __private {
     pub use crate::cli_error::{CliError, CliErrorKind};
+    pub use crate::diag_render::render_human_error;
+    pub use crate::output::error_mapping::json_error_from_clap;
+    pub use crate::output::json::{JsonError, write_envelope_error};
+    pub use crate::style::{Palette, stderr_error_palette};
 }
 
 mod cli_error;

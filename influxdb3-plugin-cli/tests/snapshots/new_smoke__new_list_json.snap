@@ -1,25 +1,27 @@
 ---
 source: influxdb3-plugin-cli/tests/new_smoke.rs
-assertion_line: 414
 expression: payload
 ---
 {
-  "templates": [
-    {
-      "name": "Process Writes Plugin",
-      "short_name": "process_writes"
-    },
-    {
-      "name": "Scheduled Call Plugin",
-      "short_name": "process_scheduled_call"
-    },
-    {
-      "name": "Process Request Plugin",
-      "short_name": "process_request"
-    },
-    {
-      "name": "Registry",
-      "short_name": "registry"
-    }
-  ]
+  "result": {
+    "templates": [
+      {
+        "name": "Process Writes Plugin",
+        "short_name": "process_writes"
+      },
+      {
+        "name": "Scheduled Call Plugin",
+        "short_name": "process_scheduled_call"
+      },
+      {
+        "name": "Process Request Plugin",
+        "short_name": "process_request"
+      },
+      {
+        "name": "Registry",
+        "short_name": "registry"
+      }
+    ]
+  },
+  "status": "ok"
 }

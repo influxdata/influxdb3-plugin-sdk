@@ -210,29 +210,33 @@ fn help_text_snapshots() {
     }
 }
 
-/// Asserts that `stderr` has exactly one non-empty line and that the
-/// clap `For more information, try '--help'.` footer is absent — the
-/// pair of conditions that define JSON-mode's collapsed error shape.
-fn assert_single_meaningful_stderr_line(stderr: &str) {
-    let meaningful: Vec<&str> = stderr.lines().filter(|l| !l.trim().is_empty()).collect();
+/// Asserts that `stdout` contains a valid JSON envelope with
+/// `"status":"error"` and that stderr is empty — the envelope-mode
+/// contract for clap parse failures in JSON mode.
+fn assert_json_error_envelope(output: &std::process::Output) {
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.is_empty(),
+        "stderr must be empty in JSON-mode envelope dispatch; got:\n{stderr}"
+    );
+    let doc: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|e| panic!("stdout must be valid JSON: {e}\n{stdout}"));
     assert_eq!(
-        meaningful.len(),
-        1,
-        "stderr must have exactly one meaningful line; got {} lines:\n{}",
-        meaningful.len(),
-        stderr
+        doc.get("status").and_then(|v| v.as_str()),
+        Some("error"),
+        "envelope status must be \"error\"; got:\n{stdout}"
     );
     assert!(
-        !meaningful[0].contains("For more information"),
-        "stderr must not include the clap help footer; got: {stderr}"
+        doc.get("error").is_some(),
+        "envelope must carry an \"error\" field; got:\n{stdout}"
     );
 }
 
-/// `--output json` usage errors must emit empty stdout and exactly one
-/// meaningful stderr line. Applies to clap parse failures as well as
-/// runtime failures.
+/// `--output json` usage errors must emit a JSON error envelope on
+/// stdout and empty stderr. Applies to clap parse failures.
 #[test]
-fn json_mode_usage_error_stderr_is_single_line_for_new() {
+fn json_mode_usage_error_emits_envelope_for_new() {
     let assert = Command::cargo_bin("influxdb3-plugin")
         .unwrap()
         .args(["new", "not_a_template", "--output", "json"])
@@ -240,16 +244,11 @@ fn json_mode_usage_error_stderr_is_single_line_for_new() {
         .failure();
 
     assert_eq!(assert.get_output().status.code(), Some(2));
-    assert!(
-        assert.get_output().stdout.is_empty(),
-        "stdout must be empty on JSON-mode usage error, got: {:?}",
-        String::from_utf8_lossy(&assert.get_output().stdout)
-    );
-    assert_single_meaningful_stderr_line(&String::from_utf8_lossy(&assert.get_output().stderr));
+    assert_json_error_envelope(assert.get_output());
 }
 
 #[test]
-fn ci_env_triggers_single_line_stderr_for_usage_errors() {
+fn ci_env_triggers_json_envelope_for_usage_errors() {
     let assert = Command::cargo_bin("influxdb3-plugin")
         .unwrap()
         .env("CI", "true")
@@ -258,31 +257,31 @@ fn ci_env_triggers_single_line_stderr_for_usage_errors() {
         .failure();
 
     assert_eq!(assert.get_output().status.code(), Some(2));
-    assert_single_meaningful_stderr_line(&String::from_utf8_lossy(&assert.get_output().stderr));
+    assert_json_error_envelope(assert.get_output());
 }
 
 /// validate with an unknown flag — confirms main-level interception
 /// applies to subcommands other than `new`.
 #[test]
-fn json_mode_validate_unknown_flag_is_single_line() {
+fn json_mode_validate_unknown_flag_emits_envelope() {
     let assert = Command::cargo_bin("influxdb3-plugin")
         .unwrap()
         .args(["validate", "--nope", "--output", "json"])
         .assert()
         .failure();
-    assert_single_meaningful_stderr_line(&String::from_utf8_lossy(&assert.get_output().stderr));
+    assert_json_error_envelope(assert.get_output());
 }
 
 /// package with no positional — confirms the collapse covers the
 /// missing-required class of clap error, not only unknown-value.
 #[test]
-fn json_mode_package_missing_required_is_single_line() {
+fn json_mode_package_missing_required_emits_envelope() {
     let assert = Command::cargo_bin("influxdb3-plugin")
         .unwrap()
         .args(["package", "--output", "json"])
         .assert()
         .failure();
-    assert_single_meaningful_stderr_line(&String::from_utf8_lossy(&assert.get_output().stderr));
+    assert_json_error_envelope(assert.get_output());
 }
 
 /// Human mode must keep clap's full multi-line diagnostic — including the
@@ -299,4 +298,32 @@ fn explicit_human_mode_preserves_multi_line_clap_output() {
         stderr.contains("For more information"),
         "human mode must preserve clap's full diagnostic (with help footer); got:\n{stderr}"
     );
+}
+
+/// Safety guard: no representative production path should emit
+/// `cli::unknown`. That code is the fallback for plain `anyhow::Error`
+/// escaping the typed `CliError` wiring. If this fires, a call site is
+/// returning a bare `anyhow!` instead of `CliError::runtime(JsonError)`.
+#[test]
+fn no_production_path_emits_cli_unknown() {
+    let cases: &[&[&str]] = &[
+        // Clap-detected usage failures (missing required args)
+        &["package"],
+        &["yank"],
+        // Runtime failure from a missing input
+        &["validate", "/path/that/definitely/does/not/exist/plugin"],
+        // Success: new list
+        &["new", "list", "--output", "json"],
+    ];
+    for argv in cases {
+        let mut cmd = Command::cargo_bin("influxdb3-plugin").unwrap();
+        cmd.args(*argv).env("CI", "true");
+        let out = cmd.output().unwrap();
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            !stdout.contains(r#""cli::unknown""#),
+            "argv {argv:?} produced a cli::unknown envelope; \
+             a typed CliError is missing somewhere. stdout:\n{stdout}"
+        );
+    }
 }

@@ -1,0 +1,10 @@
+---
+source: influxdb3-plugin-cli/src/output/json.rs
+expression: keys
+---
+- cause
+- code
+- details
+- diagnostics
+- field
+- message

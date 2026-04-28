@@ -3,11 +3,19 @@ source: influxdb3-plugin-cli/tests/validate_smoke.rs
 expression: payload
 ---
 {
-  "diagnostics": [
-    {
-      "field": "__init__.py",
-      "message": "required file \"__init__.py\" is missing from the plugin directory",
-      "variant": "MissingRequiredFile"
-    }
-  ]
+  "error": {
+    "code": "validate::failed",
+    "diagnostics": [
+      {
+        "code": "validate::missing_required_file",
+        "details": {
+          "file": "__init__.py"
+        },
+        "field": "__init__.py",
+        "message": "required file \"__init__.py\" is missing from the plugin directory"
+      }
+    ],
+    "message": "1 validation diagnostic(s)"
+  },
+  "status": "error"
 }

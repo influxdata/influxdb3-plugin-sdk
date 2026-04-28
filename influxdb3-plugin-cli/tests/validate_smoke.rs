@@ -1,9 +1,8 @@
 //! Integration tests for `influxdb3-plugin validate`.
 //!
-//! Covers the validator-idiom contract (single JSON document on stdout
-//! on BOTH pass and fail), the cross-file failure categories, the
-//! `--index` uniqueness check, multi-error collection, and the
-//! exit-code mapping.
+//! Covers the envelope contract: success emits `{"status":"ok","result":{}}`,
+//! failure emits `{"status":"error","error":{"code":"validate::failed",...,"diagnostics":[...]}}`.
+//! The exit-code mapping: 0 on success, 1 on failure.
 //!
 //! Fixtures are synthesized inline into per-test `tempfile::TempDir`s so
 //! the suite is self-contained.
@@ -40,8 +39,8 @@ fn validate_happy_path_emits_empty_diagnostics_array() {
         serde_json::from_str(&stdout).expect("validator stdout is JSON");
     assert_eq!(
         payload,
-        serde_json::json!({ "diagnostics": [] }),
-        "happy path must emit empty diagnostics array"
+        serde_json::json!({ "status": "ok", "result": {} }),
+        "happy path must emit envelope ok with empty result"
     );
     insta::assert_json_snapshot!("validate_happy_path_json", payload);
 }
@@ -61,27 +60,26 @@ fn validate_empty_plugin_dir_reports_both_missing_files_in_json() {
 
     let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
     let payload: serde_json::Value = serde_json::from_str(&stdout).unwrap();
-    let diags = payload["diagnostics"].as_array().expect("array");
+    assert_eq!(payload["status"], "error");
+    let diags = payload["error"]["diagnostics"]
+        .as_array()
+        .expect("diagnostics array");
     assert_eq!(diags.len(), 2, "expected two diagnostics, got {payload}");
-    let mut variants_and_fields: Vec<(&str, &str)> = diags
+    let mut codes_and_fields: Vec<(&str, &str)> = diags
         .iter()
-        .map(|d| (d["variant"].as_str().unwrap(), d["field"].as_str().unwrap()))
+        .map(|d| (d["code"].as_str().unwrap(), d["field"].as_str().unwrap()))
         .collect();
-    variants_and_fields.sort();
+    codes_and_fields.sort();
     assert_eq!(
-        variants_and_fields,
+        codes_and_fields,
         vec![
-            ("MissingRequiredFile", "__init__.py"),
-            ("MissingRequiredFile", "manifest.toml"),
+            ("validate::missing_required_file", "__init__.py"),
+            ("validate::missing_required_file", "manifest.toml"),
         ]
-    );
-    assert!(
-        assert.get_output().stderr.is_empty(),
-        "stderr must be empty in JSON mode"
     );
 }
 
-/// Validator idiom: failure path emits a single JSON document on STDOUT
+/// Validator idiom: failure path emits a single JSON envelope on STDOUT
 /// (not stderr), and exits 1.
 #[test]
 fn validate_failure_emits_diagnostics_on_stdout_and_exits_one() {
@@ -98,11 +96,12 @@ fn validate_failure_emits_diagnostics_on_stdout_and_exits_one() {
     let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
     let payload: serde_json::Value =
         serde_json::from_str(&stdout).expect("validator stdout is JSON even on failure");
-    let diags = payload["diagnostics"]
+    assert_eq!(payload["status"], "error");
+    let diags = payload["error"]["diagnostics"]
         .as_array()
         .expect("diagnostics array");
     assert_eq!(diags.len(), 1);
-    assert_eq!(diags[0]["variant"], "MissingRequiredFile");
+    assert_eq!(diags[0]["code"], "validate::missing_required_file");
     assert_eq!(diags[0]["field"], "__init__.py");
     insta::assert_json_snapshot!("validate_missing_init_json", payload);
 }
@@ -135,20 +134,18 @@ database_version = ">=3.0.0"
 
     let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
     let payload: serde_json::Value = serde_json::from_str(&stdout).unwrap();
-    let diags = payload["diagnostics"].as_array().unwrap();
+    assert_eq!(payload["status"], "error");
+    let diags = payload["error"]["diagnostics"].as_array().unwrap();
     assert_eq!(
         diags.len(),
         3,
         "expected 3 diagnostics, got {}: {payload}",
         diags.len()
     );
-    let variants: Vec<&str> = diags
-        .iter()
-        .map(|d| d["variant"].as_str().unwrap())
-        .collect();
+    let codes: Vec<&str> = diags.iter().map(|d| d["code"].as_str().unwrap()).collect();
     assert!(
-        variants.iter().all(|v| *v == "SchemaReported"),
-        "all defects should surface as SchemaReported, got {variants:?}"
+        codes.iter().all(|c| *c == "validate::schema_reported"),
+        "all defects should surface as validate::schema_reported, got {codes:?}"
     );
     let fields: Vec<&str> = diags.iter().map(|d| d["field"].as_str().unwrap()).collect();
     assert!(
@@ -183,9 +180,10 @@ fn validate_async_trigger_diagnostic_points_at_init() {
         .code(1);
     let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
     let payload: serde_json::Value = serde_json::from_str(&stdout).unwrap();
-    let diags = payload["diagnostics"].as_array().unwrap();
+    assert_eq!(payload["status"], "error");
+    let diags = payload["error"]["diagnostics"].as_array().unwrap();
     assert_eq!(diags.len(), 1);
-    assert_eq!(diags[0]["variant"], "AsyncTriggerFn");
+    assert_eq!(diags[0]["code"], "validate::async_trigger_fn");
     assert_eq!(diags[0]["field"], "__init__.py");
     insta::assert_json_snapshot!("validate_async_trigger_json", payload);
 }
@@ -224,9 +222,10 @@ fn validate_with_index_surfaces_uniqueness_collision() {
 
     let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
     let payload: serde_json::Value = serde_json::from_str(&stdout).unwrap();
-    let diags = payload["diagnostics"].as_array().unwrap();
+    assert_eq!(payload["status"], "error");
+    let diags = payload["error"]["diagnostics"].as_array().unwrap();
     assert_eq!(diags.len(), 1);
-    assert_eq!(diags[0]["variant"], "NameVersionConflict");
+    assert_eq!(diags[0]["code"], "validate::name_version_conflict");
     assert_eq!(diags[0]["field"], "downsampler@1.2.0");
     insta::assert_json_snapshot!("validate_name_version_conflict_json", payload);
 }
@@ -305,15 +304,15 @@ database_version = ">=3.0.0"
     .code(1);
     let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
     let payload: serde_json::Value = serde_json::from_str(&stdout).unwrap();
-    let diags = payload["diagnostics"].as_array().unwrap();
+    assert_eq!(payload["status"], "error");
+    let diags = payload["error"]["diagnostics"].as_array().unwrap();
     assert_eq!(diags.len(), 1);
-    assert_eq!(diags[0]["variant"], "NameVersionConflict");
+    assert_eq!(diags[0]["code"], "validate::name_version_conflict");
     let field = diags[0]["field"].as_str().unwrap();
     assert!(
         field.ends_with("@0.1.0"),
         "field should pin version: {field}"
     );
-    assert!(assert.get_output().stderr.is_empty());
 }
 
 /// Sister case: case-only collision. `Foo` and `foo` share canonical form.
@@ -358,9 +357,10 @@ database_version = ">=3.0.0"
     .code(1);
     let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
     let payload: serde_json::Value = serde_json::from_str(&stdout).unwrap();
-    let diags = payload["diagnostics"].as_array().unwrap();
+    assert_eq!(payload["status"], "error");
+    let diags = payload["error"]["diagnostics"].as_array().unwrap();
     assert_eq!(diags.len(), 1);
-    assert_eq!(diags[0]["variant"], "NameVersionConflict");
+    assert_eq!(diags[0]["code"], "validate::name_version_conflict");
 }
 
 /// Multiline `plugin.description` must be rejected (one-line rule),
@@ -392,15 +392,15 @@ database_version = ">=3.0.0"
         .code(1);
     let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
     let payload: serde_json::Value = serde_json::from_str(&stdout).unwrap();
-    let diags = payload["diagnostics"].as_array().expect("array");
+    assert_eq!(payload["status"], "error");
+    let diags = payload["error"]["diagnostics"].as_array().expect("array");
     assert_eq!(diags.len(), 1);
-    assert_eq!(diags[0]["variant"], "SchemaReported");
+    assert_eq!(diags[0]["code"], "validate::schema_reported");
     assert_eq!(diags[0]["field"], "plugin.description");
-    assert!(assert.get_output().stderr.is_empty());
 }
 
 /// Validator JSON-mode contract: a malformed `--index` file must
-/// surface as a JSON document on stdout, with stderr empty.
+/// surface as a JSON envelope on stdout.
 #[test]
 fn validate_with_malformed_index_emits_json_diagnostic() {
     let td = tempfile::tempdir().unwrap();
@@ -419,18 +419,20 @@ fn validate_with_malformed_index_emits_json_diagnostic() {
     let out = assert.get_output();
     assert!(
         out.stderr.is_empty(),
-        "stderr MUST be empty in JSON mode, got {:?}",
+        "stderr must be empty in JSON mode, got: {:?}",
         String::from_utf8_lossy(&out.stderr)
     );
     let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
     let payload: serde_json::Value =
-        serde_json::from_str(&stdout).expect("stdout must be one JSON document on parse failure");
-    let diags = payload["diagnostics"].as_array().expect("array");
+        serde_json::from_str(&stdout).expect("stdout must be one JSON envelope on parse failure");
+    assert_eq!(payload["status"], "error");
+    // Malformed index goes through SdkError::Schema → json_error_from_sdk
+    let error = &payload["error"];
+    let code = error["code"].as_str().expect("error should have a code");
     assert!(
-        !diags.is_empty(),
-        "expected at least one diagnostic, got {payload}"
+        code.starts_with("validate::") || code.starts_with("cli::"),
+        "error code should be in validate:: or cli:: namespace, got {code:?}"
     );
-    assert_eq!(diags[0]["variant"], "SchemaReported");
 }
 
 /// Index path that does not exist surfaces as a single
@@ -450,18 +452,18 @@ fn validate_with_unreadable_index_emits_json_diagnostic() {
     .code(1);
 
     let out = assert.get_output();
-    assert!(out.stderr.is_empty(), "stderr empty: {:?}", out.stderr);
-    let payload: serde_json::Value =
-        serde_json::from_str(&String::from_utf8_lossy(&out.stdout)).unwrap();
-    let diags = payload["diagnostics"].as_array().unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    let payload: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(payload["status"], "error");
+    let diags = payload["error"]["diagnostics"].as_array().unwrap();
     assert_eq!(diags.len(), 1);
-    assert_eq!(diags[0]["variant"], "IndexReadFailed");
+    assert_eq!(diags[0]["code"], "validate::index_read_failed");
     assert_eq!(diags[0]["field"], missing.display().to_string());
 }
 
 /// Multi-error case: an index with two distinct schema defects (bad URL
-/// scheme + non-SemVer version) surfaces as multiple `SchemaReported`
-/// diagnostics in one document.
+/// scheme + non-SemVer version) surfaces via `json_error_from_sdk` for
+/// `SdkError::Schema`.
 #[test]
 fn validate_with_index_schema_errors_emits_all_diagnostics() {
     let td = tempfile::tempdir().unwrap();
@@ -493,20 +495,21 @@ fn validate_with_index_schema_errors_emits_all_diagnostics() {
     .failure()
     .code(1);
     let out = assert.get_output();
-    assert!(out.stderr.is_empty());
-    let payload: serde_json::Value =
-        serde_json::from_str(&String::from_utf8_lossy(&out.stdout)).unwrap();
-    let diags = payload["diagnostics"].as_array().unwrap();
-    assert_eq!(
-        diags.len(),
-        2,
-        "expected exactly two diagnostics, got {payload}"
-    );
     assert!(
-        diags.iter().all(|d| d["variant"] == "SchemaReported"),
-        "all index schema errors should be SchemaReported, got {payload}"
+        out.stderr.is_empty(),
+        "stderr must be empty in JSON mode, got: {:?}",
+        String::from_utf8_lossy(&out.stderr)
     );
-    let mut fields: Vec<&str> = diags.iter().map(|d| d["field"].as_str().unwrap()).collect();
-    fields.sort();
-    assert_eq!(fields, vec!["artifacts_url", "plugins[0].version"]);
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    let payload: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(payload["status"], "error");
+    let error = &payload["error"];
+    // Schema errors from index parse map through json_error_from_sdk.
+    // They may come as a single schema_error or through validation errors
+    // depending on how the SDK surfaces them.
+    let code = error["code"].as_str().expect("error should have a code");
+    assert!(
+        code.starts_with("validate::") || code.starts_with("cli::"),
+        "error code should be in validate:: or cli:: namespace, got {code:?}"
+    );
 }

@@ -6,12 +6,10 @@
 //! path yields no color. These tests therefore probe the `FORCE_COLOR`
 //! branch explicitly and pin the JSON-stdout absolute rule.
 //!
-//! Stream routing note: in human mode, `validate`
-//! writes the diagnostics block to STDOUT and only the summary line to
-//! STDERR (via the anyhow error `main.rs` prints with `eprintln!("{e:#}")`).
-//! So `FORCE_COLOR=1` + `--output human` lands ANSI on stdout primarily;
-//! stderr may or may not carry escapes depending on how anyhow formats the
-//! chain. We check stdout for the ANSI presence/absence assertions.
+//! Stream routing note: in the envelope flow, human-mode errors render to
+//! STDERR via `render_human_error` in `main.rs`. So `FORCE_COLOR=1` +
+//! `--output human` lands ANSI on stderr; stdout stays empty on error paths.
+//! We check stderr for the ANSI presence/absence assertions.
 
 #![allow(unused_crate_dependencies)]
 
@@ -57,9 +55,9 @@ database_version = ">=3.0.0"
 
 #[test]
 fn force_color_emits_ansi_on_pipe() {
-    // Human-mode diagnostics land on stdout (Task 4.1's stream routing).
+    // Human-mode errors render to stderr via render_human_error in main.rs.
     // With FORCE_COLOR=1 the palette is populated and ANSI escapes appear
-    // on the diagnostics stream.
+    // on the stderr stream.
     let tmp = bad_plugin();
     plugin()
         .env("FORCE_COLOR", "1")
@@ -71,7 +69,7 @@ fn force_color_emits_ansi_on_pipe() {
         ])
         .assert()
         .code(1)
-        .stdout(predicate::str::contains("\x1b["));
+        .stderr(predicate::str::contains("\x1b["));
 }
 
 #[test]
