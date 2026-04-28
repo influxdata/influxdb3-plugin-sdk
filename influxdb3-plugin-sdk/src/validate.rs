@@ -113,9 +113,9 @@ pub fn plugin_dir_with_index(
         // spelling check runs at publish time in `mutate_index::add_entry`.
         let version_conflict = match &err {
             IndexInsertError::Duplicate { .. } => true,
-            IndexInsertError::CanonicalCollision { existing, .. } => existing
-                .iter()
-                .any(|(_, v)| v == &probe_entry.version),
+            IndexInsertError::CanonicalCollision { existing, .. } => {
+                existing.iter().any(|(_, v)| v == &probe_entry.version)
+            }
             _ => false,
         };
         if version_conflict {

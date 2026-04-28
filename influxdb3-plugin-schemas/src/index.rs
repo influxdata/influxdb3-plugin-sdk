@@ -410,10 +410,8 @@ impl Index {
 
         let same_version_dup = existing_canonical.iter().any(|(_, v)| v == &entry.version);
         if same_version_dup {
-            let existing_versions: Vec<semver::Version> = existing_canonical
-                .iter()
-                .map(|(_, v)| v.clone())
-                .collect();
+            let existing_versions: Vec<semver::Version> =
+                existing_canonical.iter().map(|(_, v)| v.clone()).collect();
             return Err(IndexInsertError::Duplicate {
                 name: entry.name.as_str().to_owned(),
                 version: entry.version.clone(),
@@ -1251,7 +1249,9 @@ mod canonical_serialization_tests {
 #[cfg(test)]
 mod insert_tests {
     use super::*;
-    use crate::{ArtifactHash, ArtifactsUrl, Dependencies, Description, IndexInsertError, TriggerType};
+    use crate::{
+        ArtifactHash, ArtifactsUrl, Dependencies, Description, IndexInsertError, TriggerType,
+    };
     use assert_matches::assert_matches;
 
     fn empty_index() -> Index {
@@ -1286,34 +1286,46 @@ mod insert_tests {
     #[test]
     fn empty_index_accepts_append() {
         let mut idx = empty_index();
-        idx.push_entry(make_entry("alpha", semver::Version::new(1, 0, 0))).unwrap();
+        idx.push_entry(make_entry("alpha", semver::Version::new(1, 0, 0)))
+            .unwrap();
         assert_eq!(idx.plugins.len(), 1);
     }
 
     #[test]
     fn same_spelling_different_version_accepted() {
         let mut idx = empty_index();
-        idx.push_entry(make_entry("alpha", semver::Version::new(1, 0, 0))).unwrap();
-        idx.push_entry(make_entry("alpha", semver::Version::new(1, 1, 0))).unwrap();
+        idx.push_entry(make_entry("alpha", semver::Version::new(1, 0, 0)))
+            .unwrap();
+        idx.push_entry(make_entry("alpha", semver::Version::new(1, 1, 0)))
+            .unwrap();
         assert_eq!(idx.plugins.len(), 2);
     }
 
     #[test]
     fn same_spelling_same_version_returns_duplicate() {
         let mut idx = empty_index();
-        idx.push_entry(make_entry("alpha", semver::Version::new(1, 0, 0))).unwrap();
-        let err = idx.push_entry(make_entry("alpha", semver::Version::new(1, 0, 0))).unwrap_err();
+        idx.push_entry(make_entry("alpha", semver::Version::new(1, 0, 0)))
+            .unwrap();
+        let err = idx
+            .push_entry(make_entry("alpha", semver::Version::new(1, 0, 0)))
+            .unwrap_err();
         assert_matches!(err, IndexInsertError::Duplicate { .. });
     }
 
     #[test]
     fn duplicate_error_lists_existing_versions_in_index_order() {
         let mut idx = empty_index();
-        idx.push_entry(make_entry("alpha", semver::Version::new(1, 0, 0))).unwrap();
-        idx.push_entry(make_entry("alpha", semver::Version::new(1, 1, 0))).unwrap();
-        let err = idx.push_entry(make_entry("alpha", semver::Version::new(1, 0, 0))).unwrap_err();
+        idx.push_entry(make_entry("alpha", semver::Version::new(1, 0, 0)))
+            .unwrap();
+        idx.push_entry(make_entry("alpha", semver::Version::new(1, 1, 0)))
+            .unwrap();
+        let err = idx
+            .push_entry(make_entry("alpha", semver::Version::new(1, 0, 0)))
+            .unwrap_err();
         match err {
-            IndexInsertError::Duplicate { existing_versions, .. } => {
+            IndexInsertError::Duplicate {
+                existing_versions, ..
+            } => {
                 assert_eq!(
                     existing_versions,
                     vec![semver::Version::new(1, 0, 0), semver::Version::new(1, 1, 0)]
@@ -1326,31 +1338,41 @@ mod insert_tests {
     #[test]
     fn hyphen_underscore_canonical_collision_rejected() {
         let mut idx = empty_index();
-        idx.push_entry(make_entry("foo-bar", semver::Version::new(1, 0, 0))).unwrap();
-        let err = idx.push_entry(make_entry("foo_bar", semver::Version::new(1, 0, 0))).unwrap_err();
+        idx.push_entry(make_entry("foo-bar", semver::Version::new(1, 0, 0)))
+            .unwrap();
+        let err = idx
+            .push_entry(make_entry("foo_bar", semver::Version::new(1, 0, 0)))
+            .unwrap_err();
         assert_matches!(err, IndexInsertError::CanonicalCollision { .. });
     }
 
     #[test]
     fn case_only_canonical_collision_rejected() {
         let mut idx = empty_index();
-        idx.push_entry(make_entry("MyPlugin", semver::Version::new(1, 0, 0))).unwrap();
-        let err = idx.push_entry(make_entry("myplugin", semver::Version::new(1, 0, 0))).unwrap_err();
+        idx.push_entry(make_entry("MyPlugin", semver::Version::new(1, 0, 0)))
+            .unwrap();
+        let err = idx
+            .push_entry(make_entry("myplugin", semver::Version::new(1, 0, 0)))
+            .unwrap_err();
         assert_matches!(err, IndexInsertError::CanonicalCollision { .. });
     }
 
     #[test]
     fn canonical_collision_rejected_even_when_version_differs() {
         let mut idx = empty_index();
-        idx.push_entry(make_entry("foo-bar", semver::Version::new(1, 0, 0))).unwrap();
-        let err = idx.push_entry(make_entry("foo_bar", semver::Version::new(2, 0, 0))).unwrap_err();
+        idx.push_entry(make_entry("foo-bar", semver::Version::new(1, 0, 0)))
+            .unwrap();
+        let err = idx
+            .push_entry(make_entry("foo_bar", semver::Version::new(2, 0, 0)))
+            .unwrap_err();
         assert_matches!(err, IndexInsertError::CanonicalCollision { .. });
     }
 
     #[test]
     fn index_unchanged_after_failed_push_entry() {
         let mut idx = empty_index();
-        idx.push_entry(make_entry("alpha", semver::Version::new(1, 0, 0))).unwrap();
+        idx.push_entry(make_entry("alpha", semver::Version::new(1, 0, 0)))
+            .unwrap();
         let snapshot = idx.clone();
         let _ = idx.push_entry(make_entry("alpha", semver::Version::new(1, 0, 0)));
         assert_eq!(idx, snapshot);
@@ -1359,7 +1381,8 @@ mod insert_tests {
     #[test]
     fn check_entry_insert_does_not_mutate() {
         let mut idx = empty_index();
-        idx.push_entry(make_entry("alpha", semver::Version::new(1, 0, 0))).unwrap();
+        idx.push_entry(make_entry("alpha", semver::Version::new(1, 0, 0)))
+            .unwrap();
         let snapshot = idx.clone();
         let entry = make_entry("alpha", semver::Version::new(2, 0, 0));
         idx.check_entry_insert(&entry).unwrap();
@@ -1370,7 +1393,10 @@ mod insert_tests {
 #[cfg(test)]
 mod from_manifest_tests {
     use super::*;
-    use crate::{ArtifactHash, Dependencies, Description, Manifest, ManifestSchemaVersion, PluginMetadata, PythonRequirement, TriggerType};
+    use crate::{
+        ArtifactHash, Dependencies, Description, Manifest, ManifestSchemaVersion, PluginMetadata,
+        PythonRequirement, TriggerType,
+    };
 
     fn sample_manifest() -> Manifest {
         Manifest {
@@ -1379,7 +1405,10 @@ mod from_manifest_tests {
                 name: "downsampler".parse().unwrap(),
                 version: semver::Version::new(1, 2, 0),
                 description: Description::try_new("A downsampling plugin").unwrap(),
-                triggers: vec![TriggerType::ProcessWrites, TriggerType::ProcessScheduledCall],
+                triggers: vec![
+                    TriggerType::ProcessWrites,
+                    TriggerType::ProcessScheduledCall,
+                ],
                 homepage: Some(url::Url::parse("https://example.com").unwrap()),
                 repository: Some(url::Url::parse("https://github.com/example/repo").unwrap()),
                 documentation: Some(url::Url::parse("https://docs.example.com").unwrap()),
@@ -1419,7 +1448,13 @@ mod from_manifest_tests {
     #[test]
     fn copies_triggers() {
         let entry = IndexEntry::from_manifest(sample_manifest(), sample_hash());
-        assert_eq!(entry.triggers, vec![TriggerType::ProcessWrites, TriggerType::ProcessScheduledCall]);
+        assert_eq!(
+            entry.triggers,
+            vec![
+                TriggerType::ProcessWrites,
+                TriggerType::ProcessScheduledCall
+            ]
+        );
     }
 
     #[test]
@@ -1431,13 +1466,19 @@ mod from_manifest_tests {
     #[test]
     fn copies_repository() {
         let entry = IndexEntry::from_manifest(sample_manifest(), sample_hash());
-        assert_eq!(entry.repository.unwrap().as_str(), "https://github.com/example/repo");
+        assert_eq!(
+            entry.repository.unwrap().as_str(),
+            "https://github.com/example/repo"
+        );
     }
 
     #[test]
     fn copies_documentation() {
         let entry = IndexEntry::from_manifest(sample_manifest(), sample_hash());
-        assert_eq!(entry.documentation.unwrap().as_str(), "https://docs.example.com/");
+        assert_eq!(
+            entry.documentation.unwrap().as_str(),
+            "https://docs.example.com/"
+        );
     }
 
     #[test]

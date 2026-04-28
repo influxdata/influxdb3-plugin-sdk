@@ -299,7 +299,7 @@ impl<'a> IntoIterator for &'a SchemaErrors {
     }
 }
 
-/// Errors returned by [`Index::check_entry_insert`] and [`Index::push_entry`].
+/// Errors returned by [`crate::Index::check_entry_insert`] and [`crate::Index::push_entry`].
 ///
 /// Adding variants is a minor-version change; renaming, removing, reshaping,
 /// or adding fields to existing variants is a major-version change.

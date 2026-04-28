@@ -135,7 +135,11 @@ fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
     // Package the plugin.
     let outcome = match package::package_plugin(&args.plugin_dir, input_index) {
         Ok(o) => o,
-        Err(SdkError::AlreadyPublished { ref name, ref version, ref existing_versions }) => {
+        Err(SdkError::AlreadyPublished {
+            ref name,
+            ref version,
+            ref existing_versions,
+        }) => {
             let msg = format!(
                 "plugin ({name:?}, {version:?}) already exists in the target index; \
                  existing versions: {existing_versions:?}. \
@@ -143,7 +147,11 @@ fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
             );
             return Err(anyhow::anyhow!("{msg}"));
         }
-        Err(SdkError::CanonicalCollision { ref name, ref canonical, ref existing }) => {
+        Err(SdkError::CanonicalCollision {
+            ref name,
+            ref canonical,
+            ref existing,
+        }) => {
             let msg = format!(
                 "canonical collision: plugin name {name:?} conflicts with existing \
                  entries sharing canonical form {canonical:?}: {existing:?}. \

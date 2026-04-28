@@ -75,7 +75,6 @@ pub enum SdkError {
 
     #[error("plugin ({name:?}, {version:?}) is not present in the target index")]
     EntryNotFound { name: String, version: String },
-
 }
 
 impl SdkError {
@@ -140,7 +139,9 @@ impl From<influxdb3_plugin_schemas::IndexInsertError> for SdkError {
                 canonical,
                 existing,
             },
-            _ => unreachable!("IndexInsertError has no other variants in the current schemas version"),
+            _ => unreachable!(
+                "IndexInsertError has no other variants in the current schemas version"
+            ),
         }
     }
 }
@@ -183,11 +184,8 @@ pub enum ValidationError {
     /// validation can collect uniqueness conflicts alongside other validation
     /// errors. The mutation-boundary check in `mutate_index::add_entry`
     /// returns the distinct [`SdkError::AlreadyPublished`] instead.
-    #[error(
-        "plugin ({name:?}, {version:?}) already exists in the target index"
-    )]
+    #[error("plugin ({name:?}, {version:?}) already exists in the target index")]
     NameVersionConflict { name: String, version: String },
-
 }
 
 impl ValidationError {

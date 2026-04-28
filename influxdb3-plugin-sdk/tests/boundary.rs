@@ -74,7 +74,15 @@ fn sdk_production_code_does_not_contain_cli_terms() {
 #[test]
 fn sdk_does_not_depend_on_cli_crates() {
     let output = std::process::Command::new("cargo")
-        .args(["tree", "-p", "influxdb3-plugin-sdk", "--edges", "normal", "--prefix", "none"])
+        .args([
+            "tree",
+            "-p",
+            "influxdb3-plugin-sdk",
+            "--edges",
+            "normal",
+            "--prefix",
+            "none",
+        ])
         .output()
         .expect("cargo tree failed");
     let tree = String::from_utf8_lossy(&output.stdout);
@@ -82,7 +90,10 @@ fn sdk_does_not_depend_on_cli_crates() {
     let banned_deps = ["clap", "anyhow", "tokio", "anstyle"];
     let mut violations = Vec::new();
     for dep in banned_deps {
-        if tree.lines().any(|l| l.starts_with(dep) || l.contains(&format!(" {dep} "))) {
+        if tree
+            .lines()
+            .any(|l| l.starts_with(dep) || l.contains(&format!(" {dep} ")))
+        {
             violations.push(dep);
         }
     }

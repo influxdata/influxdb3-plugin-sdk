@@ -92,7 +92,10 @@ pub fn plugin(
 
     let db_ver = database_version.unwrap_or(DEFAULT_DATABASE_VERSION);
     let manifest = manifest_template
-        .replace("{{manifest_schema_version}}", &influxdb3_plugin_schemas::ManifestSchemaVersion::CURRENT.to_string())
+        .replace(
+            "{{manifest_schema_version}}",
+            &influxdb3_plugin_schemas::ManifestSchemaVersion::CURRENT.to_string(),
+        )
         .replace("{{name}}", name)
         .replace("{{database_version}}", db_ver);
     write_file(&manifest_path, &manifest)?;
@@ -159,7 +162,10 @@ pub fn registry(dir: &Path, artifacts_url: Option<&str>, overwrite: bool) -> Res
         }
     };
     let contents = REGISTRY_INDEX
-        .replace("{{index_schema_version}}", &influxdb3_plugin_schemas::IndexSchemaVersion::CURRENT.to_string())
+        .replace(
+            "{{index_schema_version}}",
+            &influxdb3_plugin_schemas::IndexSchemaVersion::CURRENT.to_string(),
+        )
         .replace("{{artifacts_url}}", &url_string);
     write_file(&index_path, &contents)
 }

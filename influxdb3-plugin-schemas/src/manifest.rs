@@ -515,7 +515,10 @@ mod schema_version_tests {
 
     #[test]
     fn current_major_equals_supported() {
-        assert_eq!(ManifestSchemaVersion::CURRENT.major(), SUPPORTED_MANIFEST_MAJOR);
+        assert_eq!(
+            ManifestSchemaVersion::CURRENT.major(),
+            SUPPORTED_MANIFEST_MAJOR
+        );
     }
 
     #[test]
