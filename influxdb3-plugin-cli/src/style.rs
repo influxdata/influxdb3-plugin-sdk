@@ -90,9 +90,6 @@ mod tests {
         fn stdout_is_terminal(&self) -> bool {
             true
         }
-        fn stderr_is_terminal(&self) -> bool {
-            true
-        }
     }
 
     /// Absolute rule: JSON + stdout → every style field is a no-op.

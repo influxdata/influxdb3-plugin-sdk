@@ -107,7 +107,7 @@ pub(crate) enum Envelope<R: Serialize> {
 
 /// Structured error payload for `Envelope::Error`. Carries the stable
 /// `code`, human `message`, and optional structured fields.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct JsonError {
     /// Stable namespaced identifier from a closed enum.
     pub code: String,
@@ -152,81 +152,66 @@ pub fn write_envelope_error<W: std::io::Write>(
     writer: &mut W,
     error: &JsonError,
 ) -> std::io::Result<()> {
-    // Serialize the envelope by hand so `Envelope` can stay generic
-    // without requiring a phantom-data dance for the error path.
-    // The `Wire` enum below MUST stay in sync with `Envelope`'s tag
-    // attribute and field names; the test
-    // `write_envelope_error_matches_envelope_error_shape` is the drift
-    // guard that catches divergence.
-    #[derive(Serialize)]
-    #[serde(tag = "status", rename_all = "lowercase")]
-    enum Wire<'a> {
-        Error { error: &'a JsonError },
-    }
-    serde_json::to_writer(&mut *writer, &Wire::Error { error }).map_err(std::io::Error::other)?;
+    let env: Envelope<()> = Envelope::Error {
+        error: error.clone(),
+    };
+    serde_json::to_writer(&mut *writer, &env).map_err(std::io::Error::other)?;
     writer.write_all(b"\n")
 }
-
-pub(crate) const ALL_WIRE_CODES: &[&str] = &[
-    // validate::*
-    "validate::failed",
-    "validate::schema_reported",
-    "validate::missing_required_file",
-    "validate::python_parse",
-    "validate::trigger_not_implemented",
-    "validate::async_trigger_fn",
-    "validate::name_version_conflict",
-    "validate::index_read_failed",
-    "validate::schema_error",
-    "validate::io_failed",
-    // package::*
-    "package::canonical_collision",
-    "package::already_published",
-    "package::path_too_long",
-    "package::archive_failed",
-    "package::hash_failed",
-    "package::schema_error",
-    "package::path_overlap",
-    "package::index_parse_failed",
-    "package::io_failed",
-    // yank::*
-    "yank::entry_not_found",
-    "yank::index_parse_failed",
-    "yank::schema_error",
-    "yank::io_failed",
-    // new::*
-    "new::scaffold_failed",
-    "new::derived_name_invalid",
-    "new::derived_name_unavailable",
-    "new::path_resolution_failed",
-    // io::*
-    "io::read_failed",
-    "io::write_failed",
-    "io::canonicalize_failed",
-    // usage::*
-    "usage::missing_required_argument",
-    "usage::invalid_value",
-    "usage::value_validation",
-    "usage::unknown_argument",
-    "usage::invalid_subcommand",
-    "usage::missing_subcommand",
-    "usage::too_many_values",
-    "usage::too_few_values",
-    "usage::parse_error",
-    "usage::invalid_name",
-    "usage::invalid_artifacts_url",
-    "usage::invalid_database_version",
-    "usage::invalid_target",
-    "usage::input_output_overlap",
-    "usage::sibling_canonical_collision",
-    // cli::*
-    "cli::unknown",
-];
 
 #[cfg(test)]
 mod envelope_tests {
     use super::*;
     use serde::Serialize;
+
+    const ALL_WIRE_CODES: &[&str] = &[
+        "validate::failed",
+        "validate::schema_reported",
+        "validate::missing_required_file",
+        "validate::python_parse",
+        "validate::trigger_not_implemented",
+        "validate::async_trigger_fn",
+        "validate::name_version_conflict",
+        "validate::index_read_failed",
+        "validate::schema_error",
+        "validate::io_failed",
+        "package::canonical_collision",
+        "package::already_published",
+        "package::path_too_long",
+        "package::archive_failed",
+        "package::hash_failed",
+        "package::schema_error",
+        "package::path_overlap",
+        "package::index_parse_failed",
+        "package::io_failed",
+        "yank::entry_not_found",
+        "yank::index_parse_failed",
+        "yank::schema_error",
+        "yank::io_failed",
+        "new::scaffold_failed",
+        "new::derived_name_invalid",
+        "new::derived_name_unavailable",
+        "new::path_resolution_failed",
+        "io::read_failed",
+        "io::write_failed",
+        "io::canonicalize_failed",
+        "usage::missing_required_argument",
+        "usage::invalid_value",
+        "usage::value_validation",
+        "usage::unknown_argument",
+        "usage::invalid_subcommand",
+        "usage::missing_subcommand",
+        "usage::too_many_values",
+        "usage::too_few_values",
+        "usage::parse_error",
+        "usage::invalid_name",
+        "usage::invalid_artifacts_url",
+        "usage::invalid_database_version",
+        "usage::invalid_target",
+        "usage::input_output_overlap",
+        "usage::sibling_canonical_collision",
+        "cli::unknown",
+    ];
 
     #[derive(Serialize)]
     struct Demo {
@@ -344,37 +329,6 @@ mod envelope_tests {
     }
 
     #[test]
-    fn write_envelope_error_matches_envelope_error_shape() {
-        // Drift guard: write_envelope_error's internal `Wire` enum must
-        // produce byte-identical JSON to Envelope::Error. If the public
-        // `Envelope` shape changes (status tag rename, field rename, etc.)
-        // and `Wire` doesn't follow, this fails.
-        let je = JsonError {
-            code: "x::y".into(),
-            message: "m".into(),
-            field: Some("f".into()),
-            details: None,
-            diagnostics: vec![],
-            cause: vec![],
-        };
-        let env: Envelope<()> = Envelope::Error {
-            error: JsonError {
-                code: "x::y".into(),
-                message: "m".into(),
-                field: Some("f".into()),
-                details: None,
-                diagnostics: vec![],
-                cause: vec![],
-            },
-        };
-        let envelope_json = serde_json::to_string(&env).unwrap();
-        let mut buf = Vec::new();
-        write_envelope_error(&mut buf, &je).unwrap();
-        let helper_json = std::str::from_utf8(&buf).unwrap().trim_end();
-        assert_eq!(envelope_json, helper_json);
-    }
-
-    #[test]
     fn yank_output_outcome_serializes_four_case_enum() {
         let payload = YankOutput {
             name: "p".into(),
@@ -412,7 +366,7 @@ mod envelope_tests {
 
     #[test]
     fn code_allocations_stable() {
-        insta::assert_yaml_snapshot!(super::ALL_WIRE_CODES);
+        insta::assert_yaml_snapshot!(ALL_WIRE_CODES);
     }
 
     #[test]

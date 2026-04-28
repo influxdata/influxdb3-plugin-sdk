@@ -85,11 +85,6 @@ mod tests {
             // as a per-stream argument.
             false
         }
-        fn stderr_is_terminal(&self) -> bool {
-            // Same rationale as `stdout_is_terminal`: `decide_color` takes
-            // `is_terminal` as an argument, so the trait method isn't used.
-            false
-        }
     }
 
     #[rstest]

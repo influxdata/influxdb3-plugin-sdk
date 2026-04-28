@@ -16,10 +16,6 @@ pub(crate) enum ErrorContext {
     Yank,
     NewPlugin,
     NewRegistry,
-    NewList,
-    /// Top-level / clap-parse / pre-dispatch path. Used only for the
-    /// `cli::unknown` safety fallback in main.rs.
-    Cli,
 }
 
 /// Maps a single [`ValidationError`] to the wire-stable [`JsonError`] shape.
@@ -423,7 +419,6 @@ fn namespace_for(ctx: ErrorContext, suffix: &str) -> String {
         ErrorContext::Package => "package",
         ErrorContext::Yank => "yank",
         ErrorContext::NewPlugin | ErrorContext::NewRegistry => "new",
-        ErrorContext::NewList | ErrorContext::Cli => "cli",
     };
     format!("{ns}::{suffix}")
 }
@@ -441,7 +436,6 @@ fn io_error_to_json(
         ErrorContext::Package => "package::io_failed",
         ErrorContext::Yank => "yank::io_failed",
         ErrorContext::NewPlugin | ErrorContext::NewRegistry => "new::scaffold_failed",
-        ErrorContext::NewList | ErrorContext::Cli => "cli::unknown",
     };
     let field = path.map(|p| p.display().to_string());
     let details = Some(serde_json::json!({
@@ -944,8 +938,6 @@ mod tests {
             (ErrorContext::Yank, "yank::io_failed"),
             (ErrorContext::NewPlugin, "new::scaffold_failed"),
             (ErrorContext::NewRegistry, "new::scaffold_failed"),
-            (ErrorContext::NewList, "cli::unknown"),
-            (ErrorContext::Cli, "cli::unknown"),
         ];
         for (ctx, expected_code) in &cases {
             let je = json_error_from_sdk(&err, *ctx);
