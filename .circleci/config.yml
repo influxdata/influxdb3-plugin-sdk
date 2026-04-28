@@ -110,6 +110,82 @@ jobs:
           name: cargo doc --workspace --no-deps
           command: cargo doc --workspace --no-deps
 
+  # ---------- TEMPORARY PROBE (do not merge) ----------
+  # Verifies the dedicated SA's WIF chain works end-to-end up to the
+  # docker pull (which still requires the SRE's roles/artifactregistry.reader
+  # grant on ci-cross-influxdb3). Surfaces any setup mistakes BEFORE the
+  # SRE grants the perm, so we don't conflate "SRE grant pending" with
+  # "our WIF setup is wrong".
+  release-auth-probe-v2:
+    machine: true
+    resource_class: runner-ns/clustered-linux-vm
+    working_directory: /tmp/workspace/<< pipeline.id >>
+    steps:
+      - run:
+          name: Probe environment
+          command: |
+            for v in CIRCLE_OIDC_TOKEN CIRCLE_OIDC_TOKEN_V2 \
+                     GCP_PROJECT_ID GCP_SERVICE_ACCOUNT_EMAIL \
+                     GCP_WIP_ID GCP_WIP_PROVIDER_ID; do
+                val="${!v:-}"
+                if [ -n "$val" ]; then
+                    printf '%s: SET (len=%d)\n' "$v" "${#val}"
+                else
+                    printf '%s: UNSET\n' "$v"
+                fi
+            done
+      - run:
+          name: Install gcloud
+          no_output_timeout: 5m
+          command: |
+            curl -fsSL \
+              https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-linux-x86_64.tar.gz \
+              | tar xz -C $HOME
+            echo 'export PATH=$HOME/google-cloud-sdk/bin:$PATH' >> "$BASH_ENV"
+            source "$BASH_ENV"
+            gcloud --version | head -1
+      - run:
+          name: Generate WIF cred config
+          command: |
+            TOKEN="${CIRCLE_OIDC_TOKEN:-${CIRCLE_OIDC_TOKEN_V2:-}}"
+            [ -n "$TOKEN" ] || { echo "no OIDC token"; exit 1; }
+            umask 077
+            echo "$TOKEN" > /tmp/circleci_oidc_token
+            cat > /tmp/gcp_cred_config.json \<<JSON
+            {
+              "type": "external_account",
+              "audience": "//iam.googleapis.com/projects/${GCP_PROJECT_ID}/locations/global/workloadIdentityPools/${GCP_WIP_ID}/providers/${GCP_WIP_PROVIDER_ID}",
+              "subject_token_type": "urn:ietf:params:oauth:token-type:jwt",
+              "service_account_impersonation_url": "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${GCP_SERVICE_ACCOUNT_EMAIL}:generateAccessToken",
+              "token_url": "https://sts.googleapis.com/v1/token",
+              "credential_source": { "file": "/tmp/circleci_oidc_token" }
+            }
+            JSON
+            echo "WIF_CONFIG_GENERATED"
+      - run:
+          name: WIF login
+          command: |
+            source "$BASH_ENV"
+            gcloud auth login --cred-file=/tmp/gcp_cred_config.json && echo "WIF_LOGIN_OK"
+      - run:
+          name: Get GCP access token
+          command: |
+            source "$BASH_ENV"
+            gcloud auth print-access-token > /tmp/gcp_access_token \
+              && echo "ACCESS_TOKEN_OK (len=$(wc -c < /tmp/gcp_access_token))"
+      - run:
+          name: Docker login to GAR
+          command: |
+            cat /tmp/gcp_access_token | docker login -u oauth2accesstoken \
+              --password-stdin https://us-east1-docker.pkg.dev \
+              && echo "GAR_LOGIN_OK"
+      - run:
+          name: Pull cross-builder image
+          command: |
+            docker pull us-east1-docker.pkg.dev/influxdata-team-edge/ci-support/ci-cross-influxdb3@sha256:98b05538182a2e4eac5ce96150a1f5c552de48a7d3ea8d312d38e45f0dd42611 \
+              && echo "PULL_OK" \
+              || { echo "PULL_FAIL (expected until SRE grants artifactregistry.reader)"; exit 1; }
+
 workflows:
   ci:
     jobs:
@@ -119,3 +195,10 @@ workflows:
       - cargo-fmt
       - cargo-deny
       - cargo-doc
+
+  auth-probe-v2:
+    when:
+      equal: [ "ci/release-auth-probe-v2", << pipeline.git.branch >> ]
+    jobs:
+      - release-auth-probe-v2:
+          context: [influxdb3-plugin-sdk-gcp]
