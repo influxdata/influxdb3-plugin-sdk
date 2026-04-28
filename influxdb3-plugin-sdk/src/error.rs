@@ -126,6 +126,33 @@ impl From<SchemaErrors> for SdkError {
     }
 }
 
+impl From<influxdb3_plugin_schemas::IndexInsertError> for SdkError {
+    fn from(err: influxdb3_plugin_schemas::IndexInsertError) -> Self {
+        use influxdb3_plugin_schemas::IndexInsertError;
+        match err {
+            IndexInsertError::Duplicate {
+                name,
+                version,
+                existing_versions,
+            } => SdkError::AlreadyPublished {
+                name,
+                version: version.to_string(),
+                existing_versions: existing_versions.iter().map(|v| v.to_string()).collect(),
+            },
+            IndexInsertError::CanonicalCollision {
+                name,
+                canonical,
+                existing,
+            } => SdkError::CanonicalCollision {
+                name,
+                canonical,
+                existing,
+            },
+            _ => unreachable!("IndexInsertError has no other variants in the current schemas version"),
+        }
+    }
+}
+
 /// An individual validation failure.
 ///
 /// Collected into [`ValidationReport`] and surfaced together via
