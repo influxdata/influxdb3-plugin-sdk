@@ -218,11 +218,9 @@ fn yank_malformed_target_exits_two() {
     );
 }
 
-// -----------------------------------------------------------------------
 // PluginName rule inheritance — `yank` parses `<name>@<version>` through
 // the same `PluginName::from_str` used by `package`, so the new Cargo
 // rule applies transparently. Cover one accept + two reject paths.
-// -----------------------------------------------------------------------
 
 /// `my_plugin` (underscore) parses cleanly through the clap value parser
 /// under the new rule. The entry is not in the seeded index, so the

@@ -236,7 +236,7 @@ fn assert_json_error_envelope(output: &std::process::Output) {
 /// `--output json` usage errors must emit a JSON error envelope on
 /// stdout and empty stderr. Applies to clap parse failures.
 #[test]
-fn json_mode_usage_error_stderr_is_single_line_for_new() {
+fn json_mode_usage_error_emits_envelope_for_new() {
     let assert = Command::cargo_bin("influxdb3-plugin")
         .unwrap()
         .args(["new", "not_a_template", "--output", "json"])
@@ -248,7 +248,7 @@ fn json_mode_usage_error_stderr_is_single_line_for_new() {
 }
 
 #[test]
-fn ci_env_triggers_single_line_stderr_for_usage_errors() {
+fn ci_env_triggers_json_envelope_for_usage_errors() {
     let assert = Command::cargo_bin("influxdb3-plugin")
         .unwrap()
         .env("CI", "true")
@@ -263,7 +263,7 @@ fn ci_env_triggers_single_line_stderr_for_usage_errors() {
 /// validate with an unknown flag — confirms main-level interception
 /// applies to subcommands other than `new`.
 #[test]
-fn json_mode_validate_unknown_flag_is_single_line() {
+fn json_mode_validate_unknown_flag_emits_envelope() {
     let assert = Command::cargo_bin("influxdb3-plugin")
         .unwrap()
         .args(["validate", "--nope", "--output", "json"])
@@ -275,7 +275,7 @@ fn json_mode_validate_unknown_flag_is_single_line() {
 /// package with no positional — confirms the collapse covers the
 /// missing-required class of clap error, not only unknown-value.
 #[test]
-fn json_mode_package_missing_required_is_single_line() {
+fn json_mode_package_missing_required_emits_envelope() {
     let assert = Command::cargo_bin("influxdb3-plugin")
         .unwrap()
         .args(["package", "--output", "json"])
@@ -300,7 +300,7 @@ fn explicit_human_mode_preserves_multi_line_clap_output() {
     );
 }
 
-/// Spec § 4.7 safety guard: no representative production path should emit
+/// Safety guard: no representative production path should emit
 /// `cli::unknown`. That code is the fallback for plain `anyhow::Error`
 /// escaping the typed `CliError` wiring. If this fires, a call site is
 /// returning a bare `anyhow!` instead of `CliError::runtime(JsonError)`.

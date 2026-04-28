@@ -14,7 +14,7 @@ use std::path::PathBuf;
 /// `--output json` payload emitted by `yank` on success.
 /// `outcome` collapses the (target_state, transition vs no-op) cross
 /// product into one four-case enum. The wire form is the snake_case
-/// representation per spec § 4.2.
+/// representation.
 #[derive(Debug, Serialize)]
 pub(crate) struct YankOutput {
     pub name: String,
@@ -30,7 +30,7 @@ pub(crate) struct YankOutput {
 /// - `AlreadyYanked` — yank operation, entry was already yanked (no-op).
 /// - `AlreadyUnyanked` — `--undo` operation, entry was already not yanked (no-op).
 ///
-/// Stable per spec § 6.2.
+/// Stable wire enum.
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum YankOutcomeWire {
@@ -98,7 +98,6 @@ pub(crate) struct NewOutput {
 /// - `Envelope::Ok { result }`  → `{"status":"ok","result":{...}}`
 /// - `Envelope::Error { error }` → `{"status":"error","error":{...}}`
 ///
-/// Per spec § 4.1 / § 6.1.
 #[derive(Debug, Serialize)]
 #[serde(tag = "status", rename_all = "lowercase")]
 pub(crate) enum Envelope<R: Serialize> {
@@ -107,18 +106,17 @@ pub(crate) enum Envelope<R: Serialize> {
 }
 
 /// Structured error payload for `Envelope::Error`. Carries the stable
-/// `code`, human `message`, and optional structured fields per spec § 4.3
-/// and § 4.5.1.
+/// `code`, human `message`, and optional structured fields.
 #[derive(Debug, Serialize)]
 pub struct JsonError {
-    /// Stable namespaced identifier from a closed enum (spec § 4.5).
+    /// Stable namespaced identifier from a closed enum.
     pub code: String,
     /// Source error's `Display` text, English.
     pub message: String,
     /// Dotted-path location, filename, or target identifier when applicable.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub field: Option<String>,
-    /// Variant-specific structured payload per spec § 4.5.1.
+    /// Variant-specific structured payload.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub details: Option<serde_json::Value>,
     /// Sub-error array used by `validate::failed` and the `<command>::index_parse_failed` codes.

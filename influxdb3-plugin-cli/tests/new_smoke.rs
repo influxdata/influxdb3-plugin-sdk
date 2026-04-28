@@ -410,9 +410,7 @@ fn new_conflict_error_mentions_path_once() {
         "stderr should mention the conflicting path exactly once; was:\n{stderr}"
     );
 
-    // After the Chunk 6 polish, "already exists" should appear exactly
-    // once in the rendered error chain (anyhow's source-walk plus
-    // `#[source]` no longer duplicates the inner io::Error's message).
+    // The error chain should not duplicate "already exists".
     let phrase_occurrences = stderr.matches("already exists").count();
     assert_eq!(
         phrase_occurrences, 1,
@@ -618,11 +616,9 @@ fn new_registry_with_force_overwrites_index() {
     assert!(raw.contains("https://x.example/"), "index: {raw}");
 }
 
-// -----------------------------------------------------------------------
 // PluginName rule coverage — accept + reject paths under the new rule
 // (`[a-zA-Z][a-zA-Z0-9_-]*`, case-preserving, rejects Windows reserved
 // device names).
-// -----------------------------------------------------------------------
 
 #[test]
 fn new_accepts_underscore_name_via_flag() {

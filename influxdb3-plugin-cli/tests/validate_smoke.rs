@@ -417,15 +417,21 @@ fn validate_with_malformed_index_emits_json_diagnostic() {
     .code(1);
 
     let out = assert.get_output();
+    assert!(
+        out.stderr.is_empty(),
+        "stderr must be empty in JSON mode, got: {:?}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
     let payload: serde_json::Value =
         serde_json::from_str(&stdout).expect("stdout must be one JSON envelope on parse failure");
     assert_eq!(payload["status"], "error");
     // Malformed index goes through SdkError::Schema → json_error_from_sdk
     let error = &payload["error"];
+    let code = error["code"].as_str().expect("error should have a code");
     assert!(
-        error["code"].as_str().is_some(),
-        "error should have a code, got {payload}"
+        code.starts_with("validate::") || code.starts_with("cli::"),
+        "error code should be in validate:: or cli:: namespace, got {code:?}"
     );
 }
 
@@ -489,6 +495,11 @@ fn validate_with_index_schema_errors_emits_all_diagnostics() {
     .failure()
     .code(1);
     let out = assert.get_output();
+    assert!(
+        out.stderr.is_empty(),
+        "stderr must be empty in JSON mode, got: {:?}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
     let payload: serde_json::Value = serde_json::from_str(&stdout).unwrap();
     assert_eq!(payload["status"], "error");
@@ -496,8 +507,9 @@ fn validate_with_index_schema_errors_emits_all_diagnostics() {
     // Schema errors from index parse map through json_error_from_sdk.
     // They may come as a single schema_error or through validation errors
     // depending on how the SDK surfaces them.
+    let code = error["code"].as_str().expect("error should have a code");
     assert!(
-        error["code"].as_str().is_some(),
-        "error should have a code, got {payload}"
+        code.starts_with("validate::") || code.starts_with("cli::"),
+        "error code should be in validate:: or cli:: namespace, got {code:?}"
     );
 }

@@ -4,11 +4,6 @@
 //! color is off, every style field is a no-op `Style::new()` so callers
 //! can write `palette.error.render()` unconditionally and get plain text
 //! on monochrome environments.
-//!
-//! # Spec alignment
-//! - color precedence table: fully delegated to `decide_color`.
-//! - Absolute JSON-stdout rule: caller passes `Stream::Stdout`/`Json`
-//!   combo and `decide_color` returns `false` — style fields collapse.
 
 use crate::color::{Stream, decide_color};
 use crate::output::{Env, OutputMode};

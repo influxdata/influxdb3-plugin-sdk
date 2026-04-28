@@ -1,8 +1,8 @@
 //! CLI-layer error classification.
 //!
-//! Spec § 4.6 / § 4.7. Every error in JSON mode carries a structured
-//! `JsonError` payload; `CliError` just adds the Usage-vs-Runtime
-//! exit-code classification on top.
+//! Every error in JSON mode carries a structured `JsonError` payload;
+//! `CliError` just adds the Usage-vs-Runtime exit-code classification
+//! on top.
 
 use crate::output::json::JsonError;
 

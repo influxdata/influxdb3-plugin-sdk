@@ -140,7 +140,7 @@ fn package_rejects_duplicate_name_version() {
     let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
     assert!(
         stdout.contains("1.0.0") && stdout.contains("1.2.0"),
-        "output must list every existing version of `downsampler` (S2-2), got: {stdout}"
+        "output must list every existing version of `downsampler`, got: {stdout}"
     );
     assert!(
         !stdout.contains("9.9.9"),
@@ -148,7 +148,7 @@ fn package_rejects_duplicate_name_version() {
     );
     assert!(
         stdout.contains("yank"),
-        "output must direct the author to `yank` per S2-2, got: {stdout}"
+        "output must direct the author to `yank`, got: {stdout}"
     );
 
     // No artifact / derived index written.
@@ -158,12 +158,9 @@ fn package_rejects_duplicate_name_version() {
     assert!(!out_dir.join("index.json").exists());
 }
 
-// -----------------------------------------------------------------------
 // Canonical-form collision detection — hyphen/underscore and case
 // differences collide under `Index::from_raw_json`'s canonical key
-// (lowercase + `-` → `_`). The new `package` check must fire, reusing
-// the existing S2-2 payload shape (list versions + direct to `yank`).
-// -----------------------------------------------------------------------
+// (lowercase + `-` → `_`).
 
 /// Writes a plugin directory with a caller-chosen `name` and `version`.
 /// Mirrors `write_valid_plugin` but parameterized so collision tests can

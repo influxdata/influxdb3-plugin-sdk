@@ -61,7 +61,7 @@ fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
     let mode = resolve_output_mode(args.output, env);
     let stdout_palette = Palette::for_stream(Stream::Stdout, mode, env, env.stdout_is_terminal());
 
-    // (a) Read + parse the input index before creating --out so we don't
+    // Read + parse the input index before creating --out so we don't
     // leave an empty scratch dir on parse failure.
     let index_raw = std::fs::read_to_string(&args.index).map_err(|e| {
         CliError::runtime(JsonError {
@@ -77,7 +77,7 @@ fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
         })
     })?;
 
-    // (b) Parse index JSON — SchemaErrors → structured diagnostics.
+    // Parse index JSON — SchemaErrors → structured diagnostics.
     let input_index = Index::parse_json(&index_raw).map_err(|schema_errors| {
         let diagnostics: Vec<JsonError> = schema_errors
             .into_iter()
@@ -96,7 +96,7 @@ fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
         })
     })?;
 
-    // (d) Create --out directory. Path-equivalence check must fire before
+    // Create --out directory. Path-equivalence check must fire before
     // any output write.
     std::fs::create_dir_all(&args.out).map_err(|e| {
         CliError::runtime(JsonError {
@@ -112,7 +112,7 @@ fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
         })
     })?;
 
-    // (c) Path-equivalence check + (i) canonicalize failures.
+    // Path-equivalence check.
     if paths_overlap(&args.index, &args.out)? {
         return Err(CliError::usage(JsonError {
             code: "usage::input_output_overlap".into(),
@@ -132,14 +132,14 @@ fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
         }));
     }
 
-    // (e) + (f) Package the plugin.
+    // Package the plugin.
     let outcome = match package::package_plugin(&args.plugin_dir, input_index) {
         Ok(o) => o,
         Err(SdkError::ValidationErrors(errs)) => {
             return Err(validation_errors_to_cli_error(errs));
         }
         Err(other) => {
-            // (f) Other SdkError → structured error.
+            // Other SdkError → structured error.
             return Err(CliError::runtime(json_error_from_sdk(
                 &other,
                 ErrorContext::Package,
@@ -155,13 +155,13 @@ fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
     let artifact_path = args.out.join(&artifact_filename);
     let derived_index_path = args.out.join("index.json");
 
-    // (g) Canonical JSON serialization failure.
+    // Canonical JSON serialization failure.
     let derived_index_json = outcome.derived_index.to_canonical_json().map_err(|e| {
         let sdk_err = SdkError::from(e);
         CliError::runtime(json_error_from_sdk(&sdk_err, ErrorContext::Package))
     })?;
 
-    // (h) Write artifact.
+    // Write artifact.
     std::fs::write(&artifact_path, &outcome.archive_bytes).map_err(|e| {
         CliError::runtime(JsonError {
             code: "io::write_failed".into(),
@@ -176,7 +176,7 @@ fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
         })
     })?;
 
-    // (h) Write derived index.
+    // Write derived index.
     std::fs::write(&derived_index_path, &derived_index_json).map_err(|e| {
         CliError::runtime(JsonError {
             code: "io::write_failed".into(),
@@ -217,7 +217,6 @@ fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
 /// containing `index_path` (canonical). Symlinks, trailing slashes,
 /// `.` segments, and `..` segments collapse to the same result.
 fn paths_overlap(index_path: &Path, out_dir: &Path) -> anyhow::Result<bool> {
-    // (i) Canonicalize failures.
     let idx = std::fs::canonicalize(index_path).map_err(|e| {
         CliError::runtime(JsonError {
             code: "io::canonicalize_failed".into(),

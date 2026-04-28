@@ -133,10 +133,11 @@ fn validate_human_mode_index_failure_renders_diagnostics_on_stderr() {
         .assert()
         .code(1);
     let stderr = String::from_utf8_lossy(&assert.get_output().stderr).into_owned();
-    // In human mode, errors now render to stderr via render_human_error.
-    // The error should contain the schema_error code or a meaningful message.
+    // In human mode, errors render to stderr via render_human_error.
+    // The error should contain a recognizable token from the error code
+    // or a meaningful diagnostic message.
     assert!(
-        !stderr.is_empty(),
-        "stderr should contain the error rendering in human mode, got empty"
+        stderr.contains("validate") || stderr.contains("[validate::"),
+        "stderr should contain a recognizable error token in human mode, got: {stderr}"
     );
 }

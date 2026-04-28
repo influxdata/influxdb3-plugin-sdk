@@ -1,9 +1,9 @@
 //! Shared human-mode renderer for error paths.
 //!
-//! Spec § 4.7. One entry point — `render_human_error` — dispatches by
-//! `JsonError` shape: multi-issue (`diagnostics[]` non-empty) renders
-//! the numbered block; single-issue renders one line plus the optional
-//! `cause[]` chain.
+//! One entry point — `render_human_error` — dispatches by `JsonError`
+//! shape: multi-issue (`diagnostics[]` non-empty) renders the numbered
+//! block; single-issue renders one line plus the optional `cause[]`
+//! chain.
 
 use crate::output::json::JsonError;
 use crate::style::Palette;
@@ -12,7 +12,7 @@ use std::io;
 /// Top-level entry point for human-mode error rendering. Dispatches on
 /// the `JsonError` shape: if `diagnostics[]` is non-empty we render the
 /// numbered list block; otherwise we render one line with optional cause
-/// chain. Spec § 4.7.
+/// chain.
 pub fn render_human_error(
     err: &JsonError,
     palette: Palette,

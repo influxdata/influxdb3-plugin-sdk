@@ -1,6 +1,6 @@
-//! Maps SDK / clap errors into the wire-stable `JsonError` shape per
-//! spec § 4.6 / § 4.5. CLI-owned, decoupled from internal Rust type
-//! names so SDK refactors don't break the wire.
+//! Maps SDK / clap errors into the wire-stable `JsonError` shape.
+//! CLI-owned, decoupled from internal Rust type names so SDK refactors
+//! don't break the wire.
 
 use crate::output::json::JsonError;
 use influxdb3_plugin_schemas::SchemaError;
@@ -9,7 +9,6 @@ use influxdb3_plugin_sdk::{SdkError, ValidationError};
 /// Identifies the calling command so the error mapper can pick the
 /// correct namespace for variants whose code dispatches by call site
 /// (`SdkError::Io`, `SdkError::Archive`, `SdkError::PathOverlap`).
-/// Spec § 4.6.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ErrorContext {
     Validate,
@@ -243,7 +242,7 @@ pub(crate) fn schema_error_details(err: &SchemaError) -> serde_json::Value {
 
 /// Maps a [`clap::Error`] to the wire-stable [`JsonError`] shape.
 ///
-/// Dispatches by `err.kind()` to a `usage::*` code per spec § 4.4 / § 4.5.
+/// Dispatches by `err.kind()` to a `usage::*` code.
 /// `ValueValidation` with `ContextKind::InvalidArg == "<NAME@VERSION>"` refines
 /// to `usage::invalid_target`.
 pub fn json_error_from_clap(err: &clap::Error) -> JsonError {
@@ -417,7 +416,7 @@ fn subcommand_details(err: &clap::Error) -> Option<serde_json::Value> {
 }
 
 /// Returns `"{namespace}::{suffix}"` where namespace is derived from the
-/// [`ErrorContext`] per spec § 4.4.
+/// [`ErrorContext`].
 fn namespace_for(ctx: ErrorContext, suffix: &str) -> String {
     let ns = match ctx {
         ErrorContext::Validate => "validate",
@@ -431,7 +430,7 @@ fn namespace_for(ctx: ErrorContext, suffix: &str) -> String {
 
 /// Maps an I/O error to [`JsonError`], picking the wire code from context.
 ///
-/// Spec § 4.5: context-dependent `io_failed` / `scaffold_failed` / `unknown`.
+/// Context-dependent `io_failed` / `scaffold_failed` / `unknown`.
 fn io_error_to_json(
     source: &std::io::Error,
     path: Option<&std::path::Path>,
@@ -471,7 +470,7 @@ fn io_error_to_json(
 /// Maps an [`SdkError`] to the wire-stable [`JsonError`] shape.
 ///
 /// Context-dispatched variants (`Io`, `Archive`, `PathOverlap`) pick their
-/// namespace from [`ErrorContext`] per spec § 4.5.
+/// namespace from [`ErrorContext`].
 pub(crate) fn json_error_from_sdk(err: &SdkError, ctx: ErrorContext) -> JsonError {
     match err {
         SdkError::Io { source, path } => io_error_to_json(source, path.as_deref(), ctx),
@@ -615,32 +614,6 @@ pub(crate) fn json_error_from_sdk(err: &SdkError, ctx: ErrorContext) -> JsonErro
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn error_context_variants_are_distinct() {
-        let all = [
-            ErrorContext::Validate,
-            ErrorContext::Package,
-            ErrorContext::Yank,
-            ErrorContext::NewPlugin,
-            ErrorContext::NewRegistry,
-            ErrorContext::NewList,
-            ErrorContext::Cli,
-        ];
-        for (i, a) in all.iter().enumerate() {
-            for (j, b) in all.iter().enumerate() {
-                if i == j {
-                    assert_eq!(a, b);
-                } else {
-                    assert_ne!(a, b);
-                }
-            }
-        }
-    }
-
-    // ------------------------------------------------------------------
-    // json_error_from_validation tests
-    // ------------------------------------------------------------------
 
     use influxdb3_plugin_schemas::{FieldPath, ReportedError, SchemaError, TriggerType};
     use influxdb3_plugin_sdk::ValidationError;
@@ -875,10 +848,6 @@ mod tests {
         }
     }
 
-    // ------------------------------------------------------------------
-    // json_error_from_sdk tests
-    // ------------------------------------------------------------------
-
     use influxdb3_plugin_sdk::SdkError;
 
     #[test]
@@ -1045,10 +1014,6 @@ mod tests {
         assert_eq!(details["schema_variant"], "DescriptionEmpty");
     }
 
-    // ------------------------------------------------------------------
-    // json_error_from_clap tests
-    // ------------------------------------------------------------------
-
     use clap::error::{ContextKind, ContextValue, ErrorKind};
     use clap::{Arg, Command, Error as ClapError};
 
@@ -1084,7 +1049,11 @@ mod tests {
         let je = json_error_from_clap(&err);
         assert_eq!(je.code, "usage::parse_error");
         let details = je.details.expect("details");
-        assert!(details.get("clap_kind").and_then(|v| v.as_str()).is_some());
+        assert_eq!(
+            details.get("clap_kind").and_then(|v| v.as_str()),
+            Some("Format"),
+            "unmapped ErrorKind::Format should surface as clap_kind \"Format\""
+        );
     }
 
     #[test]
