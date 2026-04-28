@@ -144,6 +144,38 @@ pub(crate) struct JsonError {
 #[derive(Debug, Serialize)]
 pub(crate) struct ValidateResult {}
 
+/// Writes `Envelope::Ok { result }` as compact JSON with a single
+/// trailing `\n`. Used by every command's success path.
+pub(crate) fn write_envelope_ok<W: std::io::Write, R: Serialize>(
+    writer: &mut W,
+    result: R,
+) -> std::io::Result<()> {
+    let env = Envelope::Ok { result };
+    serde_json::to_writer(&mut *writer, &env).map_err(std::io::Error::other)?;
+    writer.write_all(b"\n")
+}
+
+/// Writes `Envelope::Error { error }` as compact JSON with a single
+/// trailing `\n`. Used by `main.rs`'s error dispatch.
+pub(crate) fn write_envelope_error<W: std::io::Write>(
+    writer: &mut W,
+    error: &JsonError,
+) -> std::io::Result<()> {
+    // Serialize the envelope by hand so `Envelope` can stay generic
+    // without requiring a phantom-data dance for the error path.
+    // The `Wire` enum below MUST stay in sync with `Envelope`'s tag
+    // attribute and field names; the test
+    // `write_envelope_error_matches_envelope_error_shape` is the drift
+    // guard that catches divergence.
+    #[derive(Serialize)]
+    #[serde(tag = "status", rename_all = "lowercase")]
+    enum Wire<'a> {
+        Error { error: &'a JsonError },
+    }
+    serde_json::to_writer(&mut *writer, &Wire::Error { error }).map_err(std::io::Error::other)?;
+    writer.write_all(b"\n")
+}
+
 #[cfg(test)]
 mod envelope_tests {
     use super::*;
@@ -218,5 +250,60 @@ mod envelope_tests {
         let env = Envelope::Ok { result: ValidateResult {} };
         let s = serde_json::to_string(&env).unwrap();
         assert_eq!(s, r#"{"status":"ok","result":{}}"#);
+    }
+
+    #[test]
+    fn write_envelope_ok_writes_compact_with_trailing_newline() {
+        let mut buf = Vec::new();
+        write_envelope_ok(&mut buf, Demo { a: 1 }).unwrap();
+        assert_eq!(buf, b"{\"status\":\"ok\",\"result\":{\"a\":1}}\n");
+    }
+
+    #[test]
+    fn write_envelope_error_writes_compact_with_trailing_newline() {
+        let err = JsonError {
+            code: "c".into(),
+            message: "m".into(),
+            field: None,
+            details: None,
+            diagnostics: vec![],
+            cause: vec![],
+        };
+        let mut buf = Vec::new();
+        write_envelope_error(&mut buf, &err).unwrap();
+        assert_eq!(buf, b"{\"status\":\"error\",\"error\":{\"code\":\"c\",\"message\":\"m\"}}\n");
+    }
+
+    #[test]
+    fn json_output_is_compact_single_newline() {
+        let mut buf = Vec::new();
+        write_envelope_ok(&mut buf, Demo { a: 0 }).unwrap();
+        let s = std::str::from_utf8(&buf).unwrap();
+        assert!(!s.contains('\n') || s.ends_with('\n'));
+        assert_eq!(s.matches('\n').count(), 1);
+        assert!(!s.contains("  "));
+    }
+
+    #[test]
+    fn write_envelope_error_matches_envelope_error_shape() {
+        // Drift guard: write_envelope_error's internal `Wire` enum must
+        // produce byte-identical JSON to Envelope::Error. If the public
+        // `Envelope` shape changes (status tag rename, field rename, etc.)
+        // and `Wire` doesn't follow, this fails.
+        let je = JsonError {
+            code: "x::y".into(), message: "m".into(),
+            field: Some("f".into()), details: None,
+            diagnostics: vec![], cause: vec![],
+        };
+        let env: Envelope<()> = Envelope::Error { error: JsonError {
+            code: "x::y".into(), message: "m".into(),
+            field: Some("f".into()), details: None,
+            diagnostics: vec![], cause: vec![],
+        }};
+        let envelope_json = serde_json::to_string(&env).unwrap();
+        let mut buf = Vec::new();
+        write_envelope_error(&mut buf, &je).unwrap();
+        let helper_json = std::str::from_utf8(&buf).unwrap().trim_end();
+        assert_eq!(envelope_json, helper_json);
     }
 }
