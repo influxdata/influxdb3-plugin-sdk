@@ -78,11 +78,6 @@ pub enum SdkError {
     #[error("plugin ({name:?}, {version:?}) is not present in the target index")]
     EntryNotFound { name: String, version: String },
 
-    #[error(
-        "output directory {output:?} overlaps with input path {input:?}; \
-         they must be disjoint"
-    )]
-    PathOverlap { input: PathBuf, output: PathBuf },
 }
 
 impl SdkError {
@@ -99,7 +94,6 @@ impl SdkError {
             Self::AlreadyPublished { .. } => "AlreadyPublished",
             Self::CanonicalCollision { .. } => "CanonicalCollision",
             Self::EntryNotFound { .. } => "EntryNotFound",
-            Self::PathOverlap { .. } => "PathOverlap",
         }
     }
 }
@@ -300,10 +294,6 @@ mod tests {
             SdkError::EntryNotFound {
                 name: "downsampler".into(),
                 version: "1.2.0".into(),
-            },
-            SdkError::PathOverlap {
-                input: PathBuf::from("/a/index.json"),
-                output: PathBuf::from("/a"),
             },
         ]
     }
