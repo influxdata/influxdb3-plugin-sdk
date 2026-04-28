@@ -241,6 +241,181 @@ pub(crate) fn schema_error_details(err: &SchemaError) -> serde_json::Value {
     }
 }
 
+/// Maps a [`clap::Error`] to the wire-stable [`JsonError`] shape.
+///
+/// Dispatches by `err.kind()` to a `usage::*` code per spec § 4.4 / § 4.5.
+/// `ValueValidation` with `ContextKind::InvalidArg == "<NAME@VERSION>"` refines
+/// to `usage::invalid_target`.
+pub(crate) fn json_error_from_clap(err: &clap::Error) -> JsonError {
+    use clap::error::{ContextKind, ErrorKind};
+    let message = collapse_clap_message(err);
+    let kind = err.kind();
+    match kind {
+        ErrorKind::MissingRequiredArgument => JsonError {
+            code: "usage::missing_required_argument".into(),
+            message,
+            field: None,
+            details: argument_details(err),
+            diagnostics: vec![],
+            cause: vec![],
+        },
+        ErrorKind::InvalidValue => JsonError {
+            code: "usage::invalid_value".into(),
+            message,
+            field: None,
+            details: argument_value_details(err),
+            diagnostics: vec![],
+            cause: vec![],
+        },
+        ErrorKind::ValueValidation => {
+            let is_name_at_version = clap_context_arg(err)
+                .as_deref()
+                .map(|a| a == "<NAME@VERSION>")
+                .unwrap_or(false);
+            let code = if is_name_at_version {
+                "usage::invalid_target"
+            } else {
+                "usage::value_validation"
+            };
+            JsonError {
+                code: code.into(),
+                message,
+                field: None,
+                details: argument_value_details(err),
+                diagnostics: vec![],
+                cause: vec![],
+            }
+        }
+        ErrorKind::UnknownArgument => JsonError {
+            code: "usage::unknown_argument".into(),
+            message,
+            field: None,
+            details: argument_details(err),
+            diagnostics: vec![],
+            cause: vec![],
+        },
+        ErrorKind::InvalidSubcommand => JsonError {
+            code: "usage::invalid_subcommand".into(),
+            message,
+            field: None,
+            details: subcommand_details(err),
+            diagnostics: vec![],
+            cause: vec![],
+        },
+        ErrorKind::MissingSubcommand => JsonError {
+            code: "usage::missing_subcommand".into(),
+            message,
+            field: None,
+            details: None,
+            diagnostics: vec![],
+            cause: vec![],
+        },
+        ErrorKind::TooManyValues => JsonError {
+            code: "usage::too_many_values".into(),
+            message,
+            field: None,
+            details: argument_value_details(err),
+            diagnostics: vec![],
+            cause: vec![],
+        },
+        ErrorKind::TooFewValues => JsonError {
+            code: "usage::too_few_values".into(),
+            message,
+            field: None,
+            details: argument_value_details(err),
+            diagnostics: vec![],
+            cause: vec![],
+        },
+        other => {
+            let clap_kind = format!("{other:?}");
+            JsonError {
+                code: "usage::parse_error".into(),
+                message,
+                field: None,
+                details: Some(serde_json::json!({ "clap_kind": clap_kind })),
+                diagnostics: vec![],
+                cause: vec![],
+            }
+        }
+    }
+}
+
+/// Collapses clap's multi-line error message into a single line.
+///
+/// Strips the trailing "For more information" footer and joins remaining
+/// non-empty lines with a space.
+fn collapse_clap_message(err: &clap::Error) -> String {
+    let rendered = err.to_string();
+    let lines: Vec<&str> = rendered
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .filter(|l| !l.trim_start().starts_with("For more information"))
+        .collect();
+    lines.join(" ")
+}
+
+/// Returns the value of `ContextKind::InvalidArg` from a clap error, if present.
+fn clap_context_arg(err: &clap::Error) -> Option<String> {
+    use clap::error::{ContextKind, ContextValue};
+    err.get(ContextKind::InvalidArg).and_then(|cv| {
+        if let ContextValue::String(s) = cv {
+            Some(s.clone())
+        } else {
+            None
+        }
+    })
+}
+
+/// Returns the value of `ContextKind::InvalidValue` from a clap error, if present.
+fn clap_context_value(err: &clap::Error) -> Option<String> {
+    use clap::error::{ContextKind, ContextValue};
+    err.get(ContextKind::InvalidValue).and_then(|cv| {
+        if let ContextValue::String(s) = cv {
+            Some(s.clone())
+        } else {
+            None
+        }
+    })
+}
+
+/// Builds `{"argument": arg}` details from a clap error's `InvalidArg` context.
+fn argument_details(err: &clap::Error) -> Option<serde_json::Value> {
+    clap_context_arg(err).map(|arg| serde_json::json!({ "argument": arg }))
+}
+
+/// Builds `{"argument": arg, "value": val}` details from a clap error's context.
+///
+/// Omits fields that are absent. Returns `None` if both are absent.
+fn argument_value_details(err: &clap::Error) -> Option<serde_json::Value> {
+    let arg = clap_context_arg(err);
+    let val = clap_context_value(err);
+    match (arg, val) {
+        (None, None) => None,
+        (arg, val) => {
+            let mut map = serde_json::Map::new();
+            if let Some(a) = arg {
+                map.insert("argument".into(), serde_json::Value::String(a));
+            }
+            if let Some(v) = val {
+                map.insert("value".into(), serde_json::Value::String(v));
+            }
+            Some(serde_json::Value::Object(map))
+        }
+    }
+}
+
+/// Builds `{"subcommand": sub}` details from a clap error's `InvalidSubcommand` context.
+fn subcommand_details(err: &clap::Error) -> Option<serde_json::Value> {
+    use clap::error::{ContextKind, ContextValue};
+    err.get(ContextKind::InvalidSubcommand).and_then(|cv| {
+        if let ContextValue::String(s) = cv {
+            Some(serde_json::json!({ "subcommand": s }))
+        } else {
+            None
+        }
+    })
+}
+
 /// Returns `"{namespace}::{suffix}"` where namespace is derived from the
 /// [`ErrorContext`] per spec § 4.4.
 fn namespace_for(ctx: ErrorContext, suffix: &str) -> String {
@@ -853,5 +1028,63 @@ mod tests {
         assert_eq!(je.code, "package::schema_error");
         let details = je.details.as_ref().expect("details should exist");
         assert_eq!(details["schema_variant"], "DescriptionEmpty");
+    }
+
+    // ------------------------------------------------------------------
+    // json_error_from_clap tests
+    // ------------------------------------------------------------------
+
+    use clap::error::{ContextKind, ContextValue, ErrorKind};
+    use clap::{Arg, Command, Error as ClapError};
+
+    fn make_clap_err(kind: ErrorKind) -> ClapError {
+        ClapError::raw(kind, "boom")
+    }
+
+    #[test]
+    fn clap_error_kinds_map_to_codes() {
+        let cases = [
+            (
+                ErrorKind::MissingRequiredArgument,
+                "usage::missing_required_argument",
+            ),
+            (ErrorKind::InvalidValue, "usage::invalid_value"),
+            (ErrorKind::ValueValidation, "usage::value_validation"),
+            (ErrorKind::UnknownArgument, "usage::unknown_argument"),
+            (ErrorKind::InvalidSubcommand, "usage::invalid_subcommand"),
+            (ErrorKind::MissingSubcommand, "usage::missing_subcommand"),
+            (ErrorKind::TooManyValues, "usage::too_many_values"),
+            (ErrorKind::TooFewValues, "usage::too_few_values"),
+        ];
+        for (kind, expected) in cases {
+            let err = make_clap_err(kind);
+            let je = json_error_from_clap(&err);
+            assert_eq!(je.code, expected, "for {kind:?}");
+        }
+    }
+
+    #[test]
+    fn clap_unmapped_kind_falls_back_to_parse_error() {
+        let err = make_clap_err(ErrorKind::Format);
+        let je = json_error_from_clap(&err);
+        assert_eq!(je.code, "usage::parse_error");
+        let details = je.details.expect("details");
+        assert!(details.get("clap_kind").and_then(|v| v.as_str()).is_some());
+    }
+
+    #[test]
+    fn clap_value_validation_for_name_at_version_emits_invalid_target() {
+        let cmd = Command::new("yank").arg(Arg::new("NAME@VERSION").required(true));
+        let mut err = ClapError::new(ErrorKind::ValueValidation).with_cmd(&cmd);
+        err.insert(
+            ContextKind::InvalidArg,
+            ContextValue::String("<NAME@VERSION>".into()),
+        );
+        err.insert(
+            ContextKind::InvalidValue,
+            ContextValue::String("badformat: msg".into()),
+        );
+        let je = json_error_from_clap(&err);
+        assert_eq!(je.code, "usage::invalid_target");
     }
 }
