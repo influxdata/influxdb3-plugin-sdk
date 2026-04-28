@@ -9,8 +9,9 @@
 //! Re-yanking an already-yanked entry (or `--undo`-ing a not-yanked entry)
 //! is a successful no-op. The SDK distinguishes the two cases via
 //! [`mutate_index::YankOutcome`]; we surface that signal in `--output json`
-//! as `"transitioned"` vs `"already_in_desired_state"` and in human mode
-//! as a printed informational marker.
+//! as a four-case `YankOutcomeWire` enum (`yanked` / `unyanked` /
+//! `already_yanked` / `already_unyanked`) and in human mode as a printed
+//! informational marker.
 
 use clap::Args as ClapArgs;
 use clap::builder::{StringValueParser, TypedValueParser};

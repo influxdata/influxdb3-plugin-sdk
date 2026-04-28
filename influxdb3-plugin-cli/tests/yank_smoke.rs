@@ -121,7 +121,7 @@ fn yank_undo_clears_flag() {
 }
 
 /// Idempotency: re-yanking an already-yanked entry exits 0 with the
-/// `already_in_desired_state` marker.
+/// `already_yanked` outcome.
 #[test]
 fn yank_already_yanked_is_no_op_with_marker() {
     let td = tempfile::tempdir().unwrap();
@@ -148,7 +148,7 @@ fn yank_already_yanked_is_no_op_with_marker() {
     assert_eq!(payload["outcome"], "already_yanked");
 
     redact_index_path(&mut payload);
-    insta::assert_json_snapshot!("yank_already_in_desired_state_json", payload);
+    insta::assert_json_snapshot!("yank_already_yanked_json", payload);
 }
 
 /// Missing entry → exit 1 + stderr message.
