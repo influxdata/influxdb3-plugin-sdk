@@ -110,6 +110,30 @@ jobs:
           name: cargo doc --workspace --no-deps
           command: cargo doc --workspace --no-deps
 
+  cargo-package-check:
+    executor: self-hosted-amd
+    steps:
+      - checkout
+      - setup-rust
+      - run:
+          name: cargo package --list (file inclusion sanity for all 3 crates)
+          # `--list` does no dep resolution, so it works for all crates
+          # regardless of whether transitive path-deps are published. Catches
+          # accidentally-included files (e.g., target/, secrets, large fixtures).
+          command: |
+            for crate in influxdb3-plugin-schemas influxdb3-plugin-sdk influxdb3-plugin-cli; do
+                echo "=== cargo package --list -p $crate ==="
+                cargo package --list -p "$crate"
+            done
+      - run:
+          name: cargo package --no-verify -p schemas (full check; only viable for the leaf crate)
+          # sdk and cli depend on schemas via path; cargo package resolves
+          # the path-dep's version constraint from crates.io during "prepare
+          # local package for uploading" (which `--no-verify` does NOT skip),
+          # and the unpublished schemas dep makes that lookup fail. Group H
+          # lifts this; until then, only schemas can be fully packaged.
+          command: cargo package --no-verify -p influxdb3-plugin-schemas
+
 workflows:
   ci:
     jobs:
@@ -119,3 +143,4 @@ workflows:
       - cargo-fmt
       - cargo-deny
       - cargo-doc
+      - cargo-package-check
