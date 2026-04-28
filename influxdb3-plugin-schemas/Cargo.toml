@@ -7,6 +7,7 @@ rust-version.workspace = true
 license.workspace = true
 description = "Schema types for InfluxDB 3 plugin manifests and indexes."
 readme = "README.md"
+repository = "https://github.com/influxdata/influxdb3-plugin-sdk"
 # publish = false until SDK ships to a public registry. License declared via
 # [workspace.package]; no deny.toml carve-out required.
 publish = false
