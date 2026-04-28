@@ -82,6 +82,23 @@ jobs:
           name: cargo fmt --all -- --check
           command: cargo fmt --all -- --check
 
+  cargo-deny:
+    executor: self-hosted-amd
+    steps:
+      - checkout
+      - setup-rust
+      - run:
+          name: Install cargo-deny (prebuilt binary)
+          command: |
+            CARGO_DENY_VERSION="0.19.4"
+            curl -LsSf "https://github.com/EmbarkStudios/cargo-deny/releases/download/${CARGO_DENY_VERSION}/cargo-deny-${CARGO_DENY_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
+              | tar zxf - -C "$HOME/.cargo/bin" --strip-components=1 \
+                "cargo-deny-${CARGO_DENY_VERSION}-x86_64-unknown-linux-musl/cargo-deny"
+            cargo deny --version
+      - run:
+          name: cargo deny check all
+          command: cargo deny check all
+
 workflows:
   ci:
     jobs:
@@ -89,3 +106,4 @@ workflows:
       - cargo-test
       - cargo-clippy
       - cargo-fmt
+      - cargo-deny
