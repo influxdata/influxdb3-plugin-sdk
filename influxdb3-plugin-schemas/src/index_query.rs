@@ -202,6 +202,98 @@ impl crate::Index {
 
         IndexSearchResult { hits }
     }
+
+    pub fn info(&self, query: &IndexInfoQuery) -> IndexInfoResult {
+        let query_canonical = query.name.canonical();
+
+        // Exact-version inspection: always returns Found if the entry exists
+        if let Some(ref requested_version) = query.version {
+            let found = self.plugins.iter().find(|e| {
+                e.name.canonical() == query_canonical && e.version == *requested_version
+            });
+            return match found {
+                Some(entry) => {
+                    let vis = visibility_for(entry, query.database_version.as_ref());
+                    IndexInfoResult::Found(info_from_entry(entry, vis))
+                }
+                None => IndexInfoResult::NotFound {
+                    name: query.name.clone(),
+                    version: Some(requested_version.clone()),
+                },
+            };
+        }
+
+        // No version specified: collect all entries for this plugin
+        let candidates: Vec<(&IndexEntry, IndexVersionVisibility)> = self
+            .plugins
+            .iter()
+            .filter(|e| e.name.canonical() == query_canonical)
+            .map(|e| {
+                let vis = visibility_for(e, query.database_version.as_ref());
+                (e, vis)
+            })
+            .collect();
+
+        if candidates.is_empty() {
+            return IndexInfoResult::NotFound {
+                name: query.name.clone(),
+                version: None,
+            };
+        }
+
+        // Partition into selectable (visible or opted-in) vs excluded
+        let (mut selectable, excluded): (Vec<_>, Vec<_>) =
+            candidates.into_iter().partition(|(_, vis)| match vis {
+                IndexVersionVisibility::Visible => true,
+                IndexVersionVisibility::Hidden { reasons } => reasons.iter().all(|r| match r {
+                    IndexVisibilityReason::Yanked => query.include_yanked,
+                    IndexVisibilityReason::IncompatibleDatabaseVersion { .. } => {
+                        query.include_incompatible
+                    }
+                }),
+            });
+
+        if selectable.is_empty() {
+            // All versions hidden — collect distinct reason kinds
+            let mut has_yanked = false;
+            let mut incompat_reason: Option<IndexVisibilityReason> = None;
+            for (_, vis) in &excluded {
+                if let IndexVersionVisibility::Hidden { reasons } = vis {
+                    for r in reasons {
+                        match r {
+                            IndexVisibilityReason::Yanked => has_yanked = true,
+                            IndexVisibilityReason::IncompatibleDatabaseVersion { .. } => {
+                                if incompat_reason.is_none() {
+                                    incompat_reason = Some(r.clone());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            let mut reasons = Vec::new();
+            if has_yanked {
+                reasons.push(IndexVisibilityReason::Yanked);
+            }
+            if let Some(ir) = incompat_reason {
+                reasons.push(ir);
+            }
+            return IndexInfoResult::FilteredOut {
+                name: query.name.clone(),
+                version: None,
+                reasons,
+            };
+        }
+
+        // Select latest version from selectable candidates
+        selectable.sort_by(|a, b| {
+            b.0.version
+                .cmp_precedence(&a.0.version)
+                .then_with(|| b.0.version.cmp(&a.0.version))
+        });
+        let (entry, vis) = &selectable[0];
+        IndexInfoResult::Found(info_from_entry(entry, vis.clone()))
+    }
 }
 
 #[cfg(test)]
@@ -643,5 +735,579 @@ mod tests {
         let result_a = index_a.search(&IndexSearchQuery::default());
         let result_b = index_b.search(&IndexSearchQuery::default());
         assert_eq!(result_a.hits[0].version, result_b.hits[0].version);
+    }
+
+    // --- Info tests ---
+
+    #[test]
+    fn info_selects_latest_visible(/* spec 27 */) {
+        let index = make_index(vec![
+            make_entry("alpha", "1.0.0"),
+            make_entry("alpha", "1.2.0"),
+            make_entry("alpha", "2.0.0"),
+        ]);
+        let result = index.info(&IndexInfoQuery {
+            name: "alpha".parse().unwrap(),
+            version: None,
+            database_version: None,
+            include_yanked: false,
+            include_incompatible: false,
+        });
+        assert_matches!(&result, IndexInfoResult::Found(info) => {
+            assert_eq!(info.version, "2.0.0".parse::<semver::Version>().unwrap());
+        });
+    }
+
+    #[test]
+    fn info_returns_single_version(/* spec 28 */) {
+        let index = make_index(vec![
+            make_entry("alpha", "1.0.0"),
+            make_entry("alpha", "2.0.0"),
+        ]);
+        let result = index.info(&IndexInfoQuery {
+            name: "alpha".parse().unwrap(),
+            version: None,
+            database_version: None,
+            include_yanked: false,
+            include_incompatible: false,
+        });
+        assert_matches!(&result, IndexInfoResult::Found(_));
+    }
+
+    #[test]
+    fn info_skips_yanked_by_default(/* spec 29 */) {
+        let mut v2 = make_entry("alpha", "2.0.0");
+        v2.yanked = true;
+        let index = make_index(vec![make_entry("alpha", "1.0.0"), v2]);
+        let result = index.info(&IndexInfoQuery {
+            name: "alpha".parse().unwrap(),
+            version: None,
+            database_version: None,
+            include_yanked: false,
+            include_incompatible: false,
+        });
+        assert_matches!(&result, IndexInfoResult::Found(info) => {
+            assert_eq!(info.version, "1.0.0".parse::<semver::Version>().unwrap());
+        });
+    }
+
+    #[test]
+    fn info_skips_incompatible_by_default(/* spec 30 */) {
+        let mut v2 = make_entry("alpha", "2.0.0");
+        v2.dependencies.database_version = ">=4.0.0".parse().unwrap();
+        let index = make_index(vec![make_entry("alpha", "1.0.0"), v2]);
+        let result = index.info(&IndexInfoQuery {
+            name: "alpha".parse().unwrap(),
+            version: None,
+            database_version: Some("3.2.0".parse().unwrap()),
+            include_yanked: false,
+            include_incompatible: false,
+        });
+        assert_matches!(&result, IndexInfoResult::Found(info) => {
+            assert_eq!(info.version, "1.0.0".parse::<semver::Version>().unwrap());
+        });
+    }
+
+    #[test]
+    fn info_includes_yanked_when_requested(/* spec 31 */) {
+        let mut v2 = make_entry("alpha", "2.0.0");
+        v2.yanked = true;
+        let index = make_index(vec![make_entry("alpha", "1.0.0"), v2]);
+        let result = index.info(&IndexInfoQuery {
+            name: "alpha".parse().unwrap(),
+            version: None,
+            database_version: None,
+            include_yanked: true,
+            include_incompatible: false,
+        });
+        assert_matches!(&result, IndexInfoResult::Found(info) => {
+            assert_eq!(info.version, "2.0.0".parse::<semver::Version>().unwrap());
+            assert_matches!(&info.visibility, IndexVersionVisibility::Hidden { reasons }
+                if reasons.len() == 1
+                    && matches!(&reasons[0], IndexVisibilityReason::Yanked)
+            );
+        });
+    }
+
+    #[test]
+    fn info_includes_incompatible_when_requested(/* spec 32 */) {
+        let mut v2 = make_entry("alpha", "2.0.0");
+        v2.dependencies.database_version = ">=4.0.0".parse().unwrap();
+        let index = make_index(vec![make_entry("alpha", "1.0.0"), v2]);
+        let result = index.info(&IndexInfoQuery {
+            name: "alpha".parse().unwrap(),
+            version: None,
+            database_version: Some("3.2.0".parse().unwrap()),
+            include_yanked: false,
+            include_incompatible: true,
+        });
+        assert_matches!(&result, IndexInfoResult::Found(info) => {
+            assert_eq!(info.version, "2.0.0".parse::<semver::Version>().unwrap());
+            assert_matches!(&info.visibility, IndexVersionVisibility::Hidden { reasons }
+                if reasons.len() == 1
+                    && matches!(&reasons[0], IndexVisibilityReason::IncompatibleDatabaseVersion { .. })
+            );
+        });
+    }
+
+    #[test]
+    fn info_no_compat_filter_without_db_version(/* spec 33 */) {
+        let mut entry = make_entry("alpha", "1.0.0");
+        entry.dependencies.database_version = ">=99.0.0".parse().unwrap();
+        let index = make_index(vec![entry]);
+        let result = index.info(&IndexInfoQuery {
+            name: "alpha".parse().unwrap(),
+            version: None,
+            database_version: None,
+            include_yanked: false,
+            include_incompatible: false,
+        });
+        assert_matches!(&result, IndexInfoResult::Found(info) => {
+            assert_eq!(info.visibility, IndexVersionVisibility::Visible);
+        });
+    }
+
+    #[test]
+    fn info_missing_name(/* spec 34 */) {
+        let index = make_index(vec![make_entry("alpha", "1.0.0")]);
+        let result = index.info(&IndexInfoQuery {
+            name: "nonexistent".parse().unwrap(),
+            version: None,
+            database_version: None,
+            include_yanked: false,
+            include_incompatible: false,
+        });
+        assert_matches!(&result, IndexInfoResult::NotFound { name, version } => {
+            assert_eq!(name.as_str(), "nonexistent");
+            assert!(version.is_none());
+        });
+    }
+
+    #[test]
+    fn info_all_yanked(/* spec 35 */) {
+        let mut v1 = make_entry("alpha", "1.0.0");
+        v1.yanked = true;
+        let mut v2 = make_entry("alpha", "2.0.0");
+        v2.yanked = true;
+        let index = make_index(vec![v1, v2]);
+        let result = index.info(&IndexInfoQuery {
+            name: "alpha".parse().unwrap(),
+            version: None,
+            database_version: None,
+            include_yanked: false,
+            include_incompatible: false,
+        });
+        assert_matches!(&result, IndexInfoResult::FilteredOut { name, version, reasons } => {
+            assert_eq!(name.as_str(), "alpha");
+            assert!(version.is_none());
+            assert_eq!(reasons.len(), 1);
+            assert_matches!(&reasons[0], IndexVisibilityReason::Yanked);
+        });
+    }
+
+    #[test]
+    fn info_all_incompatible(/* spec 36 */) {
+        let mut v1 = make_entry("alpha", "1.0.0");
+        v1.dependencies.database_version = ">=4.0.0".parse().unwrap();
+        let index = make_index(vec![v1]);
+        let result = index.info(&IndexInfoQuery {
+            name: "alpha".parse().unwrap(),
+            version: None,
+            database_version: Some("3.2.0".parse().unwrap()),
+            include_yanked: false,
+            include_incompatible: false,
+        });
+        assert_matches!(&result, IndexInfoResult::FilteredOut { name, version, reasons } => {
+            assert_eq!(name.as_str(), "alpha");
+            assert!(version.is_none());
+            assert_eq!(reasons.len(), 1);
+            assert_matches!(&reasons[0], IndexVisibilityReason::IncompatibleDatabaseVersion { .. });
+        });
+    }
+
+    #[test]
+    fn info_all_hidden_mixed_reasons(/* spec 37 */) {
+        let mut v1 = make_entry("alpha", "1.0.0");
+        v1.yanked = true;
+        let mut v2 = make_entry("alpha", "2.0.0");
+        v2.dependencies.database_version = ">=4.0.0".parse().unwrap();
+        let index = make_index(vec![v1, v2]);
+        let result = index.info(&IndexInfoQuery {
+            name: "alpha".parse().unwrap(),
+            version: None,
+            database_version: Some("3.2.0".parse().unwrap()),
+            include_yanked: false,
+            include_incompatible: false,
+        });
+        assert_matches!(&result, IndexInfoResult::FilteredOut { reasons, .. } => {
+            assert_eq!(reasons.len(), 2);
+            assert!(reasons.iter().any(|r| matches!(r, IndexVisibilityReason::Yanked)));
+            assert!(reasons.iter().any(|r| matches!(r, IndexVisibilityReason::IncompatibleDatabaseVersion { .. })));
+        });
+    }
+
+    // --- Exact version info tests ---
+
+    #[test]
+    fn info_exact_version_visible(/* spec 38 */) {
+        let index = make_index(vec![
+            make_entry("alpha", "1.0.0"),
+            make_entry("alpha", "2.0.0"),
+        ]);
+        let result = index.info(&IndexInfoQuery {
+            name: "alpha".parse().unwrap(),
+            version: Some("1.0.0".parse().unwrap()),
+            database_version: None,
+            include_yanked: false,
+            include_incompatible: false,
+        });
+        assert_matches!(&result, IndexInfoResult::Found(info) => {
+            assert_eq!(info.version, "1.0.0".parse::<semver::Version>().unwrap());
+            assert_eq!(info.visibility, IndexVersionVisibility::Visible);
+        });
+    }
+
+    #[test]
+    fn info_exact_version_yanked(/* spec 39 */) {
+        let mut entry = make_entry("alpha", "1.0.0");
+        entry.yanked = true;
+        let index = make_index(vec![entry]);
+        let result = index.info(&IndexInfoQuery {
+            name: "alpha".parse().unwrap(),
+            version: Some("1.0.0".parse().unwrap()),
+            database_version: None,
+            include_yanked: false,
+            include_incompatible: false,
+        });
+        assert_matches!(&result, IndexInfoResult::Found(info) => {
+            assert_matches!(&info.visibility, IndexVersionVisibility::Hidden { reasons }
+                if reasons.len() == 1
+                    && matches!(&reasons[0], IndexVisibilityReason::Yanked)
+            );
+        });
+    }
+
+    #[test]
+    fn info_exact_version_incompatible(/* spec 40 */) {
+        let mut entry = make_entry("alpha", "1.0.0");
+        entry.dependencies.database_version = ">=4.0.0".parse().unwrap();
+        let index = make_index(vec![entry]);
+        let result = index.info(&IndexInfoQuery {
+            name: "alpha".parse().unwrap(),
+            version: Some("1.0.0".parse().unwrap()),
+            database_version: Some("3.2.0".parse().unwrap()),
+            include_yanked: false,
+            include_incompatible: false,
+        });
+        assert_matches!(&result, IndexInfoResult::Found(info) => {
+            assert_matches!(&info.visibility, IndexVersionVisibility::Hidden { reasons }
+                if reasons.len() == 1
+                    && matches!(&reasons[0], IndexVisibilityReason::IncompatibleDatabaseVersion {
+                        required, actual
+                    } if required.to_string() == ">=4.0.0"
+                        && *actual == "3.2.0".parse::<semver::Version>().unwrap()
+                    )
+            );
+        });
+    }
+
+    #[test]
+    fn info_exact_version_yanked_and_incompatible(/* spec 41 */) {
+        let mut entry = make_entry("alpha", "1.0.0");
+        entry.yanked = true;
+        entry.dependencies.database_version = ">=4.0.0".parse().unwrap();
+        let index = make_index(vec![entry]);
+        let result = index.info(&IndexInfoQuery {
+            name: "alpha".parse().unwrap(),
+            version: Some("1.0.0".parse().unwrap()),
+            database_version: Some("3.2.0".parse().unwrap()),
+            include_yanked: false,
+            include_incompatible: false,
+        });
+        assert_matches!(&result, IndexInfoResult::Found(info) => {
+            assert_matches!(&info.visibility, IndexVersionVisibility::Hidden { reasons } => {
+                assert_eq!(reasons.len(), 2);
+                assert_matches!(&reasons[0], IndexVisibilityReason::Yanked);
+                assert_matches!(&reasons[1], IndexVisibilityReason::IncompatibleDatabaseVersion { .. });
+            });
+        });
+    }
+
+    #[test]
+    fn info_exact_version_missing(/* spec 42 */) {
+        let index = make_index(vec![make_entry("alpha", "1.0.0")]);
+        let result = index.info(&IndexInfoQuery {
+            name: "alpha".parse().unwrap(),
+            version: Some("9.9.9".parse().unwrap()),
+            database_version: None,
+            include_yanked: false,
+            include_incompatible: false,
+        });
+        assert_matches!(&result, IndexInfoResult::NotFound { name, version } => {
+            assert_eq!(name.as_str(), "alpha");
+            assert_eq!(*version, Some("9.9.9".parse::<semver::Version>().unwrap()));
+        });
+    }
+
+    #[test]
+    fn info_exact_version_missing_plugin(/* spec 43 */) {
+        let index = make_index(vec![make_entry("alpha", "1.0.0")]);
+        let result = index.info(&IndexInfoQuery {
+            name: "nonexistent".parse().unwrap(),
+            version: Some("1.0.0".parse().unwrap()),
+            database_version: None,
+            include_yanked: false,
+            include_incompatible: false,
+        });
+        assert_matches!(&result, IndexInfoResult::NotFound { name, version } => {
+            assert_eq!(name.as_str(), "nonexistent");
+            assert_eq!(*version, Some("1.0.0".parse::<semver::Version>().unwrap()));
+        });
+    }
+
+    // --- Result content tests ---
+
+    #[test]
+    fn info_full_metadata(/* spec 45, also covers spec 46 */) {
+        let mut entry = make_entry("downsampler", "1.2.0");
+        entry.description = Description::try_new("Downsamples WAL data").unwrap();
+        entry.triggers = vec![TriggerType::ProcessWrites, TriggerType::ProcessScheduledCall];
+        entry.homepage = Some("https://example.com".parse().unwrap());
+        entry.repository = Some("https://github.com/example/ds".parse().unwrap());
+        entry.documentation = Some("https://docs.example.com/ds".parse().unwrap());
+        entry.dependencies = Dependencies {
+            database_version: ">=3.2.0,<4.0.0".parse().unwrap(),
+            python: vec![PythonRequirement::try_new("requests>=2.31").unwrap()],
+        };
+        entry.hash = ArtifactHash::try_new(
+            "sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+        )
+        .unwrap();
+        let index = make_index(vec![entry]);
+        let result = index.info(&IndexInfoQuery {
+            name: "downsampler".parse().unwrap(),
+            version: None,
+            database_version: Some("3.5.0".parse().unwrap()),
+            include_yanked: false,
+            include_incompatible: false,
+        });
+        assert_matches!(&result, IndexInfoResult::Found(info) => {
+            assert_eq!(info.name.as_str(), "downsampler");
+            assert_eq!(info.version, "1.2.0".parse::<semver::Version>().unwrap());
+            assert_eq!(info.description.as_str(), "Downsamples WAL data");
+            assert_eq!(info.triggers.len(), 2);
+            assert!(info.homepage.is_some());
+            assert!(info.repository.is_some());
+            assert!(info.documentation.is_some());
+            assert_eq!(info.dependencies.database_version.to_string(), ">=3.2.0, <4.0.0");
+            assert_eq!(info.dependencies.python.len(), 1);
+            assert!(info.hash.as_str().starts_with("sha256:abcdef"));
+            assert_eq!(info.visibility, IndexVersionVisibility::Visible);
+        });
+    }
+
+    #[test]
+    fn info_incompatible_reason_includes_versions(/* spec 47 */) {
+        let mut entry = make_entry("alpha", "1.0.0");
+        entry.dependencies.database_version = ">=4.0.0".parse().unwrap();
+        let index = make_index(vec![entry]);
+        let result = index.info(&IndexInfoQuery {
+            name: "alpha".parse().unwrap(),
+            version: Some("1.0.0".parse().unwrap()),
+            database_version: Some("3.2.0".parse().unwrap()),
+            include_yanked: false,
+            include_incompatible: false,
+        });
+        assert_matches!(&result, IndexInfoResult::Found(info) => {
+            assert_matches!(&info.visibility, IndexVersionVisibility::Hidden { reasons } => {
+                assert_matches!(&reasons[0], IndexVisibilityReason::IncompatibleDatabaseVersion {
+                    required, actual
+                } => {
+                    assert_eq!(required.to_string(), ">=4.0.0");
+                    assert_eq!(*actual, "3.2.0".parse::<semver::Version>().unwrap());
+                });
+            });
+        });
+    }
+
+    // --- Serialization tests ---
+
+    #[test]
+    fn search_result_serializes(/* spec 49 */) {
+        let index = make_index(vec![make_entry("alpha", "1.0.0")]);
+        let result = index.search(&IndexSearchQuery::default());
+        let json = serde_json::to_value(&result).unwrap();
+        assert!(json["hits"].is_array());
+        assert_eq!(json["hits"][0]["name"], "alpha");
+        assert_eq!(json["hits"][0]["version"], "1.0.0");
+        assert!(json["hits"][0]["description"].is_string());
+        assert!(json["hits"][0]["triggers"].is_array());
+        assert_eq!(json["hits"][0]["visibility"], "Visible");
+    }
+
+    #[test]
+    fn info_found_serializes(/* spec 50 */) {
+        let index = make_index(vec![make_entry("alpha", "1.0.0")]);
+        let result = index.info(&IndexInfoQuery {
+            name: "alpha".parse().unwrap(),
+            version: None,
+            database_version: None,
+            include_yanked: false,
+            include_incompatible: false,
+        });
+        let json = serde_json::to_value(&result).unwrap();
+        let found = &json["Found"];
+        assert_eq!(found["name"], "alpha");
+        assert_eq!(found["version"], "1.0.0");
+        assert!(found["description"].is_string());
+        assert!(found["triggers"].is_array());
+        assert!(found["dependencies"].is_object());
+        assert!(found["hash"].is_string());
+        assert_eq!(found["visibility"], "Visible");
+    }
+
+    #[test]
+    fn info_not_found_serializes(/* spec 51 */) {
+        let index = make_index(vec![]);
+        let result = index.info(&IndexInfoQuery {
+            name: "missing".parse().unwrap(),
+            version: Some("1.0.0".parse().unwrap()),
+            database_version: None,
+            include_yanked: false,
+            include_incompatible: false,
+        });
+        let json = serde_json::to_value(&result).unwrap();
+        let not_found = &json["NotFound"];
+        assert_eq!(not_found["name"], "missing");
+        assert_eq!(not_found["version"], "1.0.0");
+    }
+
+    #[test]
+    fn info_filtered_out_serializes(/* spec 52 */) {
+        let mut entry = make_entry("alpha", "1.0.0");
+        entry.yanked = true;
+        let index = make_index(vec![entry]);
+        let result = index.info(&IndexInfoQuery {
+            name: "alpha".parse().unwrap(),
+            version: None,
+            database_version: None,
+            include_yanked: false,
+            include_incompatible: false,
+        });
+        let json = serde_json::to_value(&result).unwrap();
+        let filtered = &json["FilteredOut"];
+        assert_eq!(filtered["name"], "alpha");
+        assert!(filtered["version"].is_null());
+        assert!(filtered["reasons"].is_array());
+    }
+
+    #[test]
+    fn visibility_reasons_serialize(/* spec 53 */) {
+        let yanked = IndexVisibilityReason::Yanked;
+        let incompat = IndexVisibilityReason::IncompatibleDatabaseVersion {
+            required: ">=4.0.0".parse().unwrap(),
+            actual: "3.2.0".parse().unwrap(),
+        };
+        let yanked_json = serde_json::to_value(&yanked).unwrap();
+        let incompat_json = serde_json::to_value(&incompat).unwrap();
+        assert_eq!(yanked_json, "Yanked");
+        assert!(incompat_json["IncompatibleDatabaseVersion"].is_object());
+        assert_eq!(
+            incompat_json["IncompatibleDatabaseVersion"]["required"],
+            ">=4.0.0"
+        );
+        assert_eq!(
+            incompat_json["IncompatibleDatabaseVersion"]["actual"],
+            "3.2.0"
+        );
+    }
+
+    // --- Edge case tests ---
+
+    #[test]
+    fn search_empty_index(/* spec 54 */) {
+        let index = make_index(vec![]);
+        let result = index.search(&IndexSearchQuery::default());
+        assert_eq!(result.hits.len(), 0);
+    }
+
+    #[test]
+    fn info_empty_index(/* spec 55 */) {
+        let index = make_index(vec![]);
+        let result = index.info(&IndexInfoQuery {
+            name: "alpha".parse().unwrap(),
+            version: None,
+            database_version: None,
+            include_yanked: false,
+            include_incompatible: false,
+        });
+        assert_matches!(&result, IndexInfoResult::NotFound { .. });
+    }
+
+    #[test]
+    fn search_only_hidden_not_shown(/* spec 56 */) {
+        let mut entry = make_entry("alpha", "1.0.0");
+        entry.yanked = true;
+        let index = make_index(vec![entry]);
+        let result = index.search(&IndexSearchQuery::default());
+        assert_eq!(result.hits.len(), 0);
+    }
+
+    #[test]
+    fn search_mixed_visible_hidden_uses_visible(/* spec 57 */) {
+        let mut v2 = make_entry("alpha", "2.0.0");
+        v2.yanked = true;
+        let index = make_index(vec![make_entry("alpha", "1.0.0"), v2]);
+        let result = index.search(&IndexSearchQuery::default());
+        assert_eq!(result.hits.len(), 1);
+        assert_eq!(result.hits[0].version, "1.0.0".parse::<semver::Version>().unwrap());
+        assert_eq!(result.hits[0].visibility, IndexVersionVisibility::Visible);
+    }
+
+    #[test]
+    fn search_mixed_with_include_flags(/* spec 58 */) {
+        let mut v2 = make_entry("alpha", "2.0.0");
+        v2.yanked = true;
+        let index = make_index(vec![make_entry("alpha", "1.0.0"), v2]);
+        let result = index.search(&IndexSearchQuery {
+            include_yanked: true,
+            ..Default::default()
+        });
+        assert_eq!(result.hits.len(), 1);
+        assert_eq!(result.hits[0].version, "2.0.0".parse::<semver::Version>().unwrap());
+    }
+
+    #[test]
+    fn search_text_match_on_hidden_visible_older_matches(/* spec 59 */) {
+        let mut v2 = make_entry("alpha", "2.0.0");
+        v2.yanked = true;
+        v2.description = Description::try_new("common in both versions").unwrap();
+        let mut v1 = make_entry("alpha", "1.0.0");
+        v1.description = Description::try_new("common desc").unwrap();
+        let index = make_index(vec![v1, v2]);
+        // Both versions match "common", but v2 is hidden (yanked).
+        // Search excludes v2 before text matching; v1 matches and is selected.
+        let result = index.search(&IndexSearchQuery {
+            query: Some("common".into()),
+            ..Default::default()
+        });
+        assert_eq!(result.hits.len(), 1);
+        assert_eq!(result.hits[0].version, "1.0.0".parse::<semver::Version>().unwrap());
+    }
+
+    #[test]
+    fn search_trigger_filter_before_grouping(/* spec 60 */) {
+        let mut v2 = make_entry("alpha", "2.0.0");
+        v2.triggers = vec![TriggerType::ProcessRequest];
+        let mut v1 = make_entry("alpha", "1.0.0");
+        v1.triggers = vec![TriggerType::ProcessWrites];
+        let index = make_index(vec![v1, v2]);
+        let result = index.search(&IndexSearchQuery {
+            trigger_type: Some(TriggerType::ProcessWrites),
+            ..Default::default()
+        });
+        assert_eq!(result.hits.len(), 1);
+        assert_eq!(result.hits[0].version, "1.0.0".parse::<semver::Version>().unwrap());
+        assert_eq!(result.hits[0].triggers, vec![TriggerType::ProcessWrites]);
     }
 }
