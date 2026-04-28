@@ -587,6 +587,7 @@ dependencies = [
  "influxdb3-plugin-schemas",
  "influxdb3-plugin-sdk",
  "insta",
+ "pep508_rs",
  "predicates",
  "rstest",
  "semver",
@@ -596,6 +597,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "toml",
+ "url",
 ]
 
 [[package]]
