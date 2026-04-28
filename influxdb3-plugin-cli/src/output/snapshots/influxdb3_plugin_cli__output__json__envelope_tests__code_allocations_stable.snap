@@ -1,0 +1,5 @@
+---
+source: influxdb3-plugin-cli/src/output/json.rs
+expression: "super::ALL_WIRE_CODES"
+---
+[]

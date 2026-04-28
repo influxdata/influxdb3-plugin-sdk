@@ -192,6 +192,8 @@ pub(crate) fn write_envelope_error<W: std::io::Write>(
     writer.write_all(b"\n")
 }
 
+pub(crate) const ALL_WIRE_CODES: &[&str] = &[];
+
 #[cfg(test)]
 mod envelope_tests {
     use super::*;
@@ -377,5 +379,10 @@ mod envelope_tests {
                 r#""already_unyanked""#,
             ],
         );
+    }
+
+    #[test]
+    fn code_allocations_stable() {
+        insta::assert_yaml_snapshot!(super::ALL_WIRE_CODES);
     }
 }
