@@ -67,12 +67,7 @@ fn validate_empty_plugin_dir_reports_both_missing_files_in_json() {
     assert_eq!(diags.len(), 2, "expected two diagnostics, got {payload}");
     let mut codes_and_fields: Vec<(&str, &str)> = diags
         .iter()
-        .map(|d| {
-            (
-                d["code"].as_str().unwrap(),
-                d["field"].as_str().unwrap(),
-            )
-        })
+        .map(|d| (d["code"].as_str().unwrap(), d["field"].as_str().unwrap()))
         .collect();
     codes_and_fields.sort();
     assert_eq!(
@@ -147,10 +142,7 @@ database_version = ">=3.0.0"
         "expected 3 diagnostics, got {}: {payload}",
         diags.len()
     );
-    let codes: Vec<&str> = diags
-        .iter()
-        .map(|d| d["code"].as_str().unwrap())
-        .collect();
+    let codes: Vec<&str> = diags.iter().map(|d| d["code"].as_str().unwrap()).collect();
     assert!(
         codes.iter().all(|c| *c == "validate::schema_reported"),
         "all defects should surface as validate::schema_reported, got {codes:?}"
@@ -460,10 +452,7 @@ fn validate_with_unreadable_index_emits_json_diagnostic() {
     let diags = payload["error"]["diagnostics"].as_array().unwrap();
     assert_eq!(diags.len(), 1);
     assert_eq!(diags[0]["code"], "validate::index_read_failed");
-    assert_eq!(
-        diags[0]["field"],
-        missing.display().to_string()
-    );
+    assert_eq!(diags[0]["field"], missing.display().to_string());
 }
 
 /// Multi-error case: an index with two distinct schema defects (bad URL

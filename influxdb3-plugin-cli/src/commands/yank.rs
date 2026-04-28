@@ -87,9 +87,7 @@ fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
     let mut index = Index::parse_json(&index_raw).map_err(|schema_errors| {
         let diagnostics: Vec<JsonError> = schema_errors
             .into_iter()
-            .map(|reported| {
-                json_error_from_validation(&ValidationError::SchemaReported(reported))
-            })
+            .map(|reported| json_error_from_validation(&ValidationError::SchemaReported(reported)))
             .collect();
         CliError::runtime(JsonError {
             code: "yank::index_parse_failed".into(),
@@ -343,4 +341,3 @@ fn render_human(
     writeln!(writer, "  index: {}", payload.index_path.display())?;
     Ok(())
 }
-

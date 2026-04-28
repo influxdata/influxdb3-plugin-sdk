@@ -267,9 +267,7 @@ fn resolve_plugin_name(dir: &Path, name_arg: Option<String>) -> anyhow::Result<S
         }
         Err(_) if source_was_explicit => Err(CliError::usage(JsonError {
             code: "usage::invalid_name".into(),
-            message: format!(
-                "--name {candidate:?} is not a valid plugin name; {PLUGIN_NAME_RULE}"
-            ),
+            message: format!("--name {candidate:?} is not a valid plugin name; {PLUGIN_NAME_RULE}"),
             field: None,
             details: Some(serde_json::json!({
                 "value": candidate,

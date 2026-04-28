@@ -87,5 +87,4 @@ mod tests {
         assert_eq!(CliErrorKind::of(&e), CliErrorKind::Runtime);
         assert!(CliError::json_error_of(&e).is_none());
     }
-
 }
