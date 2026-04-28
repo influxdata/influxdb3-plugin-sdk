@@ -13,11 +13,10 @@ executors:
     resource_class: runner-ns/clustered-linux-vm-arm
     working_directory: /tmp/workspace/<< pipeline.id >>
 
-jobs:
-  cargo-build:
-    executor: self-hosted-amd
+commands:
+  setup-rust:
+    description: "Install rustup with no default toolchain; rust-toolchain.toml drives the actual install on first cargo invocation."
     steps:
-      - checkout
       - run:
           name: Install Rust toolchain
           command: |
@@ -29,8 +28,15 @@ jobs:
               | sh -s -- -y --default-toolchain none --profile minimal
             echo 'source $HOME/.cargo/env' >> "$BASH_ENV"
             source "$BASH_ENV"
-            rustup show  # triggers install of rust-toolchain.toml's pinned version
+            rustup show
             rustc --version
+
+jobs:
+  cargo-build:
+    executor: self-hosted-amd
+    steps:
+      - checkout
+      - setup-rust
       - run:
           name: cargo build --workspace
           command: cargo build --workspace
@@ -39,18 +45,10 @@ jobs:
     executor: self-hosted-amd
     steps:
       - checkout
-      - run:
-          name: Install Rust toolchain
-          command: |
-            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
-              | sh -s -- -y --default-toolchain none --profile minimal
-            echo 'source $HOME/.cargo/env' >> "$BASH_ENV"
-            source "$BASH_ENV"
-            rustup show
+      - setup-rust
       - run:
           name: Install cargo-nextest (prebuilt binary, fast)
           command: |
-            source "$BASH_ENV"
             curl -LsSf https://get.nexte.st/latest/linux \
               | tar zxf - -C "$HOME/.cargo/bin"
             cargo nextest --version
@@ -58,12 +56,23 @@ jobs:
           name: cargo nextest run --workspace
           environment:
             INSTA_UPDATE: "no"
-          command: |
-            source "$BASH_ENV"
-            cargo nextest run --workspace --no-fail-fast
+          command: cargo nextest run --workspace --no-fail-fast
+
+  cargo-clippy:
+    executor: self-hosted-amd
+    steps:
+      - checkout
+      - setup-rust
+      - run:
+          name: rustup add clippy component
+          command: rustup component add clippy
+      - run:
+          name: cargo clippy --workspace --all-targets -- -D warnings
+          command: cargo clippy --workspace --all-targets -- -D warnings
 
 workflows:
   ci:
     jobs:
       - cargo-build
       - cargo-test
+      - cargo-clippy
