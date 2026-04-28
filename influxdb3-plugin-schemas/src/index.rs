@@ -19,6 +19,8 @@ pub struct IndexSchemaVersion {
 }
 
 impl IndexSchemaVersion {
+    pub const CURRENT: Self = Self { major: 1, minor: 1 };
+
     pub fn new(major: u32, minor: u32) -> Self {
         Self { major, minor }
     }
@@ -206,6 +208,24 @@ pub struct IndexEntry {
     pub hash: ArtifactHash,
     #[serde(default, skip_serializing_if = "is_false")]
     pub yanked: bool,
+}
+
+impl IndexEntry {
+    pub fn from_manifest(manifest: crate::Manifest, hash: ArtifactHash) -> Self {
+        let plugin = manifest.plugin;
+        Self {
+            name: plugin.name,
+            version: plugin.version,
+            description: plugin.description,
+            triggers: plugin.triggers,
+            homepage: plugin.homepage,
+            repository: plugin.repository,
+            documentation: plugin.documentation,
+            dependencies: manifest.dependencies,
+            hash,
+            yanked: false,
+        }
+    }
 }
 
 fn is_false(b: &bool) -> bool {
@@ -561,6 +581,18 @@ mod schema_version_tests {
             "abc".parse::<IndexSchemaVersion>(),
             Err(SchemaError::MalformedSchemaVersion { .. })
         );
+    }
+
+    #[test]
+    fn current_major_equals_supported() {
+        assert_eq!(IndexSchemaVersion::CURRENT.major(), SUPPORTED_INDEX_MAJOR);
+    }
+
+    #[test]
+    fn current_to_string_round_trips() {
+        let s = IndexSchemaVersion::CURRENT.to_string();
+        let parsed: IndexSchemaVersion = s.parse().unwrap();
+        assert_eq!(parsed, IndexSchemaVersion::CURRENT);
     }
 }
 
@@ -1332,5 +1364,98 @@ mod insert_tests {
         let entry = make_entry("alpha", semver::Version::new(2, 0, 0));
         idx.check_entry_insert(&entry).unwrap();
         assert_eq!(idx, snapshot);
+    }
+}
+
+#[cfg(test)]
+mod from_manifest_tests {
+    use super::*;
+    use crate::{ArtifactHash, Dependencies, Description, Manifest, ManifestSchemaVersion, PluginMetadata, PythonRequirement, TriggerType};
+
+    fn sample_manifest() -> Manifest {
+        Manifest {
+            manifest_schema_version: ManifestSchemaVersion::new(1, 1),
+            plugin: PluginMetadata {
+                name: "downsampler".parse().unwrap(),
+                version: semver::Version::new(1, 2, 0),
+                description: Description::try_new("A downsampling plugin").unwrap(),
+                triggers: vec![TriggerType::ProcessWrites, TriggerType::ProcessScheduledCall],
+                homepage: Some(url::Url::parse("https://example.com").unwrap()),
+                repository: Some(url::Url::parse("https://github.com/example/repo").unwrap()),
+                documentation: Some(url::Url::parse("https://docs.example.com").unwrap()),
+            },
+            dependencies: Dependencies {
+                database_version: ">=3.2.0,<4.0.0".parse().unwrap(),
+                python: vec![PythonRequirement::try_new("requests>=2.31,<3").unwrap()],
+            },
+        }
+    }
+
+    fn sample_hash() -> ArtifactHash {
+        ArtifactHash::try_new(
+            "sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn copies_name() {
+        let entry = IndexEntry::from_manifest(sample_manifest(), sample_hash());
+        assert_eq!(entry.name.as_str(), "downsampler");
+    }
+
+    #[test]
+    fn copies_version() {
+        let entry = IndexEntry::from_manifest(sample_manifest(), sample_hash());
+        assert_eq!(entry.version, semver::Version::new(1, 2, 0));
+    }
+
+    #[test]
+    fn copies_description() {
+        let entry = IndexEntry::from_manifest(sample_manifest(), sample_hash());
+        assert_eq!(entry.description.as_str(), "A downsampling plugin");
+    }
+
+    #[test]
+    fn copies_triggers() {
+        let entry = IndexEntry::from_manifest(sample_manifest(), sample_hash());
+        assert_eq!(entry.triggers, vec![TriggerType::ProcessWrites, TriggerType::ProcessScheduledCall]);
+    }
+
+    #[test]
+    fn copies_homepage() {
+        let entry = IndexEntry::from_manifest(sample_manifest(), sample_hash());
+        assert_eq!(entry.homepage.unwrap().as_str(), "https://example.com/");
+    }
+
+    #[test]
+    fn copies_repository() {
+        let entry = IndexEntry::from_manifest(sample_manifest(), sample_hash());
+        assert_eq!(entry.repository.unwrap().as_str(), "https://github.com/example/repo");
+    }
+
+    #[test]
+    fn copies_documentation() {
+        let entry = IndexEntry::from_manifest(sample_manifest(), sample_hash());
+        assert_eq!(entry.documentation.unwrap().as_str(), "https://docs.example.com/");
+    }
+
+    #[test]
+    fn copies_dependencies() {
+        let entry = IndexEntry::from_manifest(sample_manifest(), sample_hash());
+        assert_eq!(entry.dependencies.python.len(), 1);
+    }
+
+    #[test]
+    fn copies_hash() {
+        let h = sample_hash();
+        let entry = IndexEntry::from_manifest(sample_manifest(), h.clone());
+        assert_eq!(entry.hash, h);
+    }
+
+    #[test]
+    fn yanked_is_false() {
+        let entry = IndexEntry::from_manifest(sample_manifest(), sample_hash());
+        assert!(!entry.yanked);
     }
 }
