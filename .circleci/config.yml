@@ -146,6 +146,49 @@ jobs:
           # lifts this; until then, only schemas can be fully packaged.
           command: cargo package --no-verify -p influxdb3-plugin-schemas
 
+  # Temporary probe (do not merge) — verifies SRE's GAR grant landed.
+  release-auth-probe-v3:
+    machine: true
+    resource_class: runner-ns/clustered-linux-vm
+    working_directory: /tmp/workspace/<< pipeline.id >>
+    steps:
+      - run:
+          name: Install gcloud
+          no_output_timeout: 5m
+          command: |
+            curl -fsSL \
+              https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-linux-x86_64.tar.gz \
+              | tar xz -C $HOME
+            echo 'export PATH=$HOME/google-cloud-sdk/bin:$PATH' >> "$BASH_ENV"
+      - run:
+          name: WIF login + GAR docker login
+          command: |
+            source "$BASH_ENV"
+            TOKEN="${CIRCLE_OIDC_TOKEN:-}"
+            [ -n "$TOKEN" ] || { echo "no V1 OIDC token"; exit 1; }
+            umask 077
+            echo "$TOKEN" > /tmp/circleci_oidc_token
+            cat > /tmp/gcp_cred_config.json \<<JSON
+            {
+              "type": "external_account",
+              "audience": "//iam.googleapis.com/projects/${GCP_PROJECT_ID}/locations/global/workloadIdentityPools/${GCP_WIP_ID}/providers/${GCP_WIP_PROVIDER_ID}",
+              "subject_token_type": "urn:ietf:params:oauth:token-type:jwt",
+              "service_account_impersonation_url": "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${GCP_SERVICE_ACCOUNT_EMAIL}:generateAccessToken",
+              "token_url": "https://sts.googleapis.com/v1/token",
+              "credential_source": { "file": "/tmp/circleci_oidc_token" }
+            }
+            JSON
+            gcloud auth login --cred-file=/tmp/gcp_cred_config.json
+            gcloud auth print-access-token \
+              | docker login -u oauth2accesstoken --password-stdin \
+                  https://us-east1-docker.pkg.dev
+      - run:
+          name: Pull cross-builder image (SHOULD WORK NOW per SRE grant)
+          command: |
+            docker pull us-east1-docker.pkg.dev/influxdata-team-edge/ci-support/ci-cross-influxdb3@sha256:98b05538182a2e4eac5ce96150a1f5c552de48a7d3ea8d312d38e45f0dd42611 \
+              && echo "PULL_OK — SRE grant validated" \
+              || { echo "PULL_FAIL — grant still pending or wrong SA"; exit 1; }
+
 workflows:
   ci:
     jobs:
@@ -157,3 +200,10 @@ workflows:
       - cargo-doc
       - manifest-invariants
       - cargo-package-check
+
+  auth-probe-v3:
+    when:
+      equal: [ "ci/release-auth-probe-v3", << pipeline.git.branch >> ]
+    jobs:
+      - release-auth-probe-v3:
+          context: [influxdb3-plugin-sdk-gcp]
