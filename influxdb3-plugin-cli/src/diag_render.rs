@@ -104,7 +104,7 @@ pub(crate) fn render_human(
 /// the `JsonError` shape: if `diagnostics[]` is non-empty we render the
 /// numbered list block; otherwise we render one line with optional cause
 /// chain. Spec § 4.7.
-pub(crate) fn render_human_error(
+pub fn render_human_error(
     err: &JsonError,
     palette: Palette,
     writer: &mut dyn io::Write,

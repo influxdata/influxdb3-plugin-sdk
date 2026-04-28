@@ -72,9 +72,19 @@ fn render_error_and_exit(e: anyhow::Error) -> std::process::ExitCode {
         };
         let _ = write_envelope_error(&mut stdout, je);
     } else {
-        // Human mode: use anyhow's Display chain for now.
-        // Chunk 4 adds render_human_error for structured JsonError display.
-        eprintln!("{e:#}");
+        match CliError::json_error_of(&e) {
+            Some(je) => {
+                let palette = human_error_palette();
+                let _ = influxdb3_plugin_cli::__private::render_human_error(
+                    je,
+                    palette,
+                    &mut std::io::stderr(),
+                );
+            }
+            None => {
+                eprintln!("{e:#}");
+            }
+        }
     }
 
     exit_code(kind)
@@ -139,4 +149,8 @@ fn json_mode_active() -> bool {
         return true;
     }
     matches!(std::env::var("CI").as_deref(), Ok("true" | "1"))
+}
+
+fn human_error_palette() -> influxdb3_plugin_cli::__private::Palette {
+    influxdb3_plugin_cli::__private::stderr_error_palette()
 }

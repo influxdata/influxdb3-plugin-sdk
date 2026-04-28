@@ -60,6 +60,19 @@ impl Palette {
     }
 }
 
+/// Builds the human-mode error palette for stderr, respecting the real
+/// environment's NO_COLOR / FORCE_COLOR / isatty rules.
+pub fn stderr_error_palette() -> Palette {
+    use crate::output::RealEnv;
+    use std::io::IsTerminal;
+    Palette::for_stream(
+        Stream::Stderr,
+        OutputMode::Human,
+        &RealEnv,
+        std::io::stderr().is_terminal(),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
