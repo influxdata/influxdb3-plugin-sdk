@@ -204,11 +204,53 @@ jobs:
           command: cargo package --no-verify -p influxdb3-plugin-schemas
       - save-cargo-cache
 
+  cargo-coverage:
+    executor: self-hosted-amd
+    steps:
+      - checkout
+      - setup-rust
+      - restore-cargo-cache
+      - run:
+          name: Install cargo-nextest (prebuilt binary, fast)
+          # Same install as cargo-test; cached after first run via
+          # ~/.cargo/bin from PR 2's caching.
+          command: |
+            curl -LsSf https://get.nexte.st/latest/linux \
+              | tar zxf - -C "$HOME/.cargo/bin"
+            cargo nextest --version
+      - run:
+          name: Install cargo-llvm-cov + llvm-tools-preview
+          command: |
+            rustup component add llvm-tools-preview
+            cargo install cargo-llvm-cov --locked
+            cargo llvm-cov --version
+      - run:
+          name: cargo llvm-cov nextest --profile ci --workspace
+          environment:
+            INSTA_UPDATE: "no"
+          command: |
+            cargo llvm-cov --no-report nextest --profile ci --workspace
+            cargo llvm-cov report --lcov --output-path lcov.info
+            cargo llvm-cov report --html --output-dir target/coverage-html
+            cargo llvm-cov report --json --output-path coverage.json
+            # Human-readable summary in the job log (always last so it
+            # is visible at the bottom of the CircleCI log).
+            cargo llvm-cov report --summary-only
+      - store_artifacts:
+          path: lcov.info
+      - store_artifacts:
+          path: target/coverage-html
+          destination: coverage-html
+      - store_artifacts:
+          path: coverage.json
+      - save-cargo-cache
+
 workflows:
   ci:
     jobs:
       - cargo-check
       - cargo-test
+      - cargo-coverage
       - cargo-clippy
       - cargo-fmt
       - cargo-deny
