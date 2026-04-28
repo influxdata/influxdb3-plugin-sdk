@@ -449,13 +449,22 @@ fn io_error_to_json(
         "path": path.map(|p| p.display().to_string()),
         "io_kind": format!("{:?}", source.kind()),
     }));
+    // The io::Error's Display is already the message; putting the same
+    // string in `cause` would double it in the human renderer. Only add
+    // inner source chain entries that differ from the top-level message.
+    let msg = source.to_string();
+    let cause: Vec<String> = std::error::Error::source(source)
+        .into_iter()
+        .map(|s| s.to_string())
+        .filter(|s| s != &msg)
+        .collect();
     JsonError {
         code: code.into(),
-        message: source.to_string(),
+        message: msg,
         field,
         details,
         diagnostics: vec![],
-        cause: vec![source.to_string()],
+        cause,
     }
 }
 
@@ -978,8 +987,14 @@ mod tests {
             );
             // field should be the path
             assert_eq!(je.field.as_deref(), Some("/tmp/x"));
-            // cause should contain the io error message
-            assert!(!je.cause.is_empty(), "cause should not be empty for Io");
+            // cause should only contain source-chain entries that differ
+            // from the top-level message; `Error::other("boom")` has no
+            // inner source, so cause is empty.
+            assert!(
+                je.cause.is_empty(),
+                "cause should be empty for Io with no inner source; got: {:?}",
+                je.cause
+            );
         }
     }
 

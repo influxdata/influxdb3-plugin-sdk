@@ -10,7 +10,8 @@
 
 use crate::commands::new::templates;
 use crate::output::{
-    OutputMode, RealEnv, json::ListOutput, json::ListTemplate, resolve_output_mode,
+    OutputMode, RealEnv, json::ListOutput, json::ListTemplate, json::write_envelope_ok,
+    resolve_output_mode,
 };
 use clap::Args as ClapArgs;
 
@@ -73,7 +74,6 @@ fn render_json(writer: &mut impl std::io::Write) -> anyhow::Result<()> {
             })
             .collect(),
     };
-    serde_json::to_writer_pretty(&mut *writer, &payload)?;
-    writeln!(writer)?;
+    write_envelope_ok(writer, payload)?;
     Ok(())
 }

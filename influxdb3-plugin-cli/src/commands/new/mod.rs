@@ -13,8 +13,11 @@ use influxdb3_plugin_sdk::scaffold;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
+use crate::cli_error::CliError;
 use crate::color::Stream;
-use crate::output::{Env, OutputMode, RealEnv, json::NewOutput, resolve_output_mode};
+use crate::output::error_mapping::{ErrorContext, json_error_from_sdk};
+use crate::output::json::{JsonError, NewOutput, write_envelope_ok};
+use crate::output::{Env, OutputMode, RealEnv, resolve_output_mode};
 use crate::style::Palette;
 use templates::TemplateMetadata;
 
@@ -123,9 +126,17 @@ fn run_plugin_with_env(
     if let Some(raw) = database_version.as_deref()
         && let Err(e) = semver::VersionReq::parse(raw)
     {
-        return Err(crate::cli_error::CliError::usage_msg(format!(
-            "invalid --database-version {raw:?}: {e}"
-        )));
+        return Err(CliError::usage(JsonError {
+            code: "usage::invalid_database_version".into(),
+            message: format!("invalid --database-version {raw:?}: {e}"),
+            field: None,
+            details: Some(serde_json::json!({
+                "value": raw,
+                "reason": e.to_string(),
+            })),
+            diagnostics: vec![],
+            cause: vec![],
+        }));
     }
 
     // path.parent() is "" for a bare relative name (e.g. `my-plugin`);
@@ -139,7 +150,8 @@ fn run_plugin_with_env(
         trigger,
         database_version.as_deref(),
         global.force,
-    )?;
+    )
+    .map_err(|e| CliError::runtime(json_error_from_sdk(&e, ErrorContext::NewPlugin)))?;
 
     let summary = Summary {
         kind: SummaryKind::Plugin,
@@ -168,12 +180,21 @@ fn run_registry_with_env(
     if let Some(raw) = artifacts_url.as_deref()
         && let Err(e) = ArtifactsUrl::try_new(raw)
     {
-        return Err(crate::cli_error::CliError::usage_msg(format!(
-            "invalid --artifacts-url {raw:?}: {e}"
-        )));
+        return Err(CliError::usage(JsonError {
+            code: "usage::invalid_artifacts_url".into(),
+            message: format!("invalid --artifacts-url {raw:?}: {e}"),
+            field: None,
+            details: Some(serde_json::json!({
+                "value": raw,
+                "reason": e.to_string(),
+            })),
+            diagnostics: vec![],
+            cause: vec![],
+        }));
     }
 
-    scaffold::registry(&path, artifacts_url.as_deref(), global.force)?;
+    scaffold::registry(&path, artifacts_url.as_deref(), global.force)
+        .map_err(|e| CliError::runtime(json_error_from_sdk(&e, ErrorContext::NewRegistry)))?;
 
     let summary = Summary {
         kind: SummaryKind::Registry,
@@ -195,16 +216,31 @@ fn resolve_plugin_name(dir: &Path, name_arg: Option<String>) -> anyhow::Result<S
             // absolute paths all resolve to the same basename rule. Without
             // absolute(), `.`'s file_name is None and a bare
             // `new <template>` invocation fails.
-            let absolute = std::path::absolute(dir)
-                .map_err(|source| anyhow::anyhow!("could not resolve path {dir:?}: {source}"))?;
+            let absolute = std::path::absolute(dir).map_err(|_source| {
+                CliError::runtime(JsonError {
+                    code: "new::path_resolution_failed".into(),
+                    message: format!("could not resolve path {dir:?}: {_source}"),
+                    field: None,
+                    details: None,
+                    diagnostics: vec![],
+                    cause: vec![],
+                })
+            })?;
             let basename = absolute
                 .file_name()
                 .and_then(|s| s.to_str())
                 .ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "could not derive a plugin name from path {dir:?}; \
-                         pass --name <name> explicitly"
-                    )
+                    CliError::runtime(JsonError {
+                        code: "new::derived_name_unavailable".into(),
+                        message: format!(
+                            "could not derive a plugin name from path {dir:?}; \
+                             pass --name <name> explicitly"
+                        ),
+                        field: None,
+                        details: None,
+                        diagnostics: vec![],
+                        cause: vec![],
+                    })
                 })?
                 .to_owned();
             (basename, false)
@@ -214,22 +250,56 @@ fn resolve_plugin_name(dir: &Path, name_arg: Option<String>) -> anyhow::Result<S
     match PluginName::from_str(&candidate) {
         Ok(_) => Ok(candidate),
         Err(SchemaError::ReservedPluginName { .. }) if source_was_explicit => {
-            Err(crate::cli_error::CliError::usage_msg(format!(
-                "--name {candidate:?} is a Windows reserved device name \
-                 (case-insensitive); pick a different name"
-            )))
+            Err(CliError::usage(JsonError {
+                code: "usage::invalid_name".into(),
+                message: format!(
+                    "--name {candidate:?} is a Windows reserved device name \
+                     (case-insensitive); pick a different name"
+                ),
+                field: None,
+                details: Some(serde_json::json!({
+                    "value": candidate,
+                    "reason": "reserved_name",
+                })),
+                diagnostics: vec![],
+                cause: vec![],
+            }))
         }
-        Err(_) if source_was_explicit => Err(crate::cli_error::CliError::usage_msg(format!(
-            "--name {candidate:?} is not a valid plugin name; {PLUGIN_NAME_RULE}"
-        ))),
-        Err(SchemaError::ReservedPluginName { .. }) => Err(anyhow::anyhow!(
-            "derived plugin name {candidate:?} (from path basename) is a \
-             Windows reserved device name; pass --name <name> explicitly"
-        )),
-        Err(_) => Err(anyhow::anyhow!(
-            "derived plugin name {candidate:?} (from path basename) is not a valid \
-             plugin name; pass --name <name> explicitly. {PLUGIN_NAME_RULE}"
-        )),
+        Err(_) if source_was_explicit => Err(CliError::usage(JsonError {
+            code: "usage::invalid_name".into(),
+            message: format!(
+                "--name {candidate:?} is not a valid plugin name; {PLUGIN_NAME_RULE}"
+            ),
+            field: None,
+            details: Some(serde_json::json!({
+                "value": candidate,
+                "reason": "invalid_format",
+            })),
+            diagnostics: vec![],
+            cause: vec![],
+        })),
+        Err(SchemaError::ReservedPluginName { .. }) => Err(CliError::runtime(JsonError {
+            code: "new::derived_name_invalid".into(),
+            message: format!(
+                "derived plugin name {candidate:?} (from path basename) is a \
+                 Windows reserved device name; pass --name <name> explicitly"
+            ),
+            field: Some(dir.display().to_string()),
+            details: None,
+            diagnostics: vec![],
+            cause: vec![],
+        })),
+        Err(_) => Err(CliError::runtime(JsonError {
+            code: "new::derived_name_invalid".into(),
+            message: format!(
+                "derived plugin name {candidate:?} (from path basename) is not a valid \
+                 plugin name; pass --name <name> explicitly. {PLUGIN_NAME_RULE}"
+            ),
+            field: Some(dir.display().to_string()),
+            details: None,
+            diagnostics: vec![],
+            cause: vec![],
+        })),
     }
 }
 
@@ -281,11 +351,22 @@ fn check_sibling_canonical_collision(
             continue;
         };
         if sibling_name.canonical() == target_canonical && sibling_name.as_str() != resolved_name {
-            return Err(crate::cli_error::CliError::usage_msg(format!(
-                "plugin name {resolved_name:?} canonically collides with existing \
-                 sibling directory {basename:?} (both normalize to {target_canonical:?}). \
-                 Rename the new plugin or use the existing spelling."
-            )));
+            return Err(CliError::usage(JsonError {
+                code: "usage::sibling_canonical_collision".into(),
+                message: format!(
+                    "plugin name {resolved_name:?} canonically collides with existing \
+                     sibling directory {basename:?} (both normalize to {target_canonical:?}). \
+                     Rename the new plugin or use the existing spelling."
+                ),
+                field: None,
+                details: Some(serde_json::json!({
+                    "name": resolved_name,
+                    "sibling": basename,
+                    "canonical": target_canonical,
+                })),
+                diagnostics: vec![],
+                cause: vec![],
+            }));
         }
     }
 
@@ -356,7 +437,6 @@ fn render_json(summary: &Summary, writer: &mut impl std::io::Write) -> anyhow::R
         name: summary.name.clone(),
         files_written: summary.files_written.clone(),
     };
-    serde_json::to_writer_pretty(&mut *writer, &payload)?;
-    writeln!(writer)?;
+    write_envelope_ok(writer, payload)?;
     Ok(())
 }
