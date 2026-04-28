@@ -311,9 +311,7 @@ mod tests {
             SchemaError::InvalidPluginName {
                 name: "Bad Name".into(),
             },
-            SchemaError::ReservedPluginName {
-                name: "con".into(),
-            },
+            SchemaError::ReservedPluginName { name: "con".into() },
             SchemaError::InvalidVersion {
                 version: "1.2".into(),
                 source: semver::Version::parse("1.2").unwrap_err(),
@@ -448,15 +446,16 @@ mod tests {
 
     #[test]
     fn reserved_plugin_name_variant_renders_windows_message() {
-        let err = SchemaError::ReservedPluginName {
-            name: "con".into(),
-        };
+        let err = SchemaError::ReservedPluginName { name: "con".into() };
         let text = err.to_string();
         assert!(
             text.contains("Windows reserved"),
             "expected Windows-reserved mention, got: {text}"
         );
-        assert!(text.contains("\"con\""), "expected original name, got: {text}");
+        assert!(
+            text.contains("\"con\""),
+            "expected original name, got: {text}"
+        );
         assert_eq!(err.variant_name(), "ReservedPluginName");
     }
 }

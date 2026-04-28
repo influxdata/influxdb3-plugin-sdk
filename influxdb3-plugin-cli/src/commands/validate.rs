@@ -19,11 +19,7 @@ use influxdb3_plugin_sdk::{SdkError, ValidationError, validate};
 use std::path::PathBuf;
 
 use crate::color::Stream;
-use crate::output::{
-    Env, OutputMode, RealEnv,
-    json::ValidateOutput,
-    resolve_output_mode,
-};
+use crate::output::{Env, OutputMode, RealEnv, json::ValidateOutput, resolve_output_mode};
 use crate::style::Palette;
 
 /// Parsed `validate` arguments.
@@ -59,8 +55,7 @@ fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
     let mode = resolve_output_mode(args.output, env);
     // Diagnostics render to stdout (Task 4.1 stream routing). The summary
     // anyhow error goes to stderr via `main.rs`'s `eprintln!("{e:#}")`.
-    let stdout_palette =
-        Palette::for_stream(Stream::Stdout, mode, env, env.stdout_is_terminal());
+    let stdout_palette = Palette::for_stream(Stream::Stdout, mode, env, env.stdout_is_terminal());
     let outcome = run_validation(&args)?;
 
     render(&outcome, mode, stdout_palette)?;
@@ -109,7 +104,10 @@ fn run_validation(args: &Args) -> anyhow::Result<ValidateOutput> {
             diagnostics: Vec::new(),
         }),
         Err(SdkError::ValidationErrors(errs)) => Ok(ValidateOutput {
-            diagnostics: errs.iter().map(crate::diag_render::diagnostic_from).collect(),
+            diagnostics: errs
+                .iter()
+                .map(crate::diag_render::diagnostic_from)
+                .collect(),
         }),
         Err(other) => Err(other.into()),
     }

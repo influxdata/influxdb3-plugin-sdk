@@ -55,10 +55,8 @@ impl Args {
 
 fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
     let mode = resolve_output_mode(args.output, env);
-    let stdout_palette =
-        Palette::for_stream(Stream::Stdout, mode, env, env.stdout_is_terminal());
-    let stderr_palette =
-        Palette::for_stream(Stream::Stderr, mode, env, env.stderr_is_terminal());
+    let stdout_palette = Palette::for_stream(Stream::Stdout, mode, env, env.stdout_is_terminal());
+    let stderr_palette = Palette::for_stream(Stream::Stderr, mode, env, env.stderr_is_terminal());
 
     // Read + parse the input index before creating --out so we don't
     // leave an empty scratch dir on parse failure.
@@ -215,10 +213,7 @@ fn validation_errors_to_anyhow(
             // or a JSON document. We preserve today's summary shape to
             // keep JSON-mode consumers stable; human mode carries the
             // rich reporting.
-            anyhow::anyhow!(
-                "{} validation error(s) found",
-                errs.len()
-            )
+            anyhow::anyhow!("{} validation error(s) found", errs.len())
         }
     }
 }

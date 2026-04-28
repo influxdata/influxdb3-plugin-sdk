@@ -22,7 +22,9 @@ use tempfile::TempDir;
 
 fn plugin() -> Command {
     let mut c = Command::cargo_bin("influxdb3-plugin").expect("binary not built");
-    c.env_remove("NO_COLOR").env_remove("FORCE_COLOR").env_remove("TERM");
+    c.env_remove("NO_COLOR")
+        .env_remove("FORCE_COLOR")
+        .env_remove("TERM");
     c
 }
 

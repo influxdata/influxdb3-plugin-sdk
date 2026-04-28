@@ -128,7 +128,7 @@ fn yank_malformed_target_exits_two() {
     plugin()
         .args([
             "yank",
-            "name:version",  // `:` not `@`
+            "name:version", // `:` not `@`
             "--index",
             reg.join("index.json").to_str().unwrap(),
             "--out",

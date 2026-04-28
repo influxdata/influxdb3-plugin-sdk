@@ -61,7 +61,11 @@ fn from_cargo_vcs_info() -> Option<String> {
     let content = fs::read_to_string(path).ok()?;
     let v: serde_json::Value = serde_json::from_str(&content).ok()?;
     let s = v.get("git")?.get("sha1")?.as_str()?;
-    if is_valid_sha(s) { Some(s.to_owned()) } else { None }
+    if is_valid_sha(s) {
+        Some(s.to_owned())
+    } else {
+        None
+    }
 }
 
 fn from_git_rev_parse() -> Option<String> {
@@ -81,5 +85,7 @@ fn from_git_rev_parse() -> Option<String> {
 /// inject syntax into the generated `version_fragment.rs` (quotes,
 /// backslashes, newlines — none of which are valid hex).
 fn is_valid_sha(s: &str) -> bool {
-    s.len() == 40 && s.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    s.len() == 40
+        && s.bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }

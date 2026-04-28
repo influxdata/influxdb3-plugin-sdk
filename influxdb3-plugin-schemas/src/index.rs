@@ -738,7 +738,9 @@ mod index_tests {
             2,
             "expected 2 errors, got {}: {:?}",
             e.len(),
-            e.iter().map(|r| (r.path.as_str(), &r.error)).collect::<Vec<_>>()
+            e.iter()
+                .map(|r| (r.path.as_str(), &r.error))
+                .collect::<Vec<_>>()
         );
         assert_matches!(
             e[0].error,

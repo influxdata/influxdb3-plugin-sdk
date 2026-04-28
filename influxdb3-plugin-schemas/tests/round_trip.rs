@@ -36,8 +36,17 @@ fn canonical_form_is_idempotent() {
             .unwrap()
             .to_canonical_json()
             .unwrap();
-        assert_eq!(once, twice, "canonical form changed on second pass for {}", path.display());
+        assert_eq!(
+            once,
+            twice,
+            "canonical form changed on second pass for {}",
+            path.display()
+        );
         processed += 1;
     }
-    assert!(processed >= 1, "no valid index fixtures found at {}", fixtures().display());
+    assert!(
+        processed >= 1,
+        "no valid index fixtures found at {}",
+        fixtures().display()
+    );
 }
