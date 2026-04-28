@@ -110,6 +110,114 @@ jobs:
           name: cargo doc --workspace --no-deps
           command: cargo doc --workspace --no-deps
 
+  # ---------- TEMPORARY PROBE JOBS ----------
+  # These jobs only run on the ci/release-auth-probe branch (per the
+  # auth-probe workflow filter below). They surface what auth flows
+  # work BEFORE PR-7's release workflow commits to a specific design.
+  # Remove this whole block + the auth-probe workflow once PR-7 lands.
+
+  release-auth-probe:
+    machine: true
+    resource_class: runner-ns/clustered-linux-vm
+    working_directory: /tmp/workspace/<< pipeline.id >>
+    steps:
+      - run:
+          name: Probe environment
+          command: |
+            echo "=== Env-var presence ==="
+            for v in CIRCLE_OIDC_TOKEN CIRCLE_OIDC_TOKEN_V2 \
+                     GCP_PROJECT_ID GCP_SERVICE_ACCOUNT_EMAIL \
+                     GCP_WIP_ID GCP_WIP_PROVIDER_ID; do
+                if [ -n "${!v:-}" ]; then
+                    echo "$v: SET (len=${#!v})"
+                else
+                    echo "$v: UNSET"
+                fi
+            done
+      - run:
+          name: Install gcloud
+          command: |
+            curl -sSL https://sdk.cloud.google.com | bash >/dev/null
+            echo 'source $HOME/google-cloud-sdk/path.bash.inc' >> "$BASH_ENV"
+            source "$BASH_ENV"
+            gcloud --version | head -1 && echo "GCLOUD_INSTALL_OK"
+      - run:
+          name: Generate WIF cred config
+          command: |
+            # Pick whichever OIDC token env var is set
+            TOKEN="${CIRCLE_OIDC_TOKEN_V2:-${CIRCLE_OIDC_TOKEN:-}}"
+            [ -n "$TOKEN" ] || { echo "ERROR: no OIDC token in env"; exit 1; }
+            umask 077
+            echo "$TOKEN" > /tmp/circleci_oidc_token
+            cat > /tmp/gcp_cred_config.json \<<JSON
+            {
+              "type": "external_account",
+              "audience": "//iam.googleapis.com/projects/${GCP_PROJECT_ID}/locations/global/workloadIdentityPools/${GCP_WIP_ID}/providers/${GCP_WIP_PROVIDER_ID}",
+              "subject_token_type": "urn:ietf:params:oauth:token-type:jwt",
+              "service_account_impersonation_url": "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${GCP_SERVICE_ACCOUNT_EMAIL}:generateAccessToken",
+              "token_url": "https://sts.googleapis.com/v1/token",
+              "credential_source": {
+                "file": "/tmp/circleci_oidc_token"
+              }
+            }
+            JSON
+            echo "WIF_CONFIG_GENERATED"
+            echo "Audience: //iam.googleapis.com/projects/$GCP_PROJECT_ID/locations/global/workloadIdentityPools/$GCP_WIP_ID/providers/$GCP_WIP_PROVIDER_ID"
+            echo "SA: $GCP_SERVICE_ACCOUNT_EMAIL"
+      - run:
+          name: WIF token exchange (gcloud auth login)
+          command: |
+            source "$BASH_ENV"
+            gcloud auth login --cred-file=/tmp/gcp_cred_config.json && echo "WIF_LOGIN_OK"
+      - run:
+          name: Get GCP access token
+          command: |
+            source "$BASH_ENV"
+            gcloud auth print-access-token > /tmp/gcp_access_token \
+                && echo "ACCESS_TOKEN_OK (len=$(wc -c < /tmp/gcp_access_token))"
+      - run:
+          name: Docker login to GAR
+          command: |
+            cat /tmp/gcp_access_token \
+                | docker login -u oauth2accesstoken --password-stdin \
+                  https://us-east1-docker.pkg.dev \
+                && echo "GAR_LOGIN_OK"
+      - run:
+          name: Pull the cross-builder image
+          command: |
+            docker pull us-east1-docker.pkg.dev/influxdata-team-edge/ci-support/ci-cross-influxdb3@sha256:98b05538182a2e4eac5ce96150a1f5c552de48a7d3ea8d312d38e45f0dd42611 \
+                && echo "PULL_OK" \
+                || { echo "PULL_FAIL"; exit 1; }
+
+  github-token-probe:
+    executor: self-hosted-amd
+    steps:
+      - run:
+          name: Probe github-token-ci capabilities
+          command: |
+            [ -n "${GITHUB_TOKEN:-}" ] || { echo "ERROR: GITHUB_TOKEN not set"; exit 1; }
+            echo "GITHUB_TOKEN: SET (len=${#GITHUB_TOKEN})"
+
+            # Headers reveal token scopes (classic PATs) or null (fine-grained / GitHub App)
+            echo "=== Token scope inspection (response headers) ==="
+            curl -sIH "Authorization: Bearer $GITHUB_TOKEN" \
+                "https://api.github.com/repos/influxdata/influxdb3-plugin-sdk" \
+                | grep -i "x-oauth-scopes\|x-accepted-oauth-scopes\|x-github-token-expiration" \
+                || echo "(no x-oauth-scopes / x-accepted-oauth-scopes headers — likely fine-grained PAT or GitHub App token)"
+
+            echo "=== Repo permissions field ==="
+            curl -sH "Authorization: Bearer $GITHUB_TOKEN" \
+                "https://api.github.com/repos/influxdata/influxdb3-plugin-sdk" \
+                | jq '{full_name, permissions, visibility}'
+
+            echo "=== Releases endpoint accessibility (read) ==="
+            curl -sH "Authorization: Bearer $GITHUB_TOKEN" \
+                "https://api.github.com/repos/influxdata/influxdb3-plugin-sdk/releases" \
+                | jq 'length' \
+                && echo "RELEASES_READ_OK"
+
+# Existing ci workflow runs on all branches (incl. the probe branch).
+# The probe-only workflow runs ONLY on ci/release-auth-probe.
 workflows:
   ci:
     jobs:
@@ -119,3 +227,12 @@ workflows:
       - cargo-fmt
       - cargo-deny
       - cargo-doc
+
+  auth-probe:
+    when:
+      equal: [ "ci/release-auth-probe", << pipeline.git.branch >> ]
+    jobs:
+      - release-auth-probe:
+          context: [gcp-wif-clustered]
+      - github-token-probe:
+          context: [github-token-ci]
