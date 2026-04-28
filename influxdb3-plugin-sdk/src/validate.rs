@@ -93,7 +93,7 @@ fn read_optional_required(
 /// surfaces as `SdkError::ValidationErrors` carrying a single
 /// [`ValidationError::NameVersionConflict`].
 ///
-/// Backs `validate --index`, letting uniqueness conflicts appear in the
+/// Backs index-aware validation, letting uniqueness conflicts appear in the
 /// same diagnostics array as other validation errors. The distinct
 /// mutation-boundary check in `mutate_index::add_entry` returns
 /// `SdkError::AlreadyPublished` instead.

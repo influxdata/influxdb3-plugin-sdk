@@ -179,10 +179,10 @@ pub enum ValidationError {
     AsyncTriggerFn { trigger: TriggerType },
 
     /// Plugin `(name, version)` already exists in the target index. Surfaces
-    /// from [`crate::validate::plugin_dir_with_index`] so `validate --index`
-    /// can collect uniqueness conflicts alongside other validation errors.
-    /// The mutation-boundary check in `mutate_index::add_entry` returns the
-    /// distinct [`SdkError::AlreadyPublished`] instead.
+    /// from [`crate::validate::plugin_dir_with_index`] so index-aware
+    /// validation can collect uniqueness conflicts alongside other validation
+    /// errors. The mutation-boundary check in `mutate_index::add_entry`
+    /// returns the distinct [`SdkError::AlreadyPublished`] instead.
     #[error(
         "plugin ({name:?}, {version:?}) already exists in the target index"
     )]

@@ -17,8 +17,8 @@
 //! # I/O scope
 //!
 //! [`package_plugin`] performs no output-side I/O — it reads the plugin
-//! directory but does not write the archive or index. The CLI owns the
-//! `--out` target so input/output separation can be enforced there.
+//! directory but does not write the archive or index. The caller owns the
+//! output target so input/output separation can be enforced there.
 
 use influxdb3_plugin_schemas::{ArtifactHash, Index, IndexEntry};
 use std::path::Path;
