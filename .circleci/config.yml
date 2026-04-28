@@ -257,6 +257,35 @@ jobs:
           path: coverage.json
       - save-cargo-cache
 
+  cargo-mutants:
+    executor: self-hosted-amd
+    steps:
+      - checkout
+      - setup-rust
+      - restore-cargo-cache
+      - run:
+          name: Install cargo-mutants (cached after first run via ~/.cargo/bin)
+          command: cargo install cargo-mutants --locked
+      - run:
+          name: cargo mutants on changed files vs main
+          shell: /bin/bash
+          # Non-blocking initially: trailing `|| true` swallows any
+          # non-zero exit (including surviving mutants). Flip to
+          # blocking later by removing `|| true` and adding `--error 0`
+          # to the cargo invocation. `git diff` is written to a temp
+          # file because CircleCI's default shell does not reliably
+          # support process substitution `<(...)`.
+          command: |
+            git fetch origin main:main
+            git diff main..HEAD > /tmp/pr.diff
+            cargo mutants --in-diff /tmp/pr.diff \
+                          --no-shuffle \
+                          --timeout-multiplier 2.0 \
+                          --jobs 4 || true
+      - store_artifacts:
+          path: mutants.out/
+      - save-cargo-cache
+
   cargo-mutants-full:
     executor: self-hosted-amd
     steps:
@@ -361,6 +390,7 @@ workflows:
       - cargo-check
       - cargo-test
       - cargo-coverage
+      - cargo-mutants
       - cargo-clippy
       - cargo-fmt
       - cargo-deny

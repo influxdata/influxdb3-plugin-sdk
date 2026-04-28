@@ -16,6 +16,8 @@ use arbitrary as _;
 use bolero as _;
 #[cfg(test)]
 use proptest as _;
+#[cfg(test)]
+use proptest_derive as _;
 
 mod error;
 mod identity;

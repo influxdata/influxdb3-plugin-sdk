@@ -29,6 +29,7 @@ bolero.workspace = true
 insta.workspace = true
 pretty_assertions.workspace = true
 proptest.workspace = true
+proptest-derive.workspace = true
 rstest.workspace = true
 
 [lints]

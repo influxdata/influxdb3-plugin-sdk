@@ -1,0 +1,21 @@
+# Mutation-testing exclusions for cargo-mutants.
+#
+# These regexes match against cargo-mutants' generated mutant
+# DESCRIPTIONS, not raw source text. The exact description format
+# should be verified by running `cargo mutants --list` once locally
+# and refining the patterns if a category leaks through.
+
+# Skip tests, benches, and build artifacts.
+exclude_globs = [
+    "**/tests/**",
+    "**/benches/**",
+    "target/**",
+]
+
+# Skip cosmetic Debug/Display impls — mutating them rarely produces
+# meaningful test failures, and they bloat the surviving-mutant
+# triage queue.
+exclude_re = [
+    "impl Debug for",
+    "impl Display for",
+]
