@@ -51,6 +51,9 @@ pub use influxdb3_plugin_schemas::{
 #[doc(hidden)]
 pub mod __private {
     pub use crate::cli_error::{CliError, CliErrorKind};
+    pub use crate::output::error_mapping::json_error_from_clap;
+    pub use crate::output::json::{JsonError, write_envelope_error};
+    pub use crate::style::Palette;
 }
 
 mod cli_error;

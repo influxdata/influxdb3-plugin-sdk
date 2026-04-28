@@ -246,7 +246,7 @@ pub(crate) fn schema_error_details(err: &SchemaError) -> serde_json::Value {
 /// Dispatches by `err.kind()` to a `usage::*` code per spec § 4.4 / § 4.5.
 /// `ValueValidation` with `ContextKind::InvalidArg == "<NAME@VERSION>"` refines
 /// to `usage::invalid_target`.
-pub(crate) fn json_error_from_clap(err: &clap::Error) -> JsonError {
+pub fn json_error_from_clap(err: &clap::Error) -> JsonError {
     use clap::error::ErrorKind;
     let message = collapse_clap_message(err);
     let kind = err.kind();

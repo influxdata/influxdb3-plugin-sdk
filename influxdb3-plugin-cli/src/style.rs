@@ -16,7 +16,7 @@ use anstyle::{AnsiColor, Color, Effects, Style};
 
 /// Styles used by the human renderers.
 #[derive(Debug, Clone, Copy, Default)]
-pub(crate) struct Palette {
+pub struct Palette {
     /// Red + bold. Used for `"validation failed: ..."` header lines and
     /// data-tool failure summaries.
     pub error: Style,
