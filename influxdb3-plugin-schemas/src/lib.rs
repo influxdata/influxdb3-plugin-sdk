@@ -19,7 +19,7 @@ mod manifest;
 mod path;
 mod raw;
 
-pub use error::{ReportedError, SchemaError, SchemaErrors};
+pub use error::{IndexInsertError, ReportedError, SchemaError, SchemaErrors};
 pub use identity::{PluginId, PluginName};
 pub use index::{ArtifactHash, ArtifactsUrl, Index, IndexEntry, IndexSchemaVersion};
 pub use manifest::{
