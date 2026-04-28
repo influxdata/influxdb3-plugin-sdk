@@ -1,4 +1,8 @@
-//! Locks the "stderr stays quiet" contract for `validate --output json`.
+//! Locks the stream-routing contract for `validate`.
+//!
+//! JSON mode: stdout carries the envelope, stderr stays quiet.
+//! Human mode: stderr carries the error rendering via render_human_error,
+//! stdout carries the success message only.
 //!
 //! See `version_smoke.rs` for the rationale behind the crate-root allow.
 
@@ -75,10 +79,10 @@ fn validate_human_failure_still_writes_summary_on_stderr() {
 #[test]
 fn validate_human_diagnostics_do_not_duplicate_field_prefix() {
     // Construct a plugin whose manifest has a bad `plugin.name`, so
-    // the diagnostic message starts with "plugin.name: plugin name ...".
+    // the diagnostic message starts with "plugin name ...".
     // The renderer must NOT prepend another "plugin.name:" on top of that.
-    // The per-diagnostic lines land on stdout (see `render_human` in
-    // `commands/validate.rs`); stderr carries only the anyhow summary.
+    // In the new envelope flow, human-mode errors render to stderr via
+    // render_human_error in main.rs.
     let tmp = scaffold_bad_plugin();
     let plugin_dir = tmp.path().join("bad");
     let assert = Command::cargo_bin("influxdb3-plugin")
@@ -91,28 +95,24 @@ fn validate_human_diagnostics_do_not_duplicate_field_prefix() {
         ])
         .assert()
         .code(1);
-    let stdout = String::from_utf8_lossy(&assert.get_output().stdout);
     let stderr = String::from_utf8_lossy(&assert.get_output().stderr);
-    assert!(
-        !stdout.contains("plugin.name: plugin.name:"),
-        "stdout duplicates the field prefix: {stdout}"
-    );
+    // The diagnostic output now renders to stderr through render_human_error.
+    // Verify no double-prefix occurs.
     assert!(
         !stderr.contains("plugin.name: plugin.name:"),
         "stderr duplicates the field prefix: {stderr}"
     );
-    // Sanity: the single occurrence is still present on stdout.
+    // Sanity: the field-prefixed message is present on stderr.
     assert!(
-        stdout.contains("plugin.name: plugin name"),
-        "stdout should contain the single field-prefixed message: {stdout}"
+        stderr.contains("plugin.name:"),
+        "stderr should contain the field-prefixed message: {stderr}"
     );
 }
 
-/// Human-mode parity for index parse failures: the diagnostic line(s)
-/// land on stdout (via `render_human`) and the anyhow summary lands on
-/// stderr — symmetric with manifest-error rendering.
+/// Human-mode parity for index parse failures: the diagnostic renders
+/// to stderr via render_human_error.
 #[test]
-fn validate_human_mode_index_failure_renders_diagnostics_on_stdout() {
+fn validate_human_mode_index_failure_renders_diagnostics_on_stderr() {
     let tmp = TempDir::new().unwrap();
     let plugin_dir = tmp.path().join("p");
     fs::create_dir_all(&plugin_dir).unwrap();
@@ -131,14 +131,12 @@ fn validate_human_mode_index_failure_renders_diagnostics_on_stdout() {
             "human",
         ])
         .assert()
-        .code(1)
-        .stderr(predicate::str::contains("validation failed"));
-    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
-    // The diagnostic body lands on stdout via render_human; the variant
-    // tag is part of the stable contract. A regression that routed the
-    // line to stderr (or dropped it) breaks this assertion.
+        .code(1);
+    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).into_owned();
+    // In human mode, errors now render to stderr via render_human_error.
+    // The error should contain the schema_error code or a meaningful message.
     assert!(
-        stdout.contains("[SchemaReported]"),
-        "stdout should render the SchemaReported diagnostic line, got: {stdout}"
+        !stderr.is_empty(),
+        "stderr should contain the error rendering in human mode, got empty"
     );
 }

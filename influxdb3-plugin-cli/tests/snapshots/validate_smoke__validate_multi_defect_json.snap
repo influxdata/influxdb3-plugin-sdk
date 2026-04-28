@@ -1,24 +1,42 @@
 ---
 source: influxdb3-plugin-cli/tests/validate_smoke.rs
-assertion_line: 131
 expression: payload
 ---
 {
-  "diagnostics": [
-    {
-      "field": "plugin.name",
-      "message": "plugin.name: plugin name \"1bad\" must match `[a-zA-Z][a-zA-Z0-9_-]*` (1-64 chars, ASCII alphanumerics / `-` / `_`, starting with a letter)",
-      "variant": "SchemaReported"
-    },
-    {
-      "field": "plugin.version",
-      "message": "plugin.version: version \"1.2\" is not SemVer 2.0.0 compliant: unexpected end of input while parsing minor version number",
-      "variant": "SchemaReported"
-    },
-    {
-      "field": "plugin.homepage",
-      "message": "plugin.homepage: URL \"ftp://bad\" must use http or https scheme (was \"ftp\")",
-      "variant": "SchemaReported"
-    }
-  ]
+  "error": {
+    "code": "validate::failed",
+    "diagnostics": [
+      {
+        "code": "validate::schema_reported",
+        "details": {
+          "name": "1bad",
+          "schema_variant": "InvalidPluginName"
+        },
+        "field": "plugin.name",
+        "message": "plugin name \"1bad\" must match `[a-zA-Z][a-zA-Z0-9_-]*` (1-64 chars, ASCII alphanumerics / `-` / `_`, starting with a letter)"
+      },
+      {
+        "code": "validate::schema_reported",
+        "details": {
+          "parse_error": "unexpected end of input while parsing minor version number",
+          "schema_variant": "InvalidVersion",
+          "version": "1.2"
+        },
+        "field": "plugin.version",
+        "message": "version \"1.2\" is not SemVer 2.0.0 compliant: unexpected end of input while parsing minor version number"
+      },
+      {
+        "code": "validate::schema_reported",
+        "details": {
+          "schema_variant": "InvalidUrlScheme",
+          "scheme": "ftp",
+          "url": "ftp://bad"
+        },
+        "field": "plugin.homepage",
+        "message": "URL \"ftp://bad\" must use http or https scheme (was \"ftp\")"
+      }
+    ],
+    "message": "3 validation diagnostic(s)"
+  },
+  "status": "error"
 }
