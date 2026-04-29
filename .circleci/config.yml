@@ -293,7 +293,6 @@ jobs:
           command: |
             source "$BASH_ENV"
             IMAGE="us-east1-docker.pkg.dev/influxdata-team-edge/ci-support/ci-cross-influxdb3@sha256:98b05538182a2e4eac5ce96150a1f5c552de48a7d3ea8d312d38e45f0dd42611"
-            echo "GIT_HASH will be: $CIRCLE_SHA1 (len=${#CIRCLE_SHA1})"
             docker run --rm \
               -v "$(pwd)":/workspace \
               -w /workspace \
@@ -302,7 +301,7 @@ jobs:
               -e "INFLUXDB3_PLUGIN_SDK_KNOWN_LATEST_DB=$INFLUXDB3_PLUGIN_SDK_KNOWN_LATEST_DB" \
               -e "RUSTC_WRAPPER=" \
               "$IMAGE" \
-              bash -c "echo 'Inside container: GIT_HASH='\$GIT_HASH' (len='\${#GIT_HASH}')' && rustup target add << parameters.target >> && target-env cargo build --release --target << parameters.target >> -p influxdb3-plugin-cli"
+              bash -c "rustup target add << parameters.target >> && target-env cargo build --release --target << parameters.target >> -p influxdb3-plugin-cli"
       - run:
           name: Ad-hoc codesign Darwin binary (prevents macOS "damaged" errors)
           command: |
@@ -387,7 +386,7 @@ jobs:
                     continue
                 fi
 
-                if ! strings "$bin_path" | grep -qF "$CIRCLE_SHA1"; then
+                if ! strings "$bin_path" | grep -cF "$CIRCLE_SHA1" > /dev/null; then
                     echo "FAIL: $bin_name does not contain CIRCLE_SHA1=$CIRCLE_SHA1 in its strings" >&2
                     echo "  Binary's 'revision' string:" >&2
                     strings "$bin_path" | grep -i "revision" | head -3 >&2
@@ -399,7 +398,7 @@ jobs:
 
                 if [ "$target" = "x86_64-unknown-linux-gnu" ]; then
                     actual="$($bin_path --version)"
-                    if ! echo "$actual" | grep -qF "revision $CIRCLE_SHA1"; then
+                    if ! echo "$actual" | grep -cF "revision $CIRCLE_SHA1" > /dev/null; then
                         echo "FAIL: $bin_name --version doesn't contain revision $CIRCLE_SHA1" >&2
                         echo "  Got: $actual" >&2
                         errors=$((errors+1))
