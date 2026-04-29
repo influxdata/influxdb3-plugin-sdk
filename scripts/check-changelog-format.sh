@@ -44,6 +44,15 @@ while IFS= read -r line; do
     fi
 done < "$FILE"
 
+# Check 3b: any ## heading that isn't [Unreleased] or a valid version is suspicious
+while IFS= read -r line; do
+    if [[ "$line" =~ ^##\  ]] && [[ ! "$line" =~ ^##\ \[ ]]; then
+        echo "FAIL: unrecognized ## heading (missing brackets?): '$line'" >&2
+        echo "      expected: ## [Unreleased] or ## [X.Y.Z] - YYYY-MM-DD" >&2
+        errors=$((errors+1))
+    fi
+done < "$FILE"
+
 # Check 4: subsections are only from the allowed set
 ALLOWED_SUBSECTIONS="Added|Changed|Deprecated|Removed|Fixed|Security"
 while IFS= read -r line; do
@@ -58,7 +67,7 @@ while IFS= read -r line; do
 done < "$FILE"
 
 # Check 5: no duplicate version sections
-duplicates=$(grep -oE '## \[[0-9]+\.[0-9]+\.[0-9]+[^]]*\]' "$FILE" | sort | uniq -d)
+duplicates=$(grep -oE '## \[[0-9]+\.[0-9]+\.[0-9]+[^]]*\]' "$FILE" 2>/dev/null | sort | uniq -d || true)
 if [ -n "$duplicates" ]; then
     echo "FAIL: duplicate version sections:" >&2
     echo "$duplicates" | sed 's/^/  /' >&2
@@ -67,7 +76,7 @@ fi
 
 # Check 6: Unreleased comes before any versioned section
 unreleased_line=$(grep -n '^## \[Unreleased\]' "$FILE" | head -1 | cut -d: -f1)
-first_version_line=$(grep -nE "$VERSION_PATTERN" "$FILE" | head -1 | cut -d: -f1)
+first_version_line=$(grep -nE "$VERSION_PATTERN" "$FILE" 2>/dev/null | head -1 | cut -d: -f1 || true)
 if [ -n "$unreleased_line" ] && [ -n "$first_version_line" ]; then
     if [ "$unreleased_line" -gt "$first_version_line" ]; then
         echo "FAIL: [Unreleased] section (line $unreleased_line) must come before first version section (line $first_version_line)" >&2
