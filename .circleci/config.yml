@@ -255,21 +255,24 @@ jobs:
           name: WIF login as dedicated SA
           command: |
             source "$BASH_ENV"
+            source "$BASH_ENV"
             TOKEN="${CIRCLE_OIDC_TOKEN:-}"
             [ -n "$TOKEN" ] || { echo "ERROR: no V1 OIDC token"; exit 1; }
             umask 077
-            echo "$TOKEN" > /tmp/circleci_oidc_token
-            cat > /tmp/gcp_cred_config.json \<<JSON
+            OIDC_FILE="$CLOUDSDK_CONFIG/circleci_oidc_token"
+            CRED_FILE="$CLOUDSDK_CONFIG/gcp_cred_config.json"
+            echo "$TOKEN" > "$OIDC_FILE"
+            cat > "$CRED_FILE" \<<JSON
             {
               "type": "external_account",
               "audience": "//iam.googleapis.com/projects/${GCP_PROJECT_ID}/locations/global/workloadIdentityPools/${GCP_WIP_ID}/providers/${GCP_WIP_PROVIDER_ID}",
               "subject_token_type": "urn:ietf:params:oauth:token-type:jwt",
               "service_account_impersonation_url": "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${GCP_SERVICE_ACCOUNT_EMAIL}:generateAccessToken",
               "token_url": "https://sts.googleapis.com/v1/token",
-              "credential_source": { "file": "/tmp/circleci_oidc_token" }
+              "credential_source": { "file": "$OIDC_FILE" }
             }
             JSON
-            gcloud auth login --cred-file=/tmp/gcp_cred_config.json
+            gcloud auth login --cred-file="$CRED_FILE"
       - run:
           name: Pull cross-builder image
           no_output_timeout: 15m
