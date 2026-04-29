@@ -9,6 +9,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Added
 - `influxdb3-plugin-schemas`: index query primitives (`Index::search`, `Index::info`) for shared registry browsing across CLI, UI backend, and database consumers
 
+### Fixed
+- `package` command now emits typed JSON error code `package::already_published` (was `cli::unknown`) when `(name, version)` already exists in the target index. Same fix applied to `CanonicalCollision` errors.
+
 ## [0.1.0] - 2026-04-28
 
 First stable release of the InfluxDB 3 plugin SDK.

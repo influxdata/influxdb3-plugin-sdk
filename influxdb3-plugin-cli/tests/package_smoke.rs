@@ -13,7 +13,7 @@ use rstest::rstest;
 use std::path::{Path, PathBuf};
 
 mod common;
-use common::{EMPTY_INDEX, cli_cmd, write_valid_plugin};
+use common::{EMPTY_INDEX, SEEDED_INDEX, cli_cmd, write_valid_plugin};
 
 fn write_empty_index(path: &Path) {
     std::fs::write(path, EMPTY_INDEX).unwrap();
@@ -156,6 +156,32 @@ fn package_rejects_duplicate_name_version() {
     // The check fires AFTER `--out` is created (canonicalize requires
     // existence), but the output files themselves must be absent.
     assert!(!out_dir.join("index.json").exists());
+}
+
+/// JSON-mode duplicate: the error envelope must carry the typed error
+/// code `package::already_published` (not `cli::unknown`).
+#[test]
+fn package_duplicate_emits_typed_json_error_code() {
+    let td = tempfile::tempdir().unwrap();
+    let plugin_dir = td.path().join("p");
+    write_valid_plugin(&plugin_dir);
+    let index_dir = td.path().join("reg");
+    std::fs::create_dir_all(&index_dir).unwrap();
+    let index_path = index_dir.join("index.json");
+    std::fs::write(&index_path, SEEDED_INDEX).unwrap();
+    let out = td.path().join("build");
+
+    let assert = spawn_package(&plugin_dir, &index_path, &out, &["--output", "json"])
+        .failure()
+        .code(1);
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
+    let envelope: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|e| panic!("stdout must be valid JSON: {e}\n{stdout}"));
+    assert_eq!(envelope["status"], "error");
+    assert_eq!(
+        envelope["error"]["code"], "package::already_published",
+        "expected typed error code, got: {stdout}"
+    );
 }
 
 // Canonical-form collision detection — hyphen/underscore and case
