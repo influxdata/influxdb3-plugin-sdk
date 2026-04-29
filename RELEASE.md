@@ -99,4 +99,3 @@ After a stable (non-RC) release ships:
 ## Related docs
 
 - Bump rules + cascade: `CONTRIBUTING.md`
-- Spec: `Processing Engine - Plugin Version Management.md` (external) — particularly S2-19 (target matrix), S2-20 (distribution channel), S2-21 (--version output shape).
