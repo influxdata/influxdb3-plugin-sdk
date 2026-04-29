@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-04-28
+
+First stable release of the InfluxDB 3 plugin SDK.
+
+### Added
+- `influxdb3-plugin` CLI binary with `new`, `validate`, `package`, and `yank` commands
+- `influxdb3-plugin-schemas` crate with canonical `Manifest`, `Index`, `PluginId`, and related types
+- `influxdb3-plugin-sdk` author-side packaging library (scaffold, validate, package, mutate-index)
+- CircleCI CI/CD pipeline: 9 gating checks (build, test, clippy, fmt, deny, doc, manifest-invariants, semver-checks, package-check) + 4-target release workflow (x86_64-linux-gnu, aarch64-linux-gnu, aarch64-apple-darwin, x86_64-windows-gnu)
+- Operator tooling: `justfile` with `cut-version`, `tag-version`, `verify-version` recipes
+- `RELEASE.md` operator runbook, `CONTRIBUTING.md` with bump rules + cascade docs
+
 ## [0.1.0-2.rc.0] - 2026-04-28
 
 Second release rehearsal. Fixes cross-compilation TARGET env var for aarch64-apple-darwin and aarch64-unknown-linux-gnu.
