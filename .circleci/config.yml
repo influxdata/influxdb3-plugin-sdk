@@ -163,6 +163,43 @@ jobs:
           command: ./scripts/check-cargo-metadata.sh
       - save-cargo-cache
 
+  cargo-semver-checks:
+    executor: self-hosted-amd
+    steps:
+      - checkout
+      - run:
+          name: Fetch tags
+          command: git fetch --tags origin
+      - run:
+          name: Clone baseline tag into /tmp/baseline (sidesteps shallow-clone object issues)
+          command: |
+            BASELINE="$(git describe --tags --abbrev=0)"
+            if [ -z "$BASELINE" ]; then
+              echo "ERROR: no baseline tag found." >&2
+              exit 1
+            fi
+            echo "Baseline tag: $BASELINE"
+            git clone --depth=1 --branch "$BASELINE" \
+              "$(git remote get-url origin)" /tmp/baseline
+      - restore-cargo-cache
+      - setup-rust
+      - run:
+          name: Install cargo-semver-checks (prebuilt binary)
+          command: |
+            CARGO_SEMVER_CHECKS_VERSION="0.47.0"
+            curl -LsSf "https://github.com/obi1kenobi/cargo-semver-checks/releases/download/v${CARGO_SEMVER_CHECKS_VERSION}/cargo-semver-checks-x86_64-unknown-linux-gnu.tar.gz" \
+              | tar zxf - -C "$HOME/.cargo/bin"
+            cargo semver-checks --version
+      - run:
+          name: cargo semver-checks (cli + schemas only; sdk is internal)
+          command: |
+            echo "Comparing against baseline at /tmp/baseline"
+            cargo semver-checks check-release \
+              --package influxdb3-plugin-cli \
+              --package influxdb3-plugin-schemas \
+              --baseline-root /tmp/baseline
+      - save-cargo-cache
+
   cargo-package-check:
     executor: self-hosted-amd
     steps:
@@ -365,6 +402,7 @@ workflows:
       - cargo-deny
       - cargo-doc
       - manifest-invariants
+      - cargo-semver-checks
       - cargo-package-check
 
   release:
