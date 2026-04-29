@@ -1,6 +1,6 @@
 [package]
 name = "influxdb3-plugin-cli"
-version = "0.1.0-1.rc.0"
+version = "0.1.0-2.rc.0"
 authors.workspace = true
 edition.workspace = true
 rust-version.workspace = true
