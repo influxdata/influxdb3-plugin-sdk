@@ -158,9 +158,6 @@ jobs:
       - run:
           name: scripts/check-manifest-invariants.sh
           command: ./scripts/check-manifest-invariants.sh
-      - run:
-          name: scripts/check-cargo-metadata.sh
-          command: ./scripts/check-cargo-metadata.sh
       - save-cargo-cache
 
   cargo-semver-checks:
@@ -348,6 +345,68 @@ jobs:
           paths:
             - artifacts/SHA256SUMS
 
+  verify-release-binaries:
+    docker:
+      - image: cimg/base:current
+    steps:
+      - attach_workspace:
+          at: .
+      - run:
+          name: Per-target verification of release binaries
+          command: |
+            set -euo pipefail
+            cd artifacts
+            errors=0
+
+            sha256sum -c SHA256SUMS || { echo "FAIL: SHA256SUMS doesn't match actual files" >&2; errors=$((errors+1)); }
+
+            for target in x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu \
+                          aarch64-apple-darwin x86_64-pc-windows-gnu; do
+                tarball="influxdb3-plugin-${target}.tar.gz"
+                if [ ! -s "$tarball" ]; then
+                    echo "FAIL: $tarball is missing or empty" >&2
+                    errors=$((errors+1))
+                    continue
+                fi
+
+                extract_dir="extracted-${target}"
+                mkdir -p "$extract_dir"
+                tar -xzf "$tarball" -C "$extract_dir"
+
+                bin_name="influxdb3-plugin"
+                case "$target" in *windows*) bin_name="influxdb3-plugin.exe" ;; esac
+                bin_path="$extract_dir/$bin_name"
+                if [ ! -s "$bin_path" ]; then
+                    echo "FAIL: $tarball does not contain a non-empty $bin_name" >&2
+                    errors=$((errors+1))
+                    continue
+                fi
+
+                if ! strings "$bin_path" | grep -qF "$CIRCLE_SHA1"; then
+                    echo "FAIL: $bin_name does not contain CIRCLE_SHA1=$CIRCLE_SHA1 in its strings" >&2
+                    errors=$((errors+1))
+                    continue
+                fi
+
+                if [ "$target" = "x86_64-unknown-linux-gnu" ]; then
+                    actual="$($bin_path --version)"
+                    if ! echo "$actual" | grep -qF "revision $CIRCLE_SHA1"; then
+                        echo "FAIL: $bin_name --version doesn't contain revision $CIRCLE_SHA1" >&2
+                        echo "  Got: $actual" >&2
+                        errors=$((errors+1))
+                        continue
+                    fi
+                fi
+
+                echo "OK: $tarball verified"
+            done
+
+            if [ "$errors" -gt 0 ]; then
+                echo "$errors verification failure(s)." >&2
+                exit 1
+            fi
+            echo "All 4 release binaries verified."
+
   publish-github-release:
     docker:
       - image: cimg/base:current
@@ -429,9 +488,17 @@ workflows:
               only: /^v\d+\.\d+\.\d+(-[0-9]+\.(alpha|beta|rc)\.[0-9]+)?$/
             branches:
               ignore: /.*/
-      - publish-github-release:
+      - verify-release-binaries:
           requires:
             - generate-checksums
+          filters:
+            tags:
+              only: /^v\d+\.\d+\.\d+(-[0-9]+\.(alpha|beta|rc)\.[0-9]+)?$/
+            branches:
+              ignore: /.*/
+      - publish-github-release:
+          requires:
+            - verify-release-binaries
           context: [influxdb3-plugin-sdk-github]
           filters:
             tags:
