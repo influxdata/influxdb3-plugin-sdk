@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-04-29
+
 ### Added
 - `influxdb3-plugin-schemas`: index query primitives (`Index::search`, `Index::info`) for shared registry browsing across CLI, UI backend, and database consumers
 
