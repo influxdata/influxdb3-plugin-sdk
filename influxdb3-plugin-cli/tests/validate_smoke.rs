@@ -426,13 +426,10 @@ fn validate_with_malformed_index_emits_json_diagnostic() {
     let payload: serde_json::Value =
         serde_json::from_str(&stdout).expect("stdout must be one JSON envelope on parse failure");
     assert_eq!(payload["status"], "error");
-    // Malformed index goes through SdkError::Schema → json_error_from_sdk
+    // Index parse failures map to validate::failed with diagnostics.
     let error = &payload["error"];
     let code = error["code"].as_str().expect("error should have a code");
-    assert!(
-        code.starts_with("validate::") || code.starts_with("cli::"),
-        "error code should be in validate:: or cli:: namespace, got {code:?}"
-    );
+    assert_eq!(code, "validate::failed");
 }
 
 /// Index path that does not exist surfaces as a single
@@ -504,12 +501,7 @@ fn validate_with_index_schema_errors_emits_all_diagnostics() {
     let payload: serde_json::Value = serde_json::from_str(&stdout).unwrap();
     assert_eq!(payload["status"], "error");
     let error = &payload["error"];
-    // Schema errors from index parse map through json_error_from_sdk.
-    // They may come as a single schema_error or through validation errors
-    // depending on how the SDK surfaces them.
+    // Schema errors from index parse map to validate::failed with diagnostics.
     let code = error["code"].as_str().expect("error should have a code");
-    assert!(
-        code.starts_with("validate::") || code.starts_with("cli::"),
-        "error code should be in validate:: or cli:: namespace, got {code:?}"
-    );
+    assert_eq!(code, "validate::failed");
 }

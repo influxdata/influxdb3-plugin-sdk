@@ -584,7 +584,7 @@ pub(crate) fn json_error_from_sdk(err: &SdkError, ctx: ErrorContext) -> JsonErro
         },
 
         _ => JsonError {
-            code: "cli::unknown".into(),
+            code: namespace_for(ctx, "sdk_error"),
             message: err.to_string(),
             field: None,
             details: None,

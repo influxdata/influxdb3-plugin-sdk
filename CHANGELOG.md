@@ -11,6 +11,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 - `package` command now emits typed JSON error code `package::already_published` (was `cli::unknown`) when `(name, version)` already exists in the target index. Same fix applied to `CanonicalCollision` errors.
+- Future unmapped SDK errors now fall back to command-scoped JSON codes like `package::sdk_error` instead of generic `cli::unknown`.
 
 ## [0.1.0] - 2026-04-28
 
