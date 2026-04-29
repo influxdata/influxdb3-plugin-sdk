@@ -327,3 +327,40 @@ fn no_production_path_emits_cli_unknown() {
         );
     }
 }
+
+/// Regression guard for the SDK-error mapping hardening gap: the central SDK
+/// mapper must not keep a wildcard arm that turns future SDK variants into
+/// `cli::unknown`. The fix should replace this with a typed/contextual code or
+/// otherwise make new variants impossible to map silently.
+#[test]
+fn sdk_error_mapping_must_not_fallback_to_cli_unknown() {
+    let source = include_str!("../src/output/error_mapping.rs");
+    let body = source
+        .split_once("pub(crate) fn json_error_from_sdk")
+        .and_then(|(_, rest)| rest.split_once("\n}\n\n#[cfg(test)]"))
+        .map(|(body, _)| body)
+        .expect("json_error_from_sdk body should be locatable");
+
+    assert!(
+        !body.contains("\"cli::unknown\""),
+        "json_error_from_sdk still contains a cli::unknown fallback; \
+         future SDK variants can silently lose typed JSON error codes"
+    );
+}
+
+/// Regression guard for the validate-smoke coverage gap: validate JSON-error
+/// tests should assert the expected validate namespace/code, not permit
+/// `cli::`. Allowing `cli::` would mask the same fallback this suite is meant
+/// to catch.
+#[test]
+fn validate_smoke_tests_must_not_allow_cli_namespace_error_codes() {
+    let source = include_str!("validate_smoke.rs");
+    let forbidden_prefix = concat!("cli", "::");
+    let forbidden = format!("starts_with({forbidden_prefix:?})");
+
+    assert!(
+        !source.contains(&forbidden),
+        "validate_smoke.rs still permits cli:: error codes; tighten those \
+         assertions before fixing the mapper"
+    );
+}

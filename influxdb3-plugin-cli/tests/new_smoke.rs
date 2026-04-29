@@ -133,8 +133,8 @@ fn new_process_request_json_snapshot() {
 }
 
 #[test]
-fn new_registry_json_snapshot() {
-    snapshot_new_template("registry", "reg", "new_registry_json");
+fn new_index_json_snapshot() {
+    snapshot_new_template("index", "reg", "new_index_json");
 }
 
 #[test]
@@ -158,24 +158,24 @@ fn new_each_plugin_template_writes_matching_init() {
 }
 
 #[test]
-fn new_registry_happy_path_writes_file_url() {
+fn new_index_happy_path_writes_file_url() {
     let td = tempfile::tempdir().unwrap();
     let target = td.path().join("reg");
 
-    spawn_new(&target, &["registry"]).success();
+    spawn_new(&target, &["index"]).success();
 
     let index = std::fs::read_to_string(target.join("index.json")).unwrap();
     assert!(
         index.contains("\"artifacts_url\": \"file://"),
-        "registry index should default artifacts_url to file://, got:\n{index}"
+        "index should default artifacts_url to file://, got:\n{index}"
     );
 }
 
-/// Default `artifacts_url` on `new registry` reflects the path the user
+/// Default `artifacts_url` on `new index` reflects the path the user
 /// typed. On macOS the OS-level `/tmp` → `/private/tmp` symlink used to
 /// leak into the index; `std::path::absolute` prevents that.
 #[test]
-fn new_registry_default_artifacts_url_preserves_typed_path() {
+fn new_index_default_artifacts_url_preserves_typed_path() {
     let td = tempfile::tempdir().unwrap();
     let real = td.path().join("real");
     std::fs::create_dir_all(&real).unwrap();
@@ -186,14 +186,14 @@ fn new_registry_default_artifacts_url_preserves_typed_path() {
     std::os::windows::fs::symlink_dir(&real, &link).unwrap();
     let target = link.join("reg");
 
-    spawn_new(&target, &["registry"]).success();
+    spawn_new(&target, &["index"]).success();
 
     let index = std::fs::read_to_string(target.join("index.json")).unwrap();
     // The URL must reference the symlink path, not its target.
     let link_str = link.to_str().unwrap();
     assert!(
         index.contains(link_str),
-        "registry index artifacts_url should preserve typed (symlink) \
+        "index artifacts_url should preserve typed (symlink) \
          path {link_str:?}, got:\n{index}"
     );
 }
@@ -201,14 +201,14 @@ fn new_registry_default_artifacts_url_preserves_typed_path() {
 /// Explicit `--artifacts-url` is written through verbatim (https / http
 /// inclusive).
 #[test]
-fn new_registry_with_explicit_artifacts_url() {
+fn new_index_with_explicit_artifacts_url() {
     let td = tempfile::tempdir().unwrap();
     let target = td.path().join("reg");
 
     spawn_new(
         &target,
         &[
-            "registry",
+            "index",
             "--artifacts-url",
             "https://plugins.example.com/artifacts",
         ],
@@ -301,7 +301,7 @@ fn new_rejects_invalid_explicit_name() {
     assert!(!target.join("manifest.toml").exists());
 }
 
-/// Plugin-template flags rejected with the registry template, and vice
+/// Plugin-template flags rejected with the index template, and vice
 /// versa. Surfaces nonsensical combinations at runtime rather than
 /// silently ignoring them.
 #[test]
@@ -319,11 +319,11 @@ fn new_rejects_artifacts_url_on_plugin_template() {
 }
 
 #[test]
-fn new_rejects_name_on_registry_template() {
+fn new_rejects_name_on_index_template() {
     let td = tempfile::tempdir().unwrap();
     let target = td.path().join("r");
 
-    spawn_new(&target, &["registry", "--name", "x"])
+    spawn_new(&target, &["index", "--name", "x"])
         .failure()
         .code(2)
         .stdout(predicates::str::contains("--name"));
@@ -436,7 +436,7 @@ fn new_list_human_mode_shows_templates() {
         "process_writes",
         "process_scheduled_call",
         "process_request",
-        "registry",
+        "index",
     ] {
         assert!(stdout.contains(short), "missing `{short}` in:\n{stdout}");
     }
@@ -480,7 +480,7 @@ fn new_help_does_not_enumerate_templates() {
     let assert = cli_cmd().arg("new").arg("--help").assert().success();
     let stdout = std::str::from_utf8(&assert.get_output().stdout).unwrap();
 
-    // Scope the assertion to the `Commands:` block: `registry` also
+    // Scope the assertion to the `Commands:` block: `index` also
     // appears in the after-help prose, which should not trip this check.
     let commands_block = stdout
         .split_once("Commands:")
@@ -498,7 +498,7 @@ fn new_help_does_not_enumerate_templates() {
         "process_writes",
         "process_scheduled_call",
         "process_request",
-        "registry",
+        "index",
     ] {
         assert!(
             !commands_block.contains(short),
@@ -527,7 +527,7 @@ fn new_process_writes_help_shows_template_flags_only() {
     // Registry-only flags do not appear.
     assert!(
         !stdout.contains("--artifacts-url"),
-        "registry flag leaked into plugin help:\n{stdout}"
+        "index flag leaked into plugin help:\n{stdout}"
     );
 }
 
@@ -595,7 +595,7 @@ fn new_process_writes_without_force_fails_on_conflict() {
 }
 
 #[test]
-fn new_registry_with_force_overwrites_index() {
+fn new_index_with_force_overwrites_index() {
     let td = tempfile::tempdir().unwrap();
     let target = td.path().join("r");
     std::fs::create_dir_all(&target).unwrap();
@@ -603,12 +603,7 @@ fn new_registry_with_force_overwrites_index() {
 
     spawn_new(
         &target,
-        &[
-            "registry",
-            "--force",
-            "--artifacts-url",
-            "https://x.example/",
-        ],
+        &["index", "--force", "--artifacts-url", "https://x.example/"],
     )
     .success();
 
@@ -704,16 +699,16 @@ fn new_rejects_reserved_basename_with_actionable_message() {
 }
 
 #[test]
-fn new_registry_help_shows_only_its_flags() {
+fn new_index_help_shows_only_its_flags() {
     let assert = cli_cmd()
         .arg("new")
-        .arg("registry")
+        .arg("index")
         .arg("-h")
         .assert()
         .success();
     let stdout = std::str::from_utf8(&assert.get_output().stdout).unwrap();
     assert!(
-        stdout.contains("Empty plugin registry directory"),
+        stdout.contains("Empty registry index file"),
         "stdout: {stdout}"
     );
     for needle in ["--output", "--force", "--artifacts-url"] {
@@ -722,7 +717,7 @@ fn new_registry_help_shows_only_its_flags() {
     for absent in ["--name", "--database-version"] {
         assert!(
             !stdout.contains(absent),
-            "plugin flag leaked into registry help:\n{stdout}"
+            "plugin flag leaked into index help:\n{stdout}"
         );
     }
 }
@@ -730,7 +725,7 @@ fn new_registry_help_shows_only_its_flags() {
 /// `--force` only makes sense for commands that write files.
 /// `new list` writes nothing, so the flag is deliberately not
 /// declared on its `Args` — clap rejects it at parse time with
-/// exit 2, the same contract as `--name` on the registry template.
+/// exit 2, the same contract as `--name` on the index template.
 #[test]
 fn new_list_rejects_force_flag() {
     cli_cmd()
@@ -851,12 +846,12 @@ fn new_plugin_omitted_path_with_explicit_name_succeeds() {
 }
 
 #[test]
-fn new_registry_omitted_path_writes_index_in_cwd() {
+fn new_index_omitted_path_writes_index_in_cwd() {
     let td = tempfile::tempdir().unwrap();
     let working = td.path().join("reg");
     std::fs::create_dir_all(&working).unwrap();
 
-    spawn_new_in(&working, &["registry"]).success();
+    spawn_new_in(&working, &["index"]).success();
 
     assert!(working.join("index.json").exists());
 }
@@ -889,7 +884,7 @@ fn new_plugin_rejects_invalid_database_version() {
 /// usage errors (exit 2), not written into an index that downstream
 /// consumers (which accept only https/http/file) would reject.
 #[test]
-fn new_registry_rejects_unsupported_artifacts_url_scheme() {
+fn new_index_rejects_unsupported_artifacts_url_scheme() {
     for bad in [
         "ftp://example.com/artifacts",
         "s3://bucket/plugins",
@@ -898,7 +893,7 @@ fn new_registry_rejects_unsupported_artifacts_url_scheme() {
         let td = tempfile::tempdir().unwrap();
         let target = td.path().join("reg");
 
-        let assert = spawn_new(&target, &["registry", "--artifacts-url", bad])
+        let assert = spawn_new(&target, &["index", "--artifacts-url", bad])
             .failure()
             .code(2);
 
@@ -1063,7 +1058,7 @@ fn new_succeeds_when_parent_dir_does_not_yet_exist() {
 /// usage shape as `--help`. Clap's default error rendering strips the
 /// `[OPTIONS]` marker and the brackets around `[PATH]` whenever the
 /// unknown flag appears *after* a consumed positional — the exact layout
-/// users type (e.g. `new registry /tmp/reg --name foo`). A per-template
+/// users type (e.g. `new index /tmp/reg --name foo`). A per-template
 /// `override_usage` forces help and error paths to agree.
 #[test]
 fn new_template_unknown_flag_usage_line_matches_help() {
@@ -1072,7 +1067,7 @@ fn new_template_unknown_flag_usage_line_matches_help() {
     let target_str = target.to_str().unwrap();
 
     for template in [
-        "registry",
+        "index",
         "process_writes",
         "process_scheduled_call",
         "process_request",

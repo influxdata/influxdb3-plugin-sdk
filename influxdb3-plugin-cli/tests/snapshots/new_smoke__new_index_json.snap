@@ -1,5 +1,6 @@
 ---
 source: influxdb3-plugin-cli/tests/new_smoke.rs
+assertion_line: 113
 expression: payload
 ---
 {
@@ -7,9 +8,9 @@ expression: payload
     "files_written": [
       "index.json"
     ],
-    "kind": "registry",
+    "kind": "index",
     "target_dir": "<TMPDIR>/reg",
-    "template": "registry"
+    "template": "index"
   },
   "status": "ok"
 }

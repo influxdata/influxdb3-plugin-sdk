@@ -1,4 +1,4 @@
-//! Template-driven scaffolding for new plugin and registry directories.
+//! Template-driven scaffolding for new plugin and index directories.
 //!
 //! Templates are compiled-in via `include_str!`; user-extensible templates
 //! are out of v1 scope.
@@ -104,7 +104,7 @@ pub fn plugin(
     Ok(())
 }
 
-/// Scaffolds a new registry directory under `dir`.
+/// Scaffolds a new index directory under `dir`.
 ///
 /// Writes `dir/index.json` with `index_schema_version = "1.1"`, an empty
 /// `plugins` array, and `artifacts_url` set to either `artifacts_url` or,
@@ -121,7 +121,7 @@ pub fn plugin(
 /// is false) or on write failure. `SdkError::Archive` when an auto-derived
 /// `file://` URL cannot be built from `dir` (rare; Windows UNC-path edge
 /// case).
-pub fn registry(dir: &Path, artifacts_url: Option<&str>, overwrite: bool) -> Result<(), SdkError> {
+pub fn index(dir: &Path, artifacts_url: Option<&str>, overwrite: bool) -> Result<(), SdkError> {
     let index_path = dir.join("index.json");
 
     ensure_dir(dir)?;
@@ -315,10 +315,10 @@ mod tests {
     }
 
     #[test]
-    fn scaffold_registry_creates_parseable_index() {
+    fn scaffold_index_creates_parseable_index() {
         let td = tempfile::tempdir().unwrap();
-        let dir = td.path().join("my-registry");
-        registry(&dir, None, false).unwrap();
+        let dir = td.path().join("my-index");
+        index(&dir, None, false).unwrap();
 
         let raw = fs::read_to_string(dir.join("index.json")).unwrap();
         let index = Index::parse_json(&raw).expect("scaffolded index must parse");
@@ -333,10 +333,10 @@ mod tests {
     /// previous `format!("file://{}", path.display())` form produced
     /// malformed URLs on Windows UNC paths and on non-UTF8 bytes.
     #[test]
-    fn scaffold_registry_artifacts_url_is_valid_file_url() {
+    fn scaffold_index_artifacts_url_is_valid_file_url() {
         let td = tempfile::tempdir().unwrap();
-        let dir = td.path().join("my-registry");
-        registry(&dir, None, false).unwrap();
+        let dir = td.path().join("my-index");
+        index(&dir, None, false).unwrap();
 
         let raw = fs::read_to_string(dir.join("index.json")).unwrap();
         let index = Index::parse_json(&raw).unwrap();
@@ -357,7 +357,7 @@ mod tests {
     /// verbatim-passthrough contract and avoids a macOS-only surprise where
     /// `/tmp` becomes `/private/tmp`).
     #[test]
-    fn scaffold_registry_default_url_does_not_resolve_symlinks() {
+    fn scaffold_index_default_url_does_not_resolve_symlinks() {
         let td = tempfile::tempdir().unwrap();
         // Create a symlink pointing at a real subdirectory, then scaffold
         // through the symlink path. The emitted `file://` URL must reference
@@ -369,9 +369,9 @@ mod tests {
         std::os::unix::fs::symlink(&real, &link).unwrap();
         #[cfg(windows)]
         std::os::windows::fs::symlink_dir(&real, &link).unwrap();
-        let dir = link.join("reg");
+        let dir = link.join("idx");
 
-        registry(&dir, None, false).unwrap();
+        index(&dir, None, false).unwrap();
 
         let raw = fs::read_to_string(dir.join("index.json")).unwrap();
         let index = Index::parse_json(&raw).unwrap();
@@ -389,10 +389,10 @@ mod tests {
     /// Explicit `artifacts_url` is written verbatim (no canonicalize, no
     /// `file://` prefix), so http/https values pass through unchanged.
     #[test]
-    fn scaffold_registry_uses_explicit_artifacts_url() {
+    fn scaffold_index_uses_explicit_artifacts_url() {
         let td = tempfile::tempdir().unwrap();
         let dir = td.path().join("r");
-        registry(&dir, Some("https://plugins.example.com/artifacts"), false).unwrap();
+        index(&dir, Some("https://plugins.example.com/artifacts"), false).unwrap();
 
         let raw = fs::read_to_string(dir.join("index.json")).unwrap();
         let index = Index::parse_json(&raw).expect("scaffolded index must parse");
@@ -403,13 +403,13 @@ mod tests {
     }
 
     #[test]
-    fn scaffold_registry_rejects_existing_index() {
+    fn scaffold_index_rejects_existing_index() {
         let td = tempfile::tempdir().unwrap();
         let dir = td.path().join("r");
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join("index.json"), "{}").unwrap();
 
-        let err = registry(&dir, None, false).unwrap_err();
+        let err = index(&dir, None, false).unwrap_err();
         assert!(matches!(err, SdkError::Io { .. }));
         // Pre-existing content must survive — no partial write.
         assert_eq!(fs::read_to_string(dir.join("index.json")).unwrap(), "{}");
@@ -460,13 +460,13 @@ mod tests {
     }
 
     #[test]
-    fn scaffold_registry_overwrite_replaces_existing_index() {
+    fn scaffold_index_overwrite_replaces_existing_index() {
         let td = tempfile::tempdir().unwrap();
         let dir = td.path().join("r");
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join("index.json"), "{}").unwrap();
 
-        registry(&dir, Some("https://x.example/"), true).unwrap();
+        index(&dir, Some("https://x.example/"), true).unwrap();
 
         let raw = fs::read_to_string(dir.join("index.json")).unwrap();
         assert!(
@@ -480,7 +480,7 @@ mod tests {
     /// index that downstream consumers (which accept only https/http/file)
     /// must reject.
     #[test]
-    fn scaffold_registry_rejects_unsupported_url_scheme() {
+    fn scaffold_index_rejects_unsupported_url_scheme() {
         let td = tempfile::tempdir().unwrap();
         let cases = [
             "ftp://example.com/a",
@@ -489,7 +489,7 @@ mod tests {
         ];
         for (i, bad) in cases.iter().enumerate() {
             let dir = td.path().join(format!("reg-{i}"));
-            let err = registry(&dir, Some(bad), false).unwrap_err();
+            let err = index(&dir, Some(bad), false).unwrap_err();
             assert!(
                 matches!(
                     err,
@@ -507,10 +507,10 @@ mod tests {
     }
 
     #[test]
-    fn scaffold_registry_rejects_malformed_url() {
+    fn scaffold_index_rejects_malformed_url() {
         let td = tempfile::tempdir().unwrap();
         let dir = td.path().join("reg");
-        let err = registry(&dir, Some("not a url"), false).unwrap_err();
+        let err = index(&dir, Some("not a url"), false).unwrap_err();
         assert!(
             matches!(
                 err,
@@ -538,11 +538,11 @@ mod tests {
     fn scaffolded_index_version_equals_current() {
         let td = tempfile::tempdir().unwrap();
         let dir = td.path().join("r");
-        registry(&dir, None, false).unwrap();
+        index(&dir, None, false).unwrap();
         let raw = fs::read_to_string(dir.join("index.json")).unwrap();
-        let index = Index::parse_json(&raw).unwrap();
+        let idx = Index::parse_json(&raw).unwrap();
         assert_eq!(
-            index.index_schema_version,
+            idx.index_schema_version,
             influxdb3_plugin_schemas::IndexSchemaVersion::CURRENT
         );
     }

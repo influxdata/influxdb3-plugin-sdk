@@ -184,6 +184,32 @@ fn package_duplicate_emits_typed_json_error_code() {
     );
 }
 
+/// JSON-mode canonical collision: the error envelope must carry the
+/// typed error code `package::canonical_collision` (not `cli::unknown`).
+#[test]
+fn package_canonical_collision_emits_typed_json_error_code() {
+    let td = tempfile::tempdir().unwrap();
+    let plugin_dir = td.path().join("p");
+    write_plugin_named(&plugin_dir, "my_plugin", "1.0.0");
+    let index_dir = td.path().join("reg");
+    std::fs::create_dir_all(&index_dir).unwrap();
+    let index_path = index_dir.join("index.json");
+    std::fs::write(&index_path, seeded_index_with("my-plugin", "1.0.0")).unwrap();
+    let out = td.path().join("build");
+
+    let assert = spawn_package(&plugin_dir, &index_path, &out, &["--output", "json"])
+        .failure()
+        .code(1);
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
+    let envelope: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|e| panic!("stdout must be valid JSON: {e}\n{stdout}"));
+    assert_eq!(envelope["status"], "error");
+    assert_eq!(
+        envelope["error"]["code"], "package::canonical_collision",
+        "expected typed error code, got: {stdout}"
+    );
+}
+
 // Canonical-form collision detection — hyphen/underscore and case
 // differences collide under `Index::from_raw_json`'s canonical key
 // (lowercase + `-` → `_`).

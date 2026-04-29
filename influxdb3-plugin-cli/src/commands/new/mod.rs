@@ -1,4 +1,4 @@
-//! `new` command — scaffold a plugin or registry from a built-in template.
+//! `new` command — scaffold a plugin or index from a built-in template.
 //!
 //! Each built-in template is a self-contained module under [`templates`];
 //! the CLI dispatches through [`NewCommand`]. Adding a template is a
@@ -46,7 +46,7 @@ influxdb3-plugin new <TEMPLATE> [PATH] [OPTIONS]
     after_help = "\
 Run `influxdb3-plugin new list` to see available templates, \
 or `influxdb3-plugin new <template> --help` for per-template options. \
-Pass `--output` after the template name (e.g. `new registry --output json`)."
+Pass `--output` after the template name (e.g. `new index --output json`)."
 )]
 pub(crate) enum NewCommand {
     /// List available templates.
@@ -64,9 +64,9 @@ pub(crate) enum NewCommand {
     #[command(hide = true)]
     ProcessRequest(templates::process_request::Args),
 
-    /// Empty plugin registry directory.
+    /// Empty registry index file.
     #[command(hide = true)]
-    Registry(templates::registry::Args),
+    Index(templates::index::Args),
 }
 
 impl NewCommand {
@@ -76,7 +76,7 @@ impl NewCommand {
             Self::ProcessWrites(a) => templates::process_writes::run(a),
             Self::ProcessScheduledCall(a) => templates::process_scheduled_call::run(a),
             Self::ProcessRequest(a) => templates::process_request::run(a),
-            Self::Registry(a) => templates::registry::run(a),
+            Self::Index(a) => templates::index::run(a),
         }
     }
 }
@@ -100,13 +100,13 @@ pub(crate) fn plugin_scaffold(
     )
 }
 
-pub(crate) fn registry_scaffold(
+pub(crate) fn index_scaffold(
     metadata: &'static TemplateMetadata,
     global: GlobalFlags,
     path: PathBuf,
     artifacts_url: Option<String>,
 ) -> anyhow::Result<()> {
-    run_registry_with_env(metadata, global, path, artifacts_url, &RealEnv)
+    run_index_with_env(metadata, global, path, artifacts_url, &RealEnv)
 }
 
 fn run_plugin_with_env(
@@ -167,7 +167,7 @@ fn run_plugin_with_env(
     render(&summary, mode, stdout_palette)
 }
 
-fn run_registry_with_env(
+fn run_index_with_env(
     metadata: &'static TemplateMetadata,
     global: GlobalFlags,
     path: PathBuf,
@@ -193,11 +193,11 @@ fn run_registry_with_env(
         }));
     }
 
-    scaffold::registry(&path, artifacts_url.as_deref(), global.force)
-        .map_err(|e| CliError::runtime(json_error_from_sdk(&e, ErrorContext::NewRegistry)))?;
+    scaffold::index(&path, artifacts_url.as_deref(), global.force)
+        .map_err(|e| CliError::runtime(json_error_from_sdk(&e, ErrorContext::NewIndex)))?;
 
     let summary = Summary {
-        kind: SummaryKind::Registry,
+        kind: SummaryKind::Index,
         template: metadata,
         target_dir: path,
         name: None,
@@ -383,14 +383,14 @@ struct Summary {
 #[derive(Debug, Clone, Copy)]
 enum SummaryKind {
     Plugin,
-    Registry,
+    Index,
 }
 
 impl SummaryKind {
     fn as_str(self) -> &'static str {
         match self {
             Self::Plugin => "plugin",
-            Self::Registry => "registry",
+            Self::Index => "index",
         }
     }
 }

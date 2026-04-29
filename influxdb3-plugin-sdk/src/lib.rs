@@ -2,7 +2,7 @@
 //!
 //! Library surface wrapped by `influxdb3-plugin-cli`:
 //!
-//! - [`scaffold`] — generate a plugin or registry directory from a built-in template
+//! - [`scaffold`] — generate a plugin or index directory from a built-in template
 //! - [`validate`] — structural + cross-file checks against a plugin directory
 //! - [`archive`] — canonical tar.gz construction
 //! - [`hash`] — SHA-256 of archive bytes

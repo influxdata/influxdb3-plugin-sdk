@@ -3,7 +3,7 @@ source: influxdb3-plugin-cli/tests/cross_cutting.rs
 assertion_line: 209
 expression: stdout
 ---
-Scaffold a new plugin or registry from a built-in template
+Scaffold a new plugin or index from a built-in template
 
 Usage: influxdb3-plugin new <TEMPLATE> [PATH] [OPTIONS]
        influxdb3-plugin new list [OPTIONS]
@@ -15,4 +15,4 @@ Commands:
 Options:
   -h, --help  Print help
 
-Run `influxdb3-plugin new list` to see available templates, or `influxdb3-plugin new <template> --help` for per-template options. Pass `--output` after the template name (e.g. `new registry --output json`).
+Run `influxdb3-plugin new list` to see available templates, or `influxdb3-plugin new <template> --help` for per-template options. Pass `--output` after the template name (e.g. `new index --output json`).

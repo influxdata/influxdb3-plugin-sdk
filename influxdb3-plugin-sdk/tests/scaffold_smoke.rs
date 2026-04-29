@@ -1,4 +1,4 @@
-//! Integration tests for `sdk::scaffold::{plugin, registry}` at the external
+//! Integration tests for `sdk::scaffold::{plugin, index}` at the external
 //! test-crate layer. Complements the inline tests in `src/scaffold.rs` by
 //! pinning the crate's pub-API boundary (signatures, re-export visibility,
 //! error-type conversion).
@@ -40,18 +40,18 @@ fn plugin_scaffold_rejects_invalid_name() {
 }
 
 #[test]
-fn registry_scaffold_produces_parseable_index() {
+fn index_scaffold_produces_parseable_index() {
     let td = tempfile::tempdir().unwrap();
-    let dir = td.path().join("my-registry");
-    scaffold::registry(&dir, None, false).expect("registry scaffold should succeed");
+    let dir = td.path().join("my-index");
+    scaffold::index(&dir, None, false).expect("index scaffold should succeed");
 
     let index_raw = fs::read_to_string(dir.join("index.json")).unwrap();
-    let index = Index::parse_json(&index_raw).expect("scaffolded index must parse");
-    assert!(index.plugins.is_empty());
+    let idx = Index::parse_json(&index_raw).expect("scaffolded index must parse");
+    assert!(idx.plugins.is_empty());
     // artifacts_url validates as a file:// URL — the inline tests cover
     // this; the external test's contribution here is pinning the pub-API
     // re-export boundary.
-    assert!(index.artifacts_url.to_string().starts_with("file://"));
+    assert!(idx.artifacts_url.to_string().starts_with("file://"));
 }
 
 /// Scaffolded manifests must bake in the current schema version (`1.1`).
@@ -75,16 +75,16 @@ fn plugin_scaffold_emits_current_manifest_schema_version() {
 }
 
 #[test]
-fn registry_scaffold_emits_current_index_schema_version() {
+fn index_scaffold_emits_current_index_schema_version() {
     let td = tempfile::tempdir().unwrap();
-    let dir = td.path().join("my-registry");
-    scaffold::registry(&dir, None, false).expect("registry scaffold should succeed");
+    let dir = td.path().join("my-index");
+    scaffold::index(&dir, None, false).expect("index scaffold should succeed");
 
     let raw = fs::read_to_string(dir.join("index.json")).unwrap();
-    let index = Index::parse_json(&raw).expect("scaffolded index must parse");
-    assert_eq!(index.index_schema_version.major(), 1, "schema major");
+    let idx = Index::parse_json(&raw).expect("scaffolded index must parse");
+    assert_eq!(idx.index_schema_version.major(), 1, "schema major");
     assert_eq!(
-        index.index_schema_version.minor(),
+        idx.index_schema_version.minor(),
         1,
         "schema minor: current = 1.1"
     );
@@ -123,10 +123,10 @@ fn default_database_version_fallback_is_3_0_0() {
 /// Pub-API boundary version of the inline scaffold test: a `ftp://` URL
 /// must be rejected with `SdkError::Schema(UnsupportedArtifactScheme)`.
 #[test]
-fn registry_scaffold_rejects_ftp_url_at_api_boundary() {
+fn index_scaffold_rejects_ftp_url_at_api_boundary() {
     let td = tempfile::tempdir().unwrap();
-    let dir = td.path().join("reg");
-    let err = scaffold::registry(&dir, Some("ftp://example.com/artifacts"), false).unwrap_err();
+    let dir = td.path().join("idx");
+    let err = scaffold::index(&dir, Some("ftp://example.com/artifacts"), false).unwrap_err();
     assert!(matches!(
         err,
         SdkError::Schema(influxdb3_plugin_schemas::SchemaError::UnsupportedArtifactScheme { .. })
