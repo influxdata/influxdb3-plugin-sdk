@@ -26,5 +26,5 @@ cargo deny check               # audit dependency graph
 cargo clippy --workspace -- -D warnings
 ```
 
-See `Processing Engine - Plugin Version Management.md` (external design doc)
-for the full specification of the plugin lifecycle.
+See the internal plugin version management specification for the full
+specification of the plugin lifecycle.

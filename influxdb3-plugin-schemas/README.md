@@ -67,8 +67,8 @@ the types defined here and will be anchored at first publish.
 ## Spec Coverage
 
 Tracks alignment between this crate's parsing/validation behavior and the
-core design doc (`Processing Engine - Plugin Version Management.md`). Updated
-when a deliberate decision lands or a deviation is reconciled.
+internal plugin version management specification. Updated when a deliberate
+decision lands or a deviation is reconciled.
 
 ### `plugin.name` rule (1–64 characters)
 
