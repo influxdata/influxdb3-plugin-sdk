@@ -168,10 +168,19 @@ jobs:
     steps:
       - checkout
       - run:
-          name: Fetch full history + tags (shallow clones break baseline-rev lookups)
+          name: Fetch tags
+          command: git fetch --tags origin
+      - run:
+          name: Clone baseline tag into /tmp/baseline (sidesteps shallow-clone object issues)
           command: |
-            git fetch --unshallow origin || true
-            git fetch --tags origin
+            BASELINE="$(git describe --tags --abbrev=0)"
+            if [ -z "$BASELINE" ]; then
+              echo "ERROR: no baseline tag found." >&2
+              exit 1
+            fi
+            echo "Baseline tag: $BASELINE"
+            git clone --depth=1 --branch "$BASELINE" \
+              "$(git remote get-url origin)" /tmp/baseline
       - restore-cargo-cache
       - setup-rust
       - run:
@@ -184,16 +193,11 @@ jobs:
       - run:
           name: cargo semver-checks (cli + schemas only; sdk is internal)
           command: |
-            BASELINE="$(git describe --tags --abbrev=0)"
-            if [ -z "$BASELINE" ]; then
-              echo "ERROR: no baseline tag found." >&2
-              exit 1
-            fi
-            echo "Comparing against baseline: $BASELINE"
+            echo "Comparing against baseline at /tmp/baseline"
             cargo semver-checks check-release \
               --package influxdb3-plugin-cli \
               --package influxdb3-plugin-schemas \
-              --baseline-rev "$BASELINE"
+              --baseline-root /tmp/baseline
       - save-cargo-cache
 
   cargo-package-check:
