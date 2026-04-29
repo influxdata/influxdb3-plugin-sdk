@@ -168,7 +168,7 @@ jobs:
           name: Fetch tags
           command: git fetch --tags origin
       - run:
-          name: Clone baseline tag into /tmp/baseline (sidesteps shallow-clone object issues)
+          name: Clone baseline tag (sidesteps shallow-clone object issues)
           command: |
             BASELINE="$(git describe --tags --abbrev=0)"
             if [ -z "$BASELINE" ]; then
@@ -176,8 +176,11 @@ jobs:
               exit 1
             fi
             echo "Baseline tag: $BASELINE"
+            BASELINE_DIR="/tmp/workspace/${CIRCLE_PIPELINE_ID}/semver-baseline"
+            rm -rf "$BASELINE_DIR"
             git clone --depth=1 --branch "$BASELINE" \
-              "$(git remote get-url origin)" /tmp/baseline
+              "$(git remote get-url origin)" "$BASELINE_DIR"
+            echo "export SEMVER_BASELINE_DIR=$BASELINE_DIR" >> "$BASH_ENV"
       - restore-cargo-cache
       - setup-rust
       - run:
@@ -190,11 +193,12 @@ jobs:
       - run:
           name: cargo semver-checks (cli + schemas only; sdk is internal)
           command: |
-            echo "Comparing against baseline at /tmp/baseline"
+            source "$BASH_ENV"
+            echo "Comparing against baseline at $SEMVER_BASELINE_DIR"
             cargo semver-checks check-release \
               --package influxdb3-plugin-cli \
               --package influxdb3-plugin-schemas \
-              --baseline-root /tmp/baseline
+              --baseline-root "$SEMVER_BASELINE_DIR"
       - save-cargo-cache
 
   cargo-package-check:
