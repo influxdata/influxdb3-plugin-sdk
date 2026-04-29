@@ -258,6 +258,7 @@ jobs:
             docker run --rm \
               -v "$(pwd)":/workspace \
               -w /workspace \
+              -e "TARGET=<< parameters.target >>" \
               -e "GIT_HASH=$CIRCLE_SHA1" \
               -e "INFLUXDB3_PLUGIN_SDK_KNOWN_LATEST_DB=$INFLUXDB3_PLUGIN_SDK_KNOWN_LATEST_DB" \
               -e "RUSTC_WRAPPER=" \
