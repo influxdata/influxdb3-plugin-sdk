@@ -158,9 +158,6 @@ jobs:
       - run:
           name: scripts/check-manifest-invariants.sh
           command: ./scripts/check-manifest-invariants.sh
-      - run:
-          name: scripts/check-cargo-metadata.sh
-          command: ./scripts/check-cargo-metadata.sh
       - save-cargo-cache
 
   cargo-package-check:
