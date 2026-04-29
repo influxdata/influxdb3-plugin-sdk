@@ -168,7 +168,7 @@ jobs:
           name: Fetch tags
           command: git fetch --tags origin
       - run:
-          name: Clone baseline tag into /tmp/baseline (sidesteps shallow-clone object issues)
+          name: Clone baseline tag (sidesteps shallow-clone object issues)
           command: |
             BASELINE="$(git describe --tags --abbrev=0)"
             if [ -z "$BASELINE" ]; then
@@ -176,8 +176,11 @@ jobs:
               exit 1
             fi
             echo "Baseline tag: $BASELINE"
+            BASELINE_DIR="/tmp/semver-baseline-${CIRCLE_PIPELINE_ID}"
+            rm -rf "$BASELINE_DIR"
             git clone --depth=1 --branch "$BASELINE" \
-              "$(git remote get-url origin)" /tmp/baseline
+              "$(git remote get-url origin)" "$BASELINE_DIR"
+            echo "export SEMVER_BASELINE_DIR=$BASELINE_DIR" >> "$BASH_ENV"
       - restore-cargo-cache
       - setup-rust
       - run:
@@ -190,11 +193,12 @@ jobs:
       - run:
           name: cargo semver-checks (cli + schemas only; sdk is internal)
           command: |
-            echo "Comparing against baseline at /tmp/baseline"
+            source "$BASH_ENV"
+            echo "Comparing against baseline at $SEMVER_BASELINE_DIR"
             cargo semver-checks check-release \
               --package influxdb3-plugin-cli \
               --package influxdb3-plugin-schemas \
-              --baseline-root /tmp/baseline
+              --baseline-root "$SEMVER_BASELINE_DIR"
       - save-cargo-cache
 
   cargo-package-check:
@@ -289,6 +293,7 @@ jobs:
           command: |
             source "$BASH_ENV"
             IMAGE="us-east1-docker.pkg.dev/influxdata-team-edge/ci-support/ci-cross-influxdb3@sha256:98b05538182a2e4eac5ce96150a1f5c552de48a7d3ea8d312d38e45f0dd42611"
+            echo "GIT_HASH will be: $CIRCLE_SHA1 (len=${#CIRCLE_SHA1})"
             docker run --rm \
               -v "$(pwd)":/workspace \
               -w /workspace \
@@ -297,7 +302,7 @@ jobs:
               -e "INFLUXDB3_PLUGIN_SDK_KNOWN_LATEST_DB=$INFLUXDB3_PLUGIN_SDK_KNOWN_LATEST_DB" \
               -e "RUSTC_WRAPPER=" \
               "$IMAGE" \
-              bash -c "rustup target add << parameters.target >> && target-env cargo build --release --target << parameters.target >> -p influxdb3-plugin-cli"
+              bash -c "echo 'Inside container: GIT_HASH='\$GIT_HASH' (len='\${#GIT_HASH}')' && rustup target add << parameters.target >> && target-env cargo build --release --target << parameters.target >> -p influxdb3-plugin-cli"
       - run:
           name: Ad-hoc codesign Darwin binary (prevents macOS "damaged" errors)
           command: |
@@ -384,6 +389,10 @@ jobs:
 
                 if ! strings "$bin_path" | grep -qF "$CIRCLE_SHA1"; then
                     echo "FAIL: $bin_name does not contain CIRCLE_SHA1=$CIRCLE_SHA1 in its strings" >&2
+                    echo "  Binary's 'revision' string:" >&2
+                    strings "$bin_path" | grep -i "revision" | head -3 >&2
+                    echo "  Any 40-hex strings in binary:" >&2
+                    strings "$bin_path" | grep -oE '[a-f0-9]{40}' | head -3 >&2
                     errors=$((errors+1))
                     continue
                 fi
