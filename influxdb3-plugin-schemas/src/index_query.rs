@@ -32,9 +32,7 @@ pub struct IndexSearchHit {
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub enum IndexVersionVisibility {
     Visible,
-    Hidden {
-        reasons: Vec<IndexVisibilityReason>,
-    },
+    Hidden { reasons: Vec<IndexVisibilityReason> },
 }
 
 /// Reason a version is hidden from default query results.
@@ -95,7 +93,9 @@ pub(crate) fn visibility_for(
     if entry.yanked {
         reasons.push(IndexVisibilityReason::Yanked);
     }
-    if let Some(db_ver) = database_version.filter(|v| !entry.dependencies.database_version.matches(v)) {
+    if let Some(db_ver) =
+        database_version.filter(|v| !entry.dependencies.database_version.matches(v))
+    {
         reasons.push(IndexVisibilityReason::IncompatibleDatabaseVersion {
             required: entry.dependencies.database_version.clone(),
             actual: db_ver.clone(),
@@ -204,9 +204,10 @@ impl crate::Index {
 
         // Exact-version inspection: always returns Found if the entry exists
         if let Some(ref requested_version) = query.version {
-            let found = self.plugins.iter().find(|e| {
-                e.name.canonical() == query_canonical && e.version == *requested_version
-            });
+            let found = self
+                .plugins
+                .iter()
+                .find(|e| e.name.canonical() == query_canonical && e.version == *requested_version);
             return match found {
                 Some(entry) => {
                     let vis = visibility_for(entry, query.database_version.as_ref());
@@ -475,8 +476,7 @@ mod tests {
     #[test]
     fn search_no_dependency_text_search(/* spec 7 */) {
         let mut entry = make_entry("downsampler", "1.0.0");
-        entry.dependencies.python =
-            vec![PythonRequirement::try_new("requests>=2.31").unwrap()];
+        entry.dependencies.python = vec![PythonRequirement::try_new("requests>=2.31").unwrap()];
         let index = make_index(vec![entry]);
         let result = index.search(&IndexSearchQuery {
             query: Some("requests".into()),
@@ -488,8 +488,7 @@ mod tests {
     #[test]
     fn search_no_url_hash_trigger_text_search(/* spec 8 */) {
         let mut entry = make_entry("downsampler", "1.0.0");
-        entry.documentation =
-            Some("https://docs.example.com/searchable".parse().unwrap());
+        entry.documentation = Some("https://docs.example.com/searchable".parse().unwrap());
         let index = make_index(vec![entry]);
         let result = index.search(&IndexSearchQuery {
             query: Some("searchable".into()),
@@ -635,7 +634,10 @@ mod tests {
         ]);
         let result = index.search(&IndexSearchQuery::default());
         assert_eq!(result.hits.len(), 1);
-        assert_eq!(result.hits[0].version, "2.0.0".parse::<semver::Version>().unwrap());
+        assert_eq!(
+            result.hits[0].version,
+            "2.0.0".parse::<semver::Version>().unwrap()
+        );
     }
 
     #[test]
@@ -645,7 +647,10 @@ mod tests {
         let index = make_index(vec![make_entry("alpha", "1.2.0"), v2]);
         let result = index.search(&IndexSearchQuery::default());
         assert_eq!(result.hits.len(), 1);
-        assert_eq!(result.hits[0].version, "1.2.0".parse::<semver::Version>().unwrap());
+        assert_eq!(
+            result.hits[0].version,
+            "1.2.0".parse::<semver::Version>().unwrap()
+        );
     }
 
     #[test]
@@ -658,7 +663,10 @@ mod tests {
             ..Default::default()
         });
         assert_eq!(result.hits.len(), 1);
-        assert_eq!(result.hits[0].version, "1.2.0".parse::<semver::Version>().unwrap());
+        assert_eq!(
+            result.hits[0].version,
+            "1.2.0".parse::<semver::Version>().unwrap()
+        );
     }
 
     #[test]
@@ -671,7 +679,10 @@ mod tests {
             ..Default::default()
         });
         assert_eq!(result.hits.len(), 1);
-        assert_eq!(result.hits[0].version, "2.0.0".parse::<semver::Version>().unwrap());
+        assert_eq!(
+            result.hits[0].version,
+            "2.0.0".parse::<semver::Version>().unwrap()
+        );
         assert_matches!(
             &result.hits[0].visibility,
             IndexVersionVisibility::Hidden { reasons }
@@ -687,7 +698,10 @@ mod tests {
         v1.triggers = vec![TriggerType::ProcessRequest];
         let mut v2 = make_entry("alpha", "2.0.0");
         v2.description = Description::try_new("new description").unwrap();
-        v2.triggers = vec![TriggerType::ProcessWrites, TriggerType::ProcessScheduledCall];
+        v2.triggers = vec![
+            TriggerType::ProcessWrites,
+            TriggerType::ProcessScheduledCall,
+        ];
         let index = make_index(vec![v1, v2]);
         let result = index.search(&IndexSearchQuery::default());
         assert_eq!(result.hits.len(), 1);
@@ -715,7 +729,10 @@ mod tests {
         ]);
         let result = index.search(&IndexSearchQuery::default());
         assert_eq!(result.hits.len(), 1);
-        assert_eq!(result.hits[0].version, "1.0.0".parse::<semver::Version>().unwrap());
+        assert_eq!(
+            result.hits[0].version,
+            "1.0.0".parse::<semver::Version>().unwrap()
+        );
     }
 
     #[test]
@@ -1067,7 +1084,10 @@ mod tests {
     fn info_full_metadata(/* spec 45, also covers spec 46 */) {
         let mut entry = make_entry("downsampler", "1.2.0");
         entry.description = Description::try_new("Downsamples WAL data").unwrap();
-        entry.triggers = vec![TriggerType::ProcessWrites, TriggerType::ProcessScheduledCall];
+        entry.triggers = vec![
+            TriggerType::ProcessWrites,
+            TriggerType::ProcessScheduledCall,
+        ];
         entry.homepage = Some("https://example.com".parse().unwrap());
         entry.repository = Some("https://github.com/example/ds".parse().unwrap());
         entry.documentation = Some("https://docs.example.com/ds".parse().unwrap());
@@ -1256,7 +1276,10 @@ mod tests {
         let index = make_index(vec![make_entry("alpha", "1.0.0"), v2]);
         let result = index.search(&IndexSearchQuery::default());
         assert_eq!(result.hits.len(), 1);
-        assert_eq!(result.hits[0].version, "1.0.0".parse::<semver::Version>().unwrap());
+        assert_eq!(
+            result.hits[0].version,
+            "1.0.0".parse::<semver::Version>().unwrap()
+        );
         assert_eq!(result.hits[0].visibility, IndexVersionVisibility::Visible);
     }
 
@@ -1270,7 +1293,10 @@ mod tests {
             ..Default::default()
         });
         assert_eq!(result.hits.len(), 1);
-        assert_eq!(result.hits[0].version, "2.0.0".parse::<semver::Version>().unwrap());
+        assert_eq!(
+            result.hits[0].version,
+            "2.0.0".parse::<semver::Version>().unwrap()
+        );
     }
 
     #[test]
@@ -1288,7 +1314,10 @@ mod tests {
             ..Default::default()
         });
         assert_eq!(result.hits.len(), 1);
-        assert_eq!(result.hits[0].version, "1.0.0".parse::<semver::Version>().unwrap());
+        assert_eq!(
+            result.hits[0].version,
+            "1.0.0".parse::<semver::Version>().unwrap()
+        );
     }
 
     #[test]
@@ -1303,7 +1332,10 @@ mod tests {
             ..Default::default()
         });
         assert_eq!(result.hits.len(), 1);
-        assert_eq!(result.hits[0].version, "1.0.0".parse::<semver::Version>().unwrap());
+        assert_eq!(
+            result.hits[0].version,
+            "1.0.0".parse::<semver::Version>().unwrap()
+        );
         assert_eq!(result.hits[0].triggers, vec![TriggerType::ProcessWrites]);
     }
 }
