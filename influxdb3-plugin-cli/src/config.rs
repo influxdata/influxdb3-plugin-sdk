@@ -37,7 +37,7 @@ pub struct PluginConfig {
 
 #[derive(Debug, clap::Subcommand)]
 enum Command {
-    /// Scaffold a new plugin or registry from a built-in template.
+    /// Scaffold a new plugin or index from a built-in template.
     #[command(subcommand)]
     New(crate::commands::new::NewCommand),
     /// Validate a plugin directory.

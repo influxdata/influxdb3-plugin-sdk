@@ -7,9 +7,9 @@ wraps in user-facing subcommands.
 
 ## Public modules
 
-- **`scaffold`** — generate a plugin directory or registry directory from a
+- **`scaffold`** — generate a plugin directory or index directory from a
   built-in template (`process_writes`, `process_scheduled_call`,
-  `process_request`, `registry`).
+  `process_request`, `index`).
 - **`validate`** — structural + cross-file checks against a plugin directory:
   manifest well-formedness, required-file presence, and (via
   `tree-sitter-python`) top-level sync-def implementation of every declared

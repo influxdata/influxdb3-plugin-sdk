@@ -1,5 +1,6 @@
 ---
 source: influxdb3-plugin-cli/tests/new_smoke.rs
+assertion_line: 475
 expression: payload
 ---
 {
@@ -18,8 +19,8 @@ expression: payload
         "short_name": "process_request"
       },
       {
-        "name": "Registry",
-        "short_name": "registry"
+        "name": "Index",
+        "short_name": "index"
       }
     ]
   },

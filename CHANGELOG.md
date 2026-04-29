@@ -9,6 +9,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Added
 - `influxdb3-plugin-schemas`: index query primitives (`Index::search`, `Index::info`) for shared registry browsing across CLI, UI backend, and database consumers
 
+### Changed
+- `new registry` subcommand renamed to `new index` — the command creates an `index.json` file, not a full registry. Template metadata, SDK function, and docs updated accordingly.
+
 ### Fixed
 - `package` command now emits typed JSON error code `package::already_published` (was `cli::unknown`) when `(name, version)` already exists in the target index. Same fix applied to `CanonicalCollision` errors.
 - Future unmapped SDK errors now fall back to command-scoped JSON codes like `package::sdk_error` instead of generic `cli::unknown`.

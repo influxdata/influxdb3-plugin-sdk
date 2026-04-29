@@ -48,15 +48,15 @@ fn plain_runtime_failure_exits_one() {
 }
 
 #[test]
-fn new_database_version_on_registry_template_exits_two() {
-    // `registry`'s Args omits `--database-version`, so clap rejects it
+fn new_database_version_on_index_template_exits_two() {
+    // `index`'s Args omits `--database-version`, so clap rejects it
     // at parse time. We pin exit 2. In piped (non-TTY) mode the error
     // is rendered as a JSON envelope on stdout.
     let tmp = TempDir::new().unwrap();
     plugin()
         .args([
             "new",
-            "registry",
+            "index",
             tmp.path().join("r").to_str().unwrap(),
             "--database-version",
             ">=3",
@@ -71,7 +71,7 @@ fn package_self_overwrite_exits_two() {
     let tmp = TempDir::new().unwrap();
     let reg = tmp.path().join("reg");
     plugin()
-        .args(["new", "registry", reg.to_str().unwrap()])
+        .args(["new", "index", reg.to_str().unwrap()])
         .assert()
         .success();
     let plug = tmp.path().join("p");
@@ -98,7 +98,7 @@ fn yank_self_overwrite_exits_two() {
     let tmp = TempDir::new().unwrap();
     let reg = tmp.path().join("reg");
     plugin()
-        .args(["new", "registry", reg.to_str().unwrap()])
+        .args(["new", "index", reg.to_str().unwrap()])
         .assert()
         .success();
     // Empty index — `yank` will fail at entry lookup, but the
@@ -122,7 +122,7 @@ fn yank_malformed_target_exits_two() {
     let tmp = TempDir::new().unwrap();
     let reg = tmp.path().join("reg");
     plugin()
-        .args(["new", "registry", reg.to_str().unwrap()])
+        .args(["new", "index", reg.to_str().unwrap()])
         .assert()
         .success();
     plugin()

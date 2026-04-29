@@ -392,7 +392,7 @@ The v1 SDK ships four commands plus a top-level `--version` flag. All operate on
 
 #### `new <template> [path]`
 
-Scaffold a new plugin or registry from a compile-time built-in template, or use the `list` subcommand to see available templates.
+Scaffold a new plugin or index from a compile-time built-in template, or use the `list` subcommand to see available templates.
 
 **Usage:**
 - `influxdb3-plugin new <template> [path]` — scaffold the named template into `[path]`.
@@ -406,7 +406,7 @@ Scaffold a new plugin or registry from a compile-time built-in template, or use 
 | Process Writes Plugin  | `process_writes`         | Plugin triggered by rows written to a database.         |
 | Scheduled Call Plugin  | `process_scheduled_call` | Plugin triggered on a schedule.                         |
 | Process Request Plugin | `process_request`        | Plugin triggered by an HTTP request.                    |
-| Registry               | `registry`               | Empty plugin registry directory.                        |
+| Index                  | `index`                  | Empty registry index file.                              |
 
 Each template carries metadata (template name, short name, description) and its own set of flags. Templates are compile-time built-ins in v1. The CLI is structured so that a new template is added as a self-contained module plus a single registration entry in the central list of built-in templates; no other CLI code changes are required. User-extensible templates (install / uninstall / search) are explicitly deferred post-v1.
 
@@ -424,7 +424,7 @@ Plugin templates (`process_writes`, `process_scheduled_call`, `process_request`)
 - `--name <name>` — plugin name written into the scaffolded manifest. Defaults to the basename of `[path]`. If the derived name does not match the plugin-name rule (`[a-zA-Z][a-zA-Z0-9_-]*`, 1–64 ASCII chars starting with a letter; Windows reserved device names rejected case-insensitively), the command errors and asks for an explicit `--name`. Mirrors cargo's invalid-name behavior.
 - `--database-version <range>` — SemVer range written into the scaffolded manifest as `dependencies.database_version`. Defaults to `>=<INFLUXDB3_PLUGIN_SDK_KNOWN_LATEST_DB>`, a value baked into the SDK at build time (see [[#Release Engineering]]).
 
-Registry template (`registry`):
+Index template (`index`):
 - `--artifacts-url <url>` — URL written into the generated `index.json` as the registry's `artifacts_url`. An explicit value is written verbatim (subject to scheme validation). When omitted, defaults to `file://<absolute path of [path], with symlinks preserved>`, making a freshly scaffolded local registry immediately consumable as a `file://` registry.
 
 `new <template> -h` prints the template's description, its positional arguments, the global flags, and only the per-template flags that apply to that template. The top-level `new --help` does not enumerate templates; `new list` does.
@@ -929,7 +929,7 @@ Every SDK command returns exit codes from the GNU baseline in v1:
   - **Plugin-name rule violation on an explicit `--name` value** (e.g., `--name "Bad Name"` — `PluginName::from_str` rejected the input). Includes both character-rule failures and Windows-reserved-name rejections.
   - **Flag/template mismatches** (e.g., `--artifacts-url` on a plugin template, `--database-version` or `--name` on the `registry` template). A flag that is only meaningful for a specific template is a usage error when passed to any other template.
   - **Unparseable `--database-version` value.** `new <plugin-template> --database-version <bad>` exits 2 when `<bad>` is not a valid `semver::VersionReq`. The CLI pre-validates before the scaffold writes anything; no manifest is produced.
-  - **Unsupported `--artifacts-url` scheme or malformed URL.** `new registry --artifacts-url <bad>` exits 2 when `<bad>` is not a parseable URL or uses a scheme outside `{https, http, file}` (see [[#Index Schema]] for the allowed set). The CLI pre-validates before the scaffold writes anything; no `index.json` is produced.
+  - **Unsupported `--artifacts-url` scheme or malformed URL.** `new index --artifacts-url <bad>` exits 2 when `<bad>` is not a parseable URL or uses a scheme outside `{https, http, file}` (see [[#Index Schema]] for the allowed set). The CLI pre-validates before the scaffold writes anything; no `index.json` is produced.
   - **Malformed positional arguments** (e.g., `yank name:version` where the positional must be `<name>@<version>`). SemVer and plugin-name parse failures inside a positional argument also qualify.
   - Input/output directory aliasing caught by [[#S2-12 Input/Output Separation|S2-12]].
   - Any other argument-parse or early-validation failure where the condition is under caller control rather than environmental.

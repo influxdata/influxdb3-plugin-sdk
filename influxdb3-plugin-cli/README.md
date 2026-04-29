@@ -22,13 +22,13 @@ auto-detected from stdout's TTY status and the `CI` env var per Spec
 
 ### `new <template> [path]`
 
-Scaffold a new plugin or registry from a built-in template. Plugin
+Scaffold a new plugin or index from a built-in template. Plugin
 templates: `process_writes`, `process_scheduled_call`,
-`process_request`. Registry template: `registry`.
+`process_request`. Index template: `index`.
 
 ```bash
 influxdb3-plugin new process_writes ./my-plugin
-influxdb3-plugin new registry ./my-registry --artifacts-url https://plugins.example.com/artifacts
+influxdb3-plugin new index ./my-registry --artifacts-url https://plugins.example.com/artifacts
 ```
 
 ### `validate [plugin-dir]`

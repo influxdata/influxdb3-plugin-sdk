@@ -15,7 +15,7 @@ pub(crate) enum ErrorContext {
     Package,
     Yank,
     NewPlugin,
-    NewRegistry,
+    NewIndex,
 }
 
 /// Maps a single [`ValidationError`] to the wire-stable [`JsonError`] shape.
@@ -411,7 +411,7 @@ fn namespace_for(ctx: ErrorContext, suffix: &str) -> String {
         ErrorContext::Validate => "validate",
         ErrorContext::Package => "package",
         ErrorContext::Yank => "yank",
-        ErrorContext::NewPlugin | ErrorContext::NewRegistry => "new",
+        ErrorContext::NewPlugin | ErrorContext::NewIndex => "new",
     };
     format!("{ns}::{suffix}")
 }
@@ -428,7 +428,7 @@ fn io_error_to_json(
         ErrorContext::Validate => "validate::io_failed",
         ErrorContext::Package => "package::io_failed",
         ErrorContext::Yank => "yank::io_failed",
-        ErrorContext::NewPlugin | ErrorContext::NewRegistry => "new::scaffold_failed",
+        ErrorContext::NewPlugin | ErrorContext::NewIndex => "new::scaffold_failed",
     };
     let field = path.map(|p| p.display().to_string());
     let details = Some(serde_json::json!({
@@ -481,7 +481,7 @@ pub(crate) fn json_error_from_sdk(err: &SdkError, ctx: ErrorContext) -> JsonErro
         },
 
         SdkError::Archive { message } => match ctx {
-            ErrorContext::NewPlugin | ErrorContext::NewRegistry => JsonError {
+            ErrorContext::NewPlugin | ErrorContext::NewIndex => JsonError {
                 code: "new::scaffold_failed".into(),
                 message: err.to_string(),
                 field: None,
@@ -914,7 +914,7 @@ mod tests {
             (ErrorContext::Package, "package::io_failed"),
             (ErrorContext::Yank, "yank::io_failed"),
             (ErrorContext::NewPlugin, "new::scaffold_failed"),
-            (ErrorContext::NewRegistry, "new::scaffold_failed"),
+            (ErrorContext::NewIndex, "new::scaffold_failed"),
         ];
         for (ctx, expected_code) in &cases {
             let je = json_error_from_sdk(&err, *ctx);
@@ -956,7 +956,7 @@ mod tests {
         );
 
         // NewRegistry context → new::scaffold_failed
-        let je_reg = json_error_from_sdk(&err, ErrorContext::NewRegistry);
+        let je_reg = json_error_from_sdk(&err, ErrorContext::NewIndex);
         assert_eq!(je_reg.code, "new::scaffold_failed");
     }
 

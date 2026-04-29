@@ -16,7 +16,7 @@ fn setup() -> TempDir {
     let tmp = TempDir::new().unwrap();
     let reg = tmp.path().join("reg");
     plugin()
-        .args(["new", "registry", reg.to_str().unwrap()])
+        .args(["new", "index", reg.to_str().unwrap()])
         .assert()
         .success();
     let dir = tmp.path().join("bad");

@@ -72,16 +72,16 @@ pub(crate) struct ListTemplate {
 /// to stderr.
 #[derive(Debug, Serialize)]
 pub(crate) struct NewOutput {
-    /// `"plugin"` for trigger templates, `"registry"` for the registry
+    /// `"plugin"` for trigger templates, `"index"` for the index
     /// template. Stable string tag; consumers can pattern-match.
     pub kind: &'static str,
     /// The template identifier the user passed (`process_writes`,
-    /// `process_scheduled_call`, `process_request`, or `registry`).
+    /// `process_scheduled_call`, `process_request`, or `index`).
     pub template: &'static str,
     /// Absolute path of the directory the scaffold wrote into.
     pub target_dir: PathBuf,
     /// Plugin name written into `manifest.toml` for plugin templates;
-    /// omitted for registry templates, which carry no plugin name.
+    /// omitted for index templates, which carry no plugin name.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     /// Files the scaffold wrote, relative to `target_dir`. Order matches
