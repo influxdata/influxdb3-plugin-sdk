@@ -15,6 +15,7 @@ use proptest as _;
 mod error;
 mod identity;
 mod index;
+mod index_query;
 mod manifest;
 mod path;
 mod raw;
@@ -22,6 +23,10 @@ mod raw;
 pub use error::{IndexInsertError, ReportedError, SchemaError, SchemaErrors};
 pub use identity::{PluginId, PluginName};
 pub use index::{ArtifactHash, ArtifactsUrl, Index, IndexEntry, IndexSchemaVersion};
+pub use index_query::{
+    IndexInfo, IndexInfoQuery, IndexInfoResult, IndexSearchHit, IndexSearchQuery,
+    IndexSearchResult, IndexVersionVisibility, IndexVisibilityReason,
+};
 pub use manifest::{
     Dependencies, Description, Manifest, ManifestSchemaVersion, PluginMetadata, PythonRequirement,
     TriggerType,
