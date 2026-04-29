@@ -67,7 +67,7 @@ jobs:
       - setup-rust
       - run:
           name: cargo build --workspace
-          command: cargo build --workspace
+          command: cargo build --workspace --locked
       - save-cargo-cache
 
   cargo-test:
@@ -77,16 +77,17 @@ jobs:
       - restore-cargo-cache
       - setup-rust
       - run:
-          name: Install cargo-nextest (prebuilt binary, fast)
+          name: Install cargo-nextest (prebuilt binary, pinned version)
           command: |
-            curl -LsSf https://get.nexte.st/latest/linux \
+            NEXTEST_VERSION="0.9.133"
+            curl -LsSf "https://get.nexte.st/${NEXTEST_VERSION}/linux" \
               | tar zxf - -C "$HOME/.cargo/bin"
             cargo nextest --version
       - run:
           name: cargo nextest run --workspace
           environment:
             INSTA_UPDATE: "no"
-          command: cargo nextest run --workspace --no-fail-fast
+          command: cargo nextest run --workspace --no-fail-fast --locked
       - save-cargo-cache
 
   cargo-clippy:
@@ -100,7 +101,7 @@ jobs:
           command: rustup component add clippy
       - run:
           name: cargo clippy --workspace --all-targets -- -D warnings
-          command: cargo clippy --workspace --all-targets -- -D warnings
+          command: cargo clippy --workspace --all-targets --locked -- -D warnings
       - save-cargo-cache
 
   cargo-fmt:
@@ -146,7 +147,7 @@ jobs:
       - setup-rust
       - run:
           name: cargo doc --workspace --no-deps
-          command: cargo doc --workspace --no-deps
+          command: cargo doc --workspace --no-deps --locked
       - save-cargo-cache
 
   manifest-invariants:
@@ -158,6 +159,12 @@ jobs:
       - run:
           name: scripts/check-manifest-invariants.sh
           command: ./scripts/check-manifest-invariants.sh
+      - run:
+          name: scripts/check-changelog-format.sh
+          command: ./scripts/check-changelog-format.sh
+      - run:
+          name: scripts/check-changelog-updated.sh
+          command: ./scripts/check-changelog-updated.sh
       - save-cargo-cache
 
   cargo-semver-checks:
@@ -255,21 +262,24 @@ jobs:
           name: WIF login as dedicated SA
           command: |
             source "$BASH_ENV"
+            source "$BASH_ENV"
             TOKEN="${CIRCLE_OIDC_TOKEN:-}"
             [ -n "$TOKEN" ] || { echo "ERROR: no V1 OIDC token"; exit 1; }
             umask 077
-            echo "$TOKEN" > /tmp/circleci_oidc_token
-            cat > /tmp/gcp_cred_config.json \<<JSON
+            OIDC_FILE="$CLOUDSDK_CONFIG/circleci_oidc_token"
+            CRED_FILE="$CLOUDSDK_CONFIG/gcp_cred_config.json"
+            echo "$TOKEN" > "$OIDC_FILE"
+            cat > "$CRED_FILE" \<<JSON
             {
               "type": "external_account",
               "audience": "//iam.googleapis.com/projects/${GCP_PROJECT_ID}/locations/global/workloadIdentityPools/${GCP_WIP_ID}/providers/${GCP_WIP_PROVIDER_ID}",
               "subject_token_type": "urn:ietf:params:oauth:token-type:jwt",
               "service_account_impersonation_url": "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${GCP_SERVICE_ACCOUNT_EMAIL}:generateAccessToken",
               "token_url": "https://sts.googleapis.com/v1/token",
-              "credential_source": { "file": "/tmp/circleci_oidc_token" }
+              "credential_source": { "file": "$OIDC_FILE" }
             }
             JSON
-            gcloud auth login --cred-file=/tmp/gcp_cred_config.json
+            gcloud auth login --cred-file="$CRED_FILE"
       - run:
           name: Pull cross-builder image
           no_output_timeout: 15m
@@ -301,7 +311,7 @@ jobs:
               -e "INFLUXDB3_PLUGIN_SDK_KNOWN_LATEST_DB=$INFLUXDB3_PLUGIN_SDK_KNOWN_LATEST_DB" \
               -e "RUSTC_WRAPPER=" \
               "$IMAGE" \
-              bash -c "rustup target add << parameters.target >> && target-env cargo build --release --target << parameters.target >> -p influxdb3-plugin-cli"
+              bash -c "rustup target add << parameters.target >> && target-env cargo build --release --locked --target << parameters.target >> -p influxdb3-plugin-cli"
       - run:
           name: Ad-hoc codesign Darwin binary (prevents macOS "damaged" errors)
           command: |
@@ -318,15 +328,17 @@ jobs:
               *) echo "Skipping codesign (not a Darwin target)" ;;
             esac
       - run:
-          name: Tarball the binary
+          name: Tarball the binary + license files
           command: |
-            mkdir -p artifacts
+            mkdir -p artifacts staging
             BINARY_NAME=influxdb3-plugin
             case "<< parameters.target >>" in
               *windows*) BINARY_NAME=influxdb3-plugin.exe ;;
             esac
+            cp "target/<< parameters.target >>/release/$BINARY_NAME" staging/
+            cp LICENSE-MIT LICENSE-APACHE staging/
             tar -czf "artifacts/influxdb3-plugin-<< parameters.target >>.tar.gz" \
-              -C "target/<< parameters.target >>/release" "$BINARY_NAME"
+              -C staging "$BINARY_NAME" LICENSE-MIT LICENSE-APACHE
       - persist_to_workspace:
           root: .
           paths:
@@ -386,6 +398,31 @@ jobs:
                     continue
                 fi
 
+                # Verify binary architecture matches the target
+                actual_arch="$(file "$bin_path")"
+                case "$target" in
+                  x86_64-unknown-linux-gnu)
+                    echo "$actual_arch" | grep -cF "ELF 64-bit" > /dev/null && \
+                    echo "$actual_arch" | grep -cF "x86-64" > /dev/null || {
+                      echo "FAIL: $bin_name is not ELF x86-64: $actual_arch" >&2
+                      errors=$((errors+1)); continue; } ;;
+                  aarch64-unknown-linux-gnu)
+                    echo "$actual_arch" | grep -cF "ELF 64-bit" > /dev/null && \
+                    echo "$actual_arch" | grep -ciE "aarch64|arm64" > /dev/null || {
+                      echo "FAIL: $bin_name is not ELF aarch64: $actual_arch" >&2
+                      errors=$((errors+1)); continue; } ;;
+                  aarch64-apple-darwin)
+                    echo "$actual_arch" | grep -cF "Mach-O" > /dev/null && \
+                    echo "$actual_arch" | grep -ciE "arm64|aarch64" > /dev/null || {
+                      echo "FAIL: $bin_name is not Mach-O arm64: $actual_arch" >&2
+                      errors=$((errors+1)); continue; } ;;
+                  x86_64-pc-windows-gnu)
+                    echo "$actual_arch" | grep -cF "PE32+" > /dev/null && \
+                    echo "$actual_arch" | grep -ciE "x86-64|x86_64" > /dev/null || {
+                      echo "FAIL: $bin_name is not PE32+ x86-64: $actual_arch" >&2
+                      errors=$((errors+1)); continue; } ;;
+                esac
+
                 if ! strings "$bin_path" | grep -cF "$CIRCLE_SHA1" > /dev/null; then
                     echo "FAIL: $bin_name does not contain CIRCLE_SHA1=$CIRCLE_SHA1 in its strings" >&2
                     echo "  Binary's 'revision' string:" >&2
@@ -440,8 +477,10 @@ jobs:
               in_section { print }
             ' CHANGELOG.md > /tmp/release-notes.md
             if [ ! -s /tmp/release-notes.md ]; then
-              echo "WARNING: no CHANGELOG.md section for [$VERSION]; release will have minimal notes." >&2
-              echo "Release v$VERSION" > /tmp/release-notes.md
+              echo "ERROR: no CHANGELOG.md section for [$VERSION]." >&2
+              echo "S2-20 requires release notes. Add a ## [$VERSION] section to CHANGELOG.md" >&2
+              echo "before tagging. See RELEASE.md step 2." >&2
+              exit 1
             fi
             cat /tmp/release-notes.md
       - run:

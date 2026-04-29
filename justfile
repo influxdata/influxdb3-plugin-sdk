@@ -128,6 +128,20 @@ tag-version VERSION:
     set -euo pipefail
     just _validate_semver {{VERSION}}
 
+    # Validate working tree is clean (uncommitted Cargo.toml changes would
+    # make cargo metadata report a version that differs from the committed
+    # state, causing the tag to point at the wrong version).
+    if ! git diff --exit-code --quiet 2>/dev/null; then
+        echo "ERROR: working tree has uncommitted changes." >&2
+        echo "       Commit or stash before tagging." >&2
+        exit 1
+    fi
+    if ! git diff --cached --exit-code --quiet 2>/dev/null; then
+        echo "ERROR: index has staged but uncommitted changes." >&2
+        echo "       Commit or reset before tagging." >&2
+        exit 1
+    fi
+
     # Validate local HEAD == origin/main.
     git fetch origin main --quiet
     local_head="$(git rev-parse HEAD)"
