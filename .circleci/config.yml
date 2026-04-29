@@ -387,7 +387,7 @@ jobs:
                     continue
                 fi
 
-                if ! strings "$bin_path" | grep -qF "$CIRCLE_SHA1"; then
+                if ! strings "$bin_path" | grep -cF "$CIRCLE_SHA1" > /dev/null; then
                     echo "FAIL: $bin_name does not contain CIRCLE_SHA1=$CIRCLE_SHA1 in its strings" >&2
                     echo "  Binary's 'revision' string:" >&2
                     strings "$bin_path" | grep -i "revision" | head -3 >&2
@@ -399,7 +399,7 @@ jobs:
 
                 if [ "$target" = "x86_64-unknown-linux-gnu" ]; then
                     actual="$($bin_path --version)"
-                    if ! echo "$actual" | grep -qF "revision $CIRCLE_SHA1"; then
+                    if ! echo "$actual" | grep -cF "revision $CIRCLE_SHA1" > /dev/null; then
                         echo "FAIL: $bin_name --version doesn't contain revision $CIRCLE_SHA1" >&2
                         echo "  Got: $actual" >&2
                         errors=$((errors+1))
