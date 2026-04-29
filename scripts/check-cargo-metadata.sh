@@ -18,10 +18,10 @@ for edge in 'cli:schemas' 'cli:sdk' 'sdk:schemas'; do
         errors=$((errors+1))
         continue
     fi
-    # Expected shape: ^0.x or ^0.x.y (caret-default for 0.x versions).
-    # Loosen this regex when the workspace moves past 0.x.
-    if ! [[ "$req" =~ ^\^0\.[0-9]+(\.[0-9]+)?$ ]]; then
-        echo "FAIL: $consumer→$dep req='$req' (expected ^0.x or ^0.x.y caret shape)" >&2
+    # Expected shape: ^0.x.y with optional pre-release suffix (caret-default
+    # for 0.x versions). Loosen this regex when the workspace moves past 0.x.
+    if ! [[ "$req" =~ ^\^0\.[0-9]+(\.[0-9]+)?(-[0-9A-Za-z.-]+)?$ ]]; then
+        echo "FAIL: $consumer→$dep req='$req' (expected ^0.x.y[-prerelease] caret shape)" >&2
         errors=$((errors+1))
     fi
 done

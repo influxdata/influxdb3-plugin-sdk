@@ -6,4 +6,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-(no changes yet)
+## [0.1.0-1.rc.0] - 2026-04-28
+
+Initial release rehearsal. Validates the release pipeline end-to-end.
