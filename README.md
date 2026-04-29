@@ -25,6 +25,3 @@ cargo nextest run --workspace  # run tests (install: cargo install cargo-nextest
 cargo deny check               # audit dependency graph
 cargo clippy --workspace -- -D warnings
 ```
-
-See `Processing Engine - Plugin Version Management.md` (external design doc)
-for the full specification of the plugin lifecycle.
