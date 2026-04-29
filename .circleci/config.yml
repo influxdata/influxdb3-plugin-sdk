@@ -176,7 +176,7 @@ jobs:
               exit 1
             fi
             echo "Baseline tag: $BASELINE"
-            BASELINE_DIR="/tmp/workspace/${CIRCLE_PIPELINE_ID}/semver-baseline"
+            BASELINE_DIR="/tmp/semver-baseline-${CIRCLE_PIPELINE_ID}"
             rm -rf "$BASELINE_DIR"
             git clone --depth=1 --branch "$BASELINE" \
               "$(git remote get-url origin)" "$BASELINE_DIR"
