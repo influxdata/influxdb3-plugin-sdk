@@ -168,8 +168,10 @@ jobs:
     steps:
       - checkout
       - run:
-          name: Fetch all tags (needed for baseline-rev)
-          command: git fetch --tags origin
+          name: Fetch full history + tags (shallow clones break baseline-rev lookups)
+          command: |
+            git fetch --unshallow origin || true
+            git fetch --tags origin
       - restore-cargo-cache
       - setup-rust
       - run:
