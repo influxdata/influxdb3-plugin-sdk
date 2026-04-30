@@ -1,6 +1,6 @@
 ---
 source: influxdb3-plugin-cli/src/output/json.rs
-expression: "super::ALL_WIRE_CODES"
+expression: ALL_WIRE_CODES
 ---
 - "validate::failed"
 - "validate::schema_reported"
@@ -23,6 +23,8 @@ expression: "super::ALL_WIRE_CODES"
 - "package::index_parse_failed"
 - "package::io_failed"
 - "package::sdk_error"
+- "index::index_read_failed"
+- "index::index_parse_failed"
 - "yank::entry_not_found"
 - "yank::index_parse_failed"
 - "yank::schema_error"

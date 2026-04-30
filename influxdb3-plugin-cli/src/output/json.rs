@@ -54,6 +54,85 @@ pub(crate) struct PackageOutput {
     pub new_entry_published_at: String,
 }
 
+/// `--output json` payload emitted by `index search` on success.
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct IndexSearchOutput {
+    pub hits: Vec<IndexSearchHitOutput>,
+}
+
+/// One projected row in an `index search` JSON result.
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct IndexSearchHitOutput {
+    pub name: String,
+    pub version: String,
+    pub published_at: String,
+    pub description: String,
+    pub triggers: Vec<String>,
+    pub visibility: IndexVisibilityOutput,
+}
+
+/// CLI-owned visibility projection for index inspection output.
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub(crate) enum IndexVisibilityOutput {
+    Visible,
+    Hidden {
+        reasons: Vec<IndexVisibilityReasonOutput>,
+    },
+}
+
+/// CLI-owned hidden-result reason projection for index inspection output.
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub(crate) enum IndexVisibilityReasonOutput {
+    Yanked,
+    IncompatibleDatabaseVersion { required: String, actual: String },
+}
+
+/// `--output json` payload emitted by `index info` on success.
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "outcome", rename_all = "snake_case")]
+pub(crate) enum IndexInfoOutput {
+    Found {
+        plugin: Box<IndexInfoPluginOutput>,
+    },
+    NotFound {
+        name: String,
+        version: Option<String>,
+    },
+    FilteredOut {
+        name: String,
+        version: Option<String>,
+        reasons: Vec<IndexVisibilityReasonOutput>,
+    },
+}
+
+/// Full plugin metadata projected by `index info`.
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct IndexInfoPluginOutput {
+    pub name: String,
+    pub version: String,
+    pub published_at: String,
+    pub description: String,
+    pub triggers: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub homepage: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub repository: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub documentation: Option<String>,
+    pub dependencies: IndexDependenciesOutput,
+    pub hash: String,
+    pub visibility: IndexVisibilityOutput,
+}
+
+/// Dependency metadata projected by `index info`.
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct IndexDependenciesOutput {
+    pub database_version: String,
+    pub python: Vec<String>,
+}
+
 /// `--output json` payload emitted by `new list`. Stable (semver-locked)
 /// schema.
 #[derive(Debug, Serialize)]
@@ -188,6 +267,8 @@ mod envelope_tests {
         "package::index_parse_failed",
         "package::io_failed",
         "package::sdk_error",
+        "index::index_read_failed",
+        "index::index_parse_failed",
         "yank::entry_not_found",
         "yank::index_parse_failed",
         "yank::schema_error",
