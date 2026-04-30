@@ -19,6 +19,7 @@ use std::path::PathBuf;
 pub(crate) struct YankOutput {
     pub name: String,
     pub version: String,
+    pub published_at: String,
     pub outcome: YankOutcomeWire,
     pub index_path: PathBuf,
 }
@@ -42,7 +43,7 @@ pub(crate) enum YankOutcomeWire {
 
 /// `--output json` payload emitted by `package` on success. Carries the
 /// absolute paths of the artifact + derived index, the artifact's SHA-256
-/// hash, and the new entry's identity.
+/// hash, and the new entry's identity and publication timestamp.
 #[derive(Debug, Serialize)]
 pub(crate) struct PackageOutput {
     pub artifact_path: PathBuf,
@@ -50,6 +51,7 @@ pub(crate) struct PackageOutput {
     pub hash: String,
     pub new_entry_name: String,
     pub new_entry_version: String,
+    pub new_entry_published_at: String,
 }
 
 /// `--output json` payload emitted by `new list`. Stable (semver-locked)
@@ -337,6 +339,7 @@ mod envelope_tests {
         let payload = YankOutput {
             name: "p".into(),
             version: "1.0.0".into(),
+            published_at: "2026-04-29T18:45:12Z".into(),
             outcome: YankOutcomeWire::Yanked,
             index_path: std::path::PathBuf::from("/abs/idx.json"),
         };

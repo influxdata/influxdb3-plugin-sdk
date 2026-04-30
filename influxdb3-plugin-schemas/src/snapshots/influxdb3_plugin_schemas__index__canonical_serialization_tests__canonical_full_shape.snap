@@ -1,15 +1,16 @@
 ---
 source: influxdb3-plugin-schemas/src/index.rs
-assertion_line: 567
+assertion_line: 1429
 expression: idx.to_canonical_json().unwrap()
 ---
 {
-  "index_schema_version": "1.0",
+  "index_schema_version": "2.0",
   "artifacts_url": "https://example.com/artifacts",
   "plugins": [
     {
       "name": "alpha",
       "version": "1.0.0",
+      "published_at": "2026-04-29T18:45:12Z",
       "description": "desc",
       "triggers": [
         "process_writes"
@@ -23,6 +24,7 @@ expression: idx.to_canonical_json().unwrap()
     {
       "name": "beta",
       "version": "2.1.0",
+      "published_at": "2026-04-29T18:45:12Z",
       "description": "desc",
       "triggers": [
         "process_writes"

@@ -212,6 +212,7 @@ fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
         hash: outcome.hash.as_str().to_owned(),
         new_entry_name: outcome.new_entry.name.as_str().to_owned(),
         new_entry_version: outcome.new_entry.version.to_string(),
+        new_entry_published_at: outcome.new_entry.published_at.to_string(),
     };
 
     match mode {

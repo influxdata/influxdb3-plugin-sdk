@@ -3,12 +3,11 @@
   "artifacts_url": "https://plugins.example.com/artifacts",
   "plugins": [
     {
-      "name": "bad-url",
+      "name": "bad-published-at",
       "version": "0.1.0",
-      "published_at": "2026-04-29T18:45:12Z",
-      "description": "Per-entry homepage uses ftp:// — rejected by Index::validate.",
+      "published_at": "2026-04-29T18:45:12.123Z",
+      "description": "Publication timestamp has fractional seconds.",
       "triggers": ["process_writes"],
-      "homepage": "ftp://bad.example.com/",
       "dependencies": {
         "database_version": ">=3.0.0",
         "python": []

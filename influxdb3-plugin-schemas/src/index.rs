@@ -5,10 +5,8 @@ use serde::Serialize as _;
 use serde::ser::Error as _;
 use std::fmt;
 use std::str::FromStr;
+use time::{Date, Month, OffsetDateTime, PrimitiveDateTime, Time, UtcOffset};
 use unicode_normalization::UnicodeNormalization;
-
-/// Supported major for the index schema.
-pub(crate) const SUPPORTED_INDEX_MAJOR: u32 = 1;
 
 /// The `index_schema_version` top-level field. Mirrors `ManifestSchemaVersion`:
 /// format `<major>.<minor>`, unsupported majors rejected.
@@ -19,7 +17,12 @@ pub struct IndexSchemaVersion {
 }
 
 impl IndexSchemaVersion {
-    pub const CURRENT: Self = Self { major: 1, minor: 1 };
+    pub const CURRENT_MAJOR: u32 = 2;
+    pub const CURRENT_MINOR: u32 = 0;
+    pub const CURRENT: Self = Self {
+        major: Self::CURRENT_MAJOR,
+        minor: Self::CURRENT_MINOR,
+    };
 
     pub fn new(major: u32, minor: u32) -> Self {
         Self { major, minor }
@@ -50,10 +53,10 @@ impl FromStr for IndexSchemaVersion {
         }
         let major: u32 = major_str.parse().map_err(|_| malformed())?;
         let minor: u32 = minor_str.parse().map_err(|_| malformed())?;
-        if major != SUPPORTED_INDEX_MAJOR {
+        if major != Self::CURRENT_MAJOR {
             return Err(SchemaError::UnsupportedIndexMajor {
                 found: s.to_owned(),
-                supported: SUPPORTED_INDEX_MAJOR,
+                supported: Self::CURRENT_MAJOR,
             });
         }
         Ok(Self { major, minor })
@@ -183,6 +186,125 @@ impl serde::Serialize for ArtifactHash {
     }
 }
 
+/// Publication timestamp for a plugin version.
+///
+/// The wire format mirrors Cargo registry-index `pubtime` exactly:
+/// `YYYY-MM-DDTHH:MM:SSZ`.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct PublishedAt(String);
+
+impl PublishedAt {
+    const LEN: usize = "YYYY-MM-DDTHH:MM:SSZ".len();
+
+    pub fn try_new(raw: &str) -> Result<Self, SchemaError> {
+        if !has_cargo_pubtime_shape(raw) {
+            return Err(SchemaError::InvalidPublishedAt {
+                value: raw.to_owned(),
+            });
+        }
+
+        let year = raw[0..4].parse::<i32>().expect("shape checked digits");
+        let month = raw[5..7].parse::<u8>().expect("shape checked digits");
+        let day = raw[8..10].parse::<u8>().expect("shape checked digits");
+        let hour = raw[11..13].parse::<u8>().expect("shape checked digits");
+        let minute = raw[14..16].parse::<u8>().expect("shape checked digits");
+        let second = raw[17..19].parse::<u8>().expect("shape checked digits");
+
+        let month = Month::try_from(month).map_err(|_| SchemaError::InvalidPublishedAt {
+            value: raw.to_owned(),
+        })?;
+        let date = Date::from_calendar_date(year, month, day).map_err(|_| {
+            SchemaError::InvalidPublishedAt {
+                value: raw.to_owned(),
+            }
+        })?;
+        let time =
+            Time::from_hms(hour, minute, second).map_err(|_| SchemaError::InvalidPublishedAt {
+                value: raw.to_owned(),
+            })?;
+        let _ = PrimitiveDateTime::new(date, time).assume_utc();
+
+        Ok(Self(raw.to_owned()))
+    }
+
+    pub fn now_utc() -> Self {
+        Self::from_utc_datetime(OffsetDateTime::now_utc())
+            .expect("current UTC timestamp must fit Cargo pubtime format")
+    }
+
+    pub fn from_utc_datetime(timestamp: OffsetDateTime) -> Result<Self, SchemaError> {
+        let timestamp = timestamp.to_offset(UtcOffset::UTC);
+        let year = timestamp.year();
+        if !(0..=9999).contains(&year) {
+            return Err(SchemaError::InvalidPublishedAt {
+                value: year.to_string(),
+            });
+        }
+
+        let value = format!(
+            "{year:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
+            u8::from(timestamp.month()),
+            timestamp.day(),
+            timestamp.hour(),
+            timestamp.minute(),
+            timestamp.second()
+        );
+        Ok(Self(value))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+fn has_cargo_pubtime_shape(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    bytes.len() == PublishedAt::LEN
+        && bytes[4] == b'-'
+        && bytes[7] == b'-'
+        && bytes[10] == b'T'
+        && bytes[13] == b':'
+        && bytes[16] == b':'
+        && bytes[19] == b'Z'
+        && bytes
+            .iter()
+            .enumerate()
+            .all(|(idx, byte)| matches!(idx, 4 | 7 | 10 | 13 | 16 | 19) || byte.is_ascii_digit())
+}
+
+impl fmt::Display for PublishedAt {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl FromStr for PublishedAt {
+    type Err = SchemaError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::try_new(s)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for PublishedAt {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let raw = String::deserialize(deserializer)?;
+        Self::try_new(&raw).map_err(serde::de::Error::custom)
+    }
+}
+
+impl serde::Serialize for PublishedAt {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.0)
+    }
+}
+
 /// A parsed plugin registry index.
 #[derive(Debug, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct Index {
@@ -196,6 +318,7 @@ pub struct Index {
 pub struct IndexEntry {
     pub name: PluginName,
     pub version: semver::Version,
+    pub published_at: PublishedAt,
     pub description: Description,
     pub triggers: Vec<TriggerType>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -212,10 +335,19 @@ pub struct IndexEntry {
 
 impl IndexEntry {
     pub fn from_manifest(manifest: crate::Manifest, hash: ArtifactHash) -> Self {
+        Self::from_manifest_with_published_at(manifest, hash, PublishedAt::now_utc())
+    }
+
+    pub fn from_manifest_with_published_at(
+        manifest: crate::Manifest,
+        hash: ArtifactHash,
+        published_at: PublishedAt,
+    ) -> Self {
         let plugin = manifest.plugin;
         Self {
             name: plugin.name,
             version: plugin.version,
+            published_at,
             description: plugin.description,
             triggers: plugin.triggers,
             homepage: plugin.homepage,
@@ -245,7 +377,7 @@ impl Index {
     /// use influxdb3_plugin_schemas::Index;
     ///
     /// let source = r#"{
-    ///   "index_schema_version": "1.0",
+    ///   "index_schema_version": "2.0",
     ///   "artifacts_url": "https://plugins.example.com/artifacts",
     ///   "plugins": []
     /// }"#;
@@ -344,7 +476,8 @@ impl Index {
     ///
     /// - Field ordering matches struct declaration order.
     /// - `plugins[]` sorted by `name` ascending, then `version` ascending by
-    ///   SemVer precedence. Yank status does not affect ordering.
+    ///   SemVer precedence. Metadata fields such as `published_at` and yank
+    ///   status do not affect ordering.
     /// - 2-space indent, pretty-printed, trailing newline.
     /// - NFC Unicode normalization on free-text `description` fields. Other
     ///   string fields are already ASCII-constrained by their validators; URL
@@ -473,6 +606,34 @@ fn validate_raw_entry(
         }
     };
 
+    let published_at = match &raw.published_at {
+        Some(serde_json::Value::String(value)) => match PublishedAt::try_new(value) {
+            Ok(published_at) => Some(published_at),
+            Err(e) => {
+                errors.push(ReportedError::new(path.field("published_at"), e));
+                None
+            }
+        },
+        Some(value) => {
+            errors.push(ReportedError::new(
+                path.field("published_at"),
+                SchemaError::InvalidPublishedAt {
+                    value: value.to_string(),
+                },
+            ));
+            None
+        }
+        None => {
+            errors.push(ReportedError::new(
+                path.field("published_at"),
+                SchemaError::InvalidPublishedAt {
+                    value: "<missing>".to_owned(),
+                },
+            ));
+            None
+        }
+    };
+
     let description = match Description::try_new(&raw.description) {
         Ok(d) => Some(d),
         Err(e) => {
@@ -541,6 +702,7 @@ fn validate_raw_entry(
     Some(IndexEntry {
         name: name.unwrap(),
         version: version.unwrap(),
+        published_at: published_at.unwrap(),
         description: description.unwrap(),
         triggers: triggers_ok,
         homepage,
@@ -562,14 +724,14 @@ mod schema_version_tests {
 
     #[test]
     fn parses_supported_major() {
-        let v: IndexSchemaVersion = "1.1".parse().unwrap();
-        assert_eq!(v.major(), 1);
-        assert_eq!(v.minor(), 1);
+        let v: IndexSchemaVersion = "2.0".parse().unwrap();
+        assert_eq!(v.major(), 2);
+        assert_eq!(v.minor(), 0);
     }
 
     #[test]
     fn rejects_unsupported_major() {
-        let err = "2.0".parse::<IndexSchemaVersion>().unwrap_err();
+        let err = "3.0".parse::<IndexSchemaVersion>().unwrap_err();
         assert_matches!(err, SchemaError::UnsupportedIndexMajor { .. });
     }
 
@@ -582,8 +744,15 @@ mod schema_version_tests {
     }
 
     #[test]
-    fn current_major_equals_supported() {
-        assert_eq!(IndexSchemaVersion::CURRENT.major(), SUPPORTED_INDEX_MAJOR);
+    fn current_uses_declared_major_and_minor_constants() {
+        assert_eq!(
+            IndexSchemaVersion::CURRENT.major(),
+            IndexSchemaVersion::CURRENT_MAJOR
+        );
+        assert_eq!(
+            IndexSchemaVersion::CURRENT.minor(),
+            IndexSchemaVersion::CURRENT_MINOR
+        );
     }
 
     #[test]
@@ -591,6 +760,11 @@ mod schema_version_tests {
         let s = IndexSchemaVersion::CURRENT.to_string();
         let parsed: IndexSchemaVersion = s.parse().unwrap();
         assert_eq!(parsed, IndexSchemaVersion::CURRENT);
+    }
+
+    #[test]
+    fn current_serializes_as_schema_two_zero() {
+        assert_eq!(IndexSchemaVersion::CURRENT.to_string(), "2.0");
     }
 }
 
@@ -671,18 +845,50 @@ mod artifact_hash_tests {
 }
 
 #[cfg(test)]
+mod published_at_tests {
+    use super::*;
+    use assert_matches::assert_matches;
+    use rstest::rstest;
+
+    #[test]
+    fn valid_cargo_pubtime_format_is_accepted() {
+        let published_at = PublishedAt::try_new("2026-04-29T18:45:12Z").unwrap();
+        assert_eq!(published_at.as_str(), "2026-04-29T18:45:12Z");
+        assert_eq!(published_at.to_string(), "2026-04-29T18:45:12Z");
+    }
+
+    #[rstest]
+    #[case("2026-04-29T18:45:12.123Z")]
+    #[case("2026-04-29T13:45:12-05:00")]
+    #[case("2026-04-29T18:45:12+00:00")]
+    #[case("2026-4-29T18:45:12Z")]
+    #[case("2026-04-29t18:45:12Z")]
+    #[case("2026-04-29T18:45:12z")]
+    #[case("2026-04-29 18:45:12Z")]
+    #[case("2026-02-30T18:45:12Z")]
+    #[case("2026-04-29T24:00:00Z")]
+    fn invalid_cargo_pubtime_format_is_rejected(#[case] input: &str) {
+        assert_matches!(
+            PublishedAt::try_new(input),
+            Err(SchemaError::InvalidPublishedAt { .. })
+        );
+    }
+}
+
+#[cfg(test)]
 mod index_tests {
     use super::*;
     use assert_matches::assert_matches;
     use pretty_assertions::assert_eq;
 
     const MINIMAL: &str = r#"{
-  "index_schema_version": "1.0",
+  "index_schema_version": "2.0",
   "artifacts_url": "https://plugins.example.com/artifacts",
   "plugins": [
     {
       "name": "downsampler",
       "version": "1.2.0",
+      "published_at": "2026-04-29T18:45:12Z",
       "description": "Test plugin",
       "triggers": ["process_writes"],
       "dependencies": {
@@ -694,9 +900,66 @@ mod index_tests {
   ]
 }"#;
 
+    fn minimal_with_published_at() -> String {
+        MINIMAL.to_owned()
+    }
+
+    fn minimal_without_published_at() -> String {
+        MINIMAL.replace(
+            r#"      "published_at": "2026-04-29T18:45:12Z",
+"#,
+            "",
+        )
+    }
+
+    #[test]
+    fn parses_published_at_per_entry() {
+        let idx = Index::parse_json(&minimal_with_published_at()).unwrap();
+        assert_eq!(idx.plugins[0].published_at.as_str(), "2026-04-29T18:45:12Z");
+    }
+
+    #[test]
+    fn missing_published_at_rejected_per_entry() {
+        let errors = Index::parse_json(&minimal_without_published_at()).unwrap_err();
+        assert_eq!(errors.errors().len(), 1);
+        assert_matches!(
+            errors.errors()[0].error,
+            SchemaError::InvalidPublishedAt { .. }
+        );
+        assert_eq!(errors.errors()[0].path.as_str(), "plugins[0].published_at");
+    }
+
+    #[test]
+    fn non_string_published_at_rejected_per_entry() {
+        let src = minimal_with_published_at().replace(
+            r#""published_at": "2026-04-29T18:45:12Z""#,
+            r#""published_at": 123"#,
+        );
+        let errors = Index::parse_json(&src).unwrap_err();
+        assert_eq!(errors.errors().len(), 1);
+        assert_matches!(
+            errors.errors()[0].error,
+            SchemaError::InvalidPublishedAt { .. }
+        );
+        assert_eq!(errors.errors()[0].path.as_str(), "plugins[0].published_at");
+    }
+
+    #[test]
+    fn malformed_published_at_rejected_per_entry() {
+        let src =
+            minimal_with_published_at().replace("2026-04-29T18:45:12Z", "2026-04-29T18:45:12.123Z");
+        let errors = Index::parse_json(&src).unwrap_err();
+        assert_eq!(errors.errors().len(), 1);
+        assert_matches!(
+            errors.errors()[0].error,
+            SchemaError::InvalidPublishedAt { .. }
+        );
+        assert_eq!(errors.errors()[0].path.as_str(), "plugins[0].published_at");
+    }
+
     #[test]
     fn parses_minimal_index() {
-        let idx = Index::parse_json(MINIMAL).unwrap();
+        let idx = Index::parse_json(&minimal_with_published_at()).unwrap();
         assert_eq!(idx.plugins.len(), 1);
         assert_eq!(idx.plugins[0].name.as_str(), "downsampler");
     }
@@ -709,14 +972,14 @@ mod index_tests {
 
     #[test]
     fn yanked_true_parsed() {
-        let src = MINIMAL.replace(r#""hash":"#, r#""yanked": true, "hash":"#);
+        let src = MINIMAL.replace(r#""hash": "#, r#""yanked": true, "hash": "#);
         let idx = Index::parse_json(&src).unwrap();
         assert!(idx.plugins[0].yanked);
     }
 
     #[test]
     fn yanked_false_parsed() {
-        let src = MINIMAL.replace(r#""hash":"#, r#""yanked": false, "hash":"#);
+        let src = MINIMAL.replace(r#""hash": "#, r#""yanked": false, "hash": "#);
         let idx = Index::parse_json(&src).unwrap();
         assert!(!idx.plugins[0].yanked);
     }
@@ -724,13 +987,13 @@ mod index_tests {
     #[test]
     fn duplicate_name_version_rejected() {
         let dup = r#"{
-  "index_schema_version": "1.0",
+  "index_schema_version": "2.0",
   "artifacts_url": "https://plugins.example.com/artifacts",
   "plugins": [
-    { "name": "x", "version": "1.0.0", "description": "x", "triggers": ["process_writes"],
+    { "name": "x", "version": "1.0.0", "published_at": "2026-04-29T18:45:12Z", "description": "x", "triggers": ["process_writes"],
       "dependencies": {"database_version":">=3.0.0","python":[]},
       "hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000" },
-    { "name": "x", "version": "1.0.0", "description": "x2", "triggers": ["process_writes"],
+    { "name": "x", "version": "1.0.0", "published_at": "2026-04-29T18:45:12Z", "description": "x2", "triggers": ["process_writes"],
       "dependencies": {"database_version":">=3.0.0","python":[]},
       "hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111" }
   ]
@@ -749,13 +1012,13 @@ mod index_tests {
         // `foo-bar` and `foo_bar` share the same canonical form (`foo_bar`);
         // the second entry is rejected even though the raw strings differ.
         let json = r#"{
-  "index_schema_version": "1.0",
+  "index_schema_version": "2.0",
   "artifacts_url": "https://plugins.example.com/artifacts",
   "plugins": [
-    { "name": "foo-bar", "version": "1.0.0", "description": "x", "triggers": ["process_writes"],
+    { "name": "foo-bar", "version": "1.0.0", "published_at": "2026-04-29T18:45:12Z", "description": "x", "triggers": ["process_writes"],
       "dependencies": {"database_version":">=3.0.0","python":[]},
       "hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000" },
-    { "name": "foo_bar", "version": "1.0.0", "description": "x2", "triggers": ["process_writes"],
+    { "name": "foo_bar", "version": "1.0.0", "published_at": "2026-04-29T18:45:12Z", "description": "x2", "triggers": ["process_writes"],
       "dependencies": {"database_version":">=3.0.0","python":[]},
       "hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111" }
   ]
@@ -776,13 +1039,13 @@ mod index_tests {
     fn index_rejects_case_collision() {
         // `MyPlugin` and `myplugin` share canonical form `myplugin`.
         let json = r#"{
-  "index_schema_version": "1.0",
+  "index_schema_version": "2.0",
   "artifacts_url": "https://plugins.example.com/artifacts",
   "plugins": [
-    { "name": "MyPlugin", "version": "1.0.0", "description": "x", "triggers": ["process_writes"],
+    { "name": "MyPlugin", "version": "1.0.0", "published_at": "2026-04-29T18:45:12Z", "description": "x", "triggers": ["process_writes"],
       "dependencies": {"database_version":">=3.0.0","python":[]},
       "hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000" },
-    { "name": "myplugin", "version": "1.0.0", "description": "x2", "triggers": ["process_writes"],
+    { "name": "myplugin", "version": "1.0.0", "published_at": "2026-04-29T18:45:12Z", "description": "x2", "triggers": ["process_writes"],
       "dependencies": {"database_version":">=3.0.0","python":[]},
       "hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111" }
   ]
@@ -804,16 +1067,16 @@ mod index_tests {
         // Three entries collapse to canonical `foo_bar`; first is accepted,
         // second and third each report with their original spelling.
         let json = r#"{
-  "index_schema_version": "1.0",
+  "index_schema_version": "2.0",
   "artifacts_url": "https://plugins.example.com/artifacts",
   "plugins": [
-    { "name": "foo-bar", "version": "1.0.0", "description": "x", "triggers": ["process_writes"],
+    { "name": "foo-bar", "version": "1.0.0", "published_at": "2026-04-29T18:45:12Z", "description": "x", "triggers": ["process_writes"],
       "dependencies": {"database_version":">=3.0.0","python":[]},
       "hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000" },
-    { "name": "foo_bar", "version": "1.0.0", "description": "x2", "triggers": ["process_writes"],
+    { "name": "foo_bar", "version": "1.0.0", "published_at": "2026-04-29T18:45:12Z", "description": "x2", "triggers": ["process_writes"],
       "dependencies": {"database_version":">=3.0.0","python":[]},
       "hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111" },
-    { "name": "FOO-BAR", "version": "1.0.0", "description": "x3", "triggers": ["process_writes"],
+    { "name": "FOO-BAR", "version": "1.0.0", "published_at": "2026-04-29T18:45:12Z", "description": "x3", "triggers": ["process_writes"],
       "dependencies": {"database_version":">=3.0.0","python":[]},
       "hash": "sha256:2222222222222222222222222222222222222222222222222222222222222222" }
   ]
@@ -855,13 +1118,13 @@ mod index_tests {
         // Previously allowed; now rejected. Different spellings that canonicalize
         // equal must collide regardless of version.
         let json = r#"{
-  "index_schema_version": "1.0",
+  "index_schema_version": "2.0",
   "artifacts_url": "https://plugins.example.com/artifacts",
   "plugins": [
-    { "name": "foo-bar", "version": "1.0.0", "description": "x", "triggers": ["process_writes"],
+    { "name": "foo-bar", "version": "1.0.0", "published_at": "2026-04-29T18:45:12Z", "description": "x", "triggers": ["process_writes"],
       "dependencies": {"database_version":">=3.0.0","python":[]},
       "hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000" },
-    { "name": "foo_bar", "version": "1.0.1", "description": "x2", "triggers": ["process_writes"],
+    { "name": "foo_bar", "version": "1.0.1", "published_at": "2026-04-29T18:45:12Z", "description": "x2", "triggers": ["process_writes"],
       "dependencies": {"database_version":">=3.0.0","python":[]},
       "hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111" }
   ]
@@ -881,7 +1144,8 @@ mod index_tests {
 
     #[test]
     fn ignores_unknown_per_entry_field() {
-        let with_unknown = MINIMAL.replace(r#""hash":"#, r#""experimental_tag": "beta", "hash":"#);
+        let with_unknown =
+            MINIMAL.replace(r#""hash": "#, r#""experimental_tag": "beta", "hash": "#);
         assert!(Index::parse_json(&with_unknown).is_ok());
     }
 
@@ -898,7 +1162,7 @@ mod index_tests {
 
     #[test]
     fn invalid_homepage_scheme_rejected_per_entry() {
-        let src = MINIMAL.replace(r#""hash":"#, r#""homepage": "ftp://bad/", "hash":"#);
+        let src = MINIMAL.replace(r#""hash": "#, r#""homepage": "ftp://bad/", "hash": "#);
         let errors = Index::parse_json(&src).unwrap_err();
         assert_eq!(errors.errors().len(), 1);
         assert_matches!(
@@ -910,7 +1174,7 @@ mod index_tests {
 
     #[test]
     fn invalid_repository_scheme_rejected_per_entry() {
-        let src = MINIMAL.replace(r#""hash":"#, r#""repository": "git://bad/", "hash":"#);
+        let src = MINIMAL.replace(r#""hash": "#, r#""repository": "git://bad/", "hash": "#);
         let errors = Index::parse_json(&src).unwrap_err();
         assert_eq!(errors.errors().len(), 1);
         assert_matches!(
@@ -923,8 +1187,8 @@ mod index_tests {
     #[test]
     fn invalid_documentation_scheme_rejected_per_entry() {
         let src = MINIMAL.replace(
-            r#""hash":"#,
-            r#""documentation": "s3://bucket/docs", "hash":"#,
+            r#""hash": "#,
+            r#""documentation": "s3://bucket/docs", "hash": "#,
         );
         let errors = Index::parse_json(&src).unwrap_err();
         assert_eq!(errors.errors().len(), 1);
@@ -938,8 +1202,8 @@ mod index_tests {
     #[test]
     fn http_and_https_optional_urls_accepted() {
         let src = MINIMAL.replace(
-            r#""hash":"#,
-            r#""homepage": "http://example.com", "repository": "https://github.com/x/y", "hash":"#,
+            r#""hash": "#,
+            r#""homepage": "http://example.com", "repository": "https://github.com/x/y", "hash": "#,
         );
         assert!(Index::parse_json(&src).is_ok());
     }
@@ -962,19 +1226,19 @@ mod index_tests {
         let long_desc = "a".repeat(201);
         let json = format!(
             r#"{{
-  "index_schema_version": "1.0",
+  "index_schema_version": "2.0",
   "artifacts_url": "https://plugins.example.com/artifacts",
   "plugins": [
-    {{ "name": "alpha", "version": "1.0.0", "description": "ok", "triggers": ["process_writes"],
+    {{ "name": "alpha", "version": "1.0.0", "published_at": "2026-04-29T18:45:12Z", "description": "ok", "triggers": ["process_writes"],
        "dependencies": {{"database_version":">=3.0.0","python":[]}},
        "hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000" }},
-    {{ "name": "beta",  "version": "2.0.0", "description": "ok", "triggers": ["process_writes"],
+    {{ "name": "beta",  "version": "2.0.0", "published_at": "2026-04-29T18:45:12Z", "description": "ok", "triggers": ["process_writes"],
        "dependencies": {{"database_version":">=3.0.0","python":[]}},
        "hash": "not-a-hash" }},
-    {{ "name": "alpha", "version": "1.0.0", "description": "ok", "triggers": ["process_writes"],
+    {{ "name": "alpha", "version": "1.0.0", "published_at": "2026-04-29T18:45:12Z", "description": "ok", "triggers": ["process_writes"],
        "dependencies": {{"database_version":">=3.0.0","python":[]}},
        "hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111" }},
-    {{ "name": "gamma", "version": "3.0.0", "description": "{long_desc}", "triggers": ["process_writes"],
+    {{ "name": "gamma", "version": "3.0.0", "published_at": "2026-04-29T18:45:12Z", "description": "{long_desc}", "triggers": ["process_writes"],
        "dependencies": {{"database_version":">=3.0.0","python":[]}},
        "hash": "sha256:2222222222222222222222222222222222222222222222222222222222222222" }}
   ]
@@ -1009,6 +1273,44 @@ mod index_tests {
     }
 
     #[test]
+    fn collects_published_at_defect_with_other_entry_defects() {
+        let json = r#"{
+  "index_schema_version": "2.0",
+  "artifacts_url": "https://plugins.example.com/artifacts",
+  "plugins": [
+    { "name": "alpha", "version": "1.0.0", "published_at": "2026-04-29T18:45:12.123Z", "description": "ok", "triggers": [],
+      "dependencies": {"database_version":">=3.0.0","python":[]},
+      "hash": "not-a-hash" }
+  ]
+}"#;
+
+        let errors = Index::parse_json(json).expect_err("should fail");
+        let e = errors.errors();
+        assert_eq!(e.len(), 3);
+        assert!(
+            e.iter().any(|reported| {
+                reported.path.as_str() == "plugins[0].published_at"
+                    && matches!(reported.error, SchemaError::InvalidPublishedAt { .. })
+            }),
+            "missing InvalidPublishedAt at plugins[0].published_at: {e:?}"
+        );
+        assert!(
+            e.iter().any(|reported| {
+                reported.path.as_str() == "plugins[0].triggers"
+                    && matches!(reported.error, SchemaError::EmptyTriggers)
+            }),
+            "missing EmptyTriggers at plugins[0].triggers: {e:?}"
+        );
+        assert!(
+            e.iter().any(|reported| {
+                reported.path.as_str() == "plugins[0].hash"
+                    && matches!(reported.error, SchemaError::InvalidHash { .. })
+            }),
+            "missing InvalidHash at plugins[0].hash: {e:?}"
+        );
+    }
+
+    #[test]
     fn index_schema_version_mismatch_short_circuits() {
         let json = r#"{
   "index_schema_version": "99.0",
@@ -1022,6 +1324,28 @@ mod index_tests {
             SchemaError::UnsupportedIndexMajor { .. }
         );
     }
+
+    #[test]
+    fn old_non_empty_index_without_published_at_is_rejected_by_schema_version() {
+        let json = r#"{
+  "index_schema_version": "1.0",
+  "artifacts_url": "https://plugins.example.com/artifacts",
+  "plugins": [
+    { "name": "alpha", "version": "1.0.0", "description": "ok", "triggers": ["process_writes"],
+      "dependencies": {"database_version":">=3.0.0","python":[]},
+      "hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000" }
+  ]
+}"#;
+
+        let errors = Index::parse_json(json).expect_err("old schema should fail");
+        assert_eq!(errors.errors().len(), 1);
+        assert_eq!(errors.errors()[0].path.as_str(), "index_schema_version");
+        assert_matches!(
+            errors.errors()[0].error,
+            SchemaError::UnsupportedIndexMajor { ref found, supported }
+                if found == "1.0" && supported == 2
+        );
+    }
 }
 
 #[cfg(test)]
@@ -1033,6 +1357,7 @@ mod canonical_serialization_tests {
         IndexEntry {
             name: name.parse().unwrap(),
             version,
+            published_at: PublishedAt::try_new("2026-04-29T18:45:12Z").unwrap(),
             description: Description::try_new("desc").unwrap(),
             triggers: vec![TriggerType::ProcessWrites],
             homepage: None,
@@ -1053,7 +1378,7 @@ mod canonical_serialization_tests {
     #[test]
     fn plugins_sorted_by_name_then_version() {
         let idx = Index {
-            index_schema_version: IndexSchemaVersion::new(1, 0),
+            index_schema_version: IndexSchemaVersion::CURRENT,
             artifacts_url: ArtifactsUrl::try_new("https://example.com/artifacts").unwrap(),
             plugins: vec![
                 make_entry("zebra", semver::Version::new(1, 0, 0)),
@@ -1072,7 +1397,7 @@ mod canonical_serialization_tests {
     #[test]
     fn two_serialize_calls_produce_byte_identical() {
         let idx = Index {
-            index_schema_version: IndexSchemaVersion::new(1, 0),
+            index_schema_version: IndexSchemaVersion::CURRENT,
             artifacts_url: ArtifactsUrl::try_new("https://example.com/artifacts").unwrap(),
             plugins: vec![make_entry("x", semver::Version::new(1, 0, 0))],
         };
@@ -1084,7 +1409,7 @@ mod canonical_serialization_tests {
     #[test]
     fn ends_with_newline() {
         let idx = Index {
-            index_schema_version: IndexSchemaVersion::new(1, 0),
+            index_schema_version: IndexSchemaVersion::CURRENT,
             artifacts_url: ArtifactsUrl::try_new("https://example.com/artifacts").unwrap(),
             plugins: vec![],
         };
@@ -1095,7 +1420,7 @@ mod canonical_serialization_tests {
     #[test]
     fn two_space_indent() {
         let idx = Index {
-            index_schema_version: IndexSchemaVersion::new(1, 0),
+            index_schema_version: IndexSchemaVersion::CURRENT,
             artifacts_url: ArtifactsUrl::try_new("https://example.com/artifacts").unwrap(),
             plugins: vec![make_entry("x", semver::Version::new(1, 0, 0))],
         };
@@ -1109,7 +1434,7 @@ mod canonical_serialization_tests {
     #[test]
     fn snapshot_locks_full_shape() {
         let idx = Index {
-            index_schema_version: IndexSchemaVersion::new(1, 0),
+            index_schema_version: IndexSchemaVersion::CURRENT,
             artifacts_url: ArtifactsUrl::try_new("https://example.com/artifacts").unwrap(),
             plugins: vec![make_entry("alpha", semver::Version::new(1, 0, 0)), {
                 let mut e = make_entry("beta", semver::Version::new(2, 1, 0));
@@ -1123,22 +1448,67 @@ mod canonical_serialization_tests {
     #[test]
     fn entry_field_order_is_canonical() {
         let idx = Index {
-            index_schema_version: IndexSchemaVersion::new(1, 0),
+            index_schema_version: IndexSchemaVersion::CURRENT,
             artifacts_url: ArtifactsUrl::try_new("https://example.com/artifacts").unwrap(),
             plugins: vec![make_entry("x", semver::Version::new(1, 0, 0))],
         };
         let out = idx.to_canonical_json().unwrap();
         let name_pos = out.find("\"name\"").unwrap();
         let version_pos = out.find("\"version\"").unwrap();
+        let published_at_pos = out.find("\"published_at\"").unwrap();
         let description_pos = out.find("\"description\"").unwrap();
         let triggers_pos = out.find("\"triggers\"").unwrap();
         let dependencies_pos = out.find("\"dependencies\"").unwrap();
         let hash_pos = out.find("\"hash\"").unwrap();
         assert!(name_pos < version_pos);
-        assert!(version_pos < description_pos);
+        assert!(version_pos < published_at_pos);
+        assert!(published_at_pos < description_pos);
         assert!(description_pos < triggers_pos);
         assert!(triggers_pos < dependencies_pos);
         assert!(dependencies_pos < hash_pos);
+    }
+
+    #[test]
+    fn published_at_is_preserved_exactly_in_canonical_json() {
+        let mut entry = make_entry("x", semver::Version::new(1, 0, 0));
+        entry.published_at = PublishedAt::try_new("2027-01-02T03:04:05Z").unwrap();
+        let idx = Index {
+            index_schema_version: IndexSchemaVersion::CURRENT,
+            artifacts_url: ArtifactsUrl::try_new("https://example.com/artifacts").unwrap(),
+            plugins: vec![entry],
+        };
+        let out = idx.to_canonical_json().unwrap();
+        assert!(out.contains(r#""published_at": "2027-01-02T03:04:05Z""#));
+    }
+
+    #[test]
+    fn published_at_does_not_affect_sort() {
+        let mut alpha = make_entry("alpha", semver::Version::new(1, 0, 0));
+        alpha.published_at = PublishedAt::try_new("2027-01-02T03:04:05Z").unwrap();
+        let mut beta = make_entry("beta", semver::Version::new(1, 0, 0));
+        beta.published_at = PublishedAt::try_new("2026-04-29T18:45:12Z").unwrap();
+        let idx = Index {
+            index_schema_version: IndexSchemaVersion::CURRENT,
+            artifacts_url: ArtifactsUrl::try_new("https://example.com/artifacts").unwrap(),
+            plugins: vec![beta, alpha],
+        };
+        let out = idx.to_canonical_json().unwrap();
+        let alpha_pos = out.find("\"alpha\"").unwrap();
+        let beta_pos = out.find("\"beta\"").unwrap();
+        assert!(alpha_pos < beta_pos, "name sort must ignore published_at");
+    }
+
+    #[test]
+    fn parse_canonical_round_trip_is_idempotent() {
+        let idx = Index {
+            index_schema_version: IndexSchemaVersion::CURRENT,
+            artifacts_url: ArtifactsUrl::try_new("https://example.com/artifacts").unwrap(),
+            plugins: vec![make_entry("x", semver::Version::new(1, 0, 0))],
+        };
+        let first = idx.to_canonical_json().unwrap();
+        let reparsed = Index::parse_json(&first).unwrap();
+        let second = reparsed.to_canonical_json().unwrap();
+        assert_eq!(first, second);
     }
 
     #[test]
@@ -1158,12 +1528,12 @@ mod canonical_serialization_tests {
         };
 
         let idx_a = Index {
-            index_schema_version: IndexSchemaVersion::new(1, 0),
+            index_schema_version: IndexSchemaVersion::CURRENT,
             artifacts_url: ArtifactsUrl::try_new("https://example.com/artifacts").unwrap(),
             plugins: vec![entry_a],
         };
         let idx_b = Index {
-            index_schema_version: IndexSchemaVersion::new(1, 0),
+            index_schema_version: IndexSchemaVersion::CURRENT,
             artifacts_url: ArtifactsUrl::try_new("https://example.com/artifacts").unwrap(),
             plugins: vec![entry_b],
         };
@@ -1178,7 +1548,7 @@ mod canonical_serialization_tests {
         let mut yanked_alpha = make_entry("alpha", semver::Version::new(1, 0, 0));
         yanked_alpha.yanked = true;
         let idx = Index {
-            index_schema_version: IndexSchemaVersion::new(1, 0),
+            index_schema_version: IndexSchemaVersion::CURRENT,
             artifacts_url: ArtifactsUrl::try_new("https://example.com/artifacts").unwrap(),
             plugins: vec![
                 make_entry("beta", semver::Version::new(1, 0, 0)),
@@ -1202,7 +1572,7 @@ mod canonical_serialization_tests {
         let prerelease = make_entry("p", "1.0.0-alpha".parse().unwrap());
         let release = make_entry("p", semver::Version::new(1, 0, 0));
         let idx = Index {
-            index_schema_version: IndexSchemaVersion::new(1, 0),
+            index_schema_version: IndexSchemaVersion::CURRENT,
             artifacts_url: ArtifactsUrl::try_new("https://example.com/artifacts").unwrap(),
             // Reverse-of-expected order forces the sort.
             plugins: vec![release, prerelease],
@@ -1231,7 +1601,7 @@ mod canonical_serialization_tests {
         assert_ne!(v_a.cmp(&v_b), std::cmp::Ordering::Equal);
 
         let idx = Index {
-            index_schema_version: IndexSchemaVersion::new(1, 0),
+            index_schema_version: IndexSchemaVersion::CURRENT,
             artifacts_url: ArtifactsUrl::try_new("https://example.com/artifacts").unwrap(),
             // Equal-precedence entries preserve input order via stable sort.
             plugins: vec![make_entry("p", v_a.clone()), make_entry("p", v_b.clone())],
@@ -1256,7 +1626,7 @@ mod insert_tests {
 
     fn empty_index() -> Index {
         Index {
-            index_schema_version: IndexSchemaVersion::new(1, 0),
+            index_schema_version: IndexSchemaVersion::CURRENT,
             artifacts_url: ArtifactsUrl::try_new("https://example.com/artifacts").unwrap(),
             plugins: vec![],
         }
@@ -1266,6 +1636,7 @@ mod insert_tests {
         IndexEntry {
             name: name.parse().unwrap(),
             version,
+            published_at: PublishedAt::try_new("2026-04-29T18:45:12Z").unwrap(),
             description: Description::try_new("desc").unwrap(),
             triggers: vec![TriggerType::ProcessWrites],
             homepage: None,
@@ -1492,6 +1863,30 @@ mod from_manifest_tests {
         let h = sample_hash();
         let entry = IndexEntry::from_manifest(sample_manifest(), h.clone());
         assert_eq!(entry.hash, h);
+    }
+
+    #[test]
+    fn copies_injected_published_at() {
+        let published_at = PublishedAt::try_new("2027-01-02T03:04:05Z").unwrap();
+        let entry = IndexEntry::from_manifest_with_published_at(
+            sample_manifest(),
+            sample_hash(),
+            published_at.clone(),
+        );
+        assert_eq!(entry.published_at, published_at);
+    }
+
+    #[test]
+    fn from_manifest_assigns_current_utc_published_at() {
+        let before = PublishedAt::now_utc();
+        let entry = IndexEntry::from_manifest(sample_manifest(), sample_hash());
+        let after = PublishedAt::now_utc();
+        assert!(entry.published_at >= before);
+        assert!(entry.published_at <= after);
+        assert_eq!(entry.published_at.as_str().len(), PublishedAt::LEN);
+        assert!(entry.published_at.as_str().ends_with('Z'));
+        assert!(!entry.published_at.as_str().contains('.'));
+        assert!(!entry.published_at.as_str().contains('+'));
     }
 
     #[test]

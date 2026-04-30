@@ -53,6 +53,17 @@ fn read_yanked_flag(index_path: &Path, name: &str, version: &str) -> bool {
     entry["yanked"].as_bool().unwrap_or(false)
 }
 
+fn read_published_at(index_path: &Path, name: &str, version: &str) -> String {
+    let raw = std::fs::read_to_string(index_path).unwrap();
+    let v: serde_json::Value = serde_json::from_str(&raw).unwrap();
+    let entries = v["plugins"].as_array().unwrap();
+    let entry = entries
+        .iter()
+        .find(|e| e["name"] == name && e["version"] == version)
+        .expect("entry must exist in derived index");
+    entry["published_at"].as_str().unwrap().to_owned()
+}
+
 #[test]
 fn yank_happy_path_sets_flag_and_emits_transitioned() {
     let td = tempfile::tempdir().unwrap();
@@ -76,10 +87,16 @@ fn yank_happy_path_sets_flag_and_emits_transitioned() {
     assert_eq!(envelope["result"]["outcome"], "yanked");
     assert_eq!(envelope["result"]["name"], "downsampler");
     assert_eq!(envelope["result"]["version"], "1.2.0");
+    assert_eq!(envelope["result"]["published_at"], "2026-04-29T18:45:12Z");
 
     assert!(
         read_yanked_flag(&out.join("index.json"), "downsampler", "1.2.0"),
         "derived index must reflect yanked=true"
+    );
+    assert_eq!(
+        read_published_at(&out.join("index.json"), "downsampler", "1.2.0"),
+        "2026-04-29T18:45:12Z",
+        "derived index must preserve published_at"
     );
 
     redact_index_path(&mut envelope);
@@ -112,10 +129,16 @@ fn yank_undo_clears_flag() {
     let mut envelope: serde_json::Value = serde_json::from_str(&stdout).unwrap();
     assert_eq!(envelope["status"], "ok");
     assert_eq!(envelope["result"]["outcome"], "unyanked");
+    assert_eq!(envelope["result"]["published_at"], "2026-04-29T18:45:12Z");
 
     assert!(
         !read_yanked_flag(&out.join("index.json"), "downsampler", "1.2.0"),
         "derived index must reflect yanked=false after --undo"
+    );
+    assert_eq!(
+        read_published_at(&out.join("index.json"), "downsampler", "1.2.0"),
+        "2026-04-29T18:45:12Z",
+        "derived index must preserve published_at after --undo"
     );
 
     redact_index_path(&mut envelope);
@@ -180,6 +203,36 @@ fn yank_missing_entry_exits_one() {
         stdout.contains("not present"),
         "output should reference the missing entry, got: {stdout}"
     );
+}
+
+#[test]
+fn yank_invalid_published_at_in_input_index_fails_before_output() {
+    let td = tempfile::tempdir().unwrap();
+    let index_dir = td.path().join("reg");
+    std::fs::create_dir_all(&index_dir).unwrap();
+    let index_path = index_dir.join("index.json");
+    let bad_index = SEEDED_INDEX.replace("2026-04-29T18:45:12Z", "2026-04-29T18:45:12.123Z");
+    write_index(&index_path, &bad_index);
+    let out = td.path().join("build");
+
+    let assert = spawn_yank(
+        "downsampler@1.2.0",
+        &index_path,
+        &out,
+        &["--output", "json"],
+    )
+    .failure()
+    .code(1);
+
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
+    let envelope: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(envelope["status"], "error");
+    assert_eq!(envelope["error"]["code"], "yank::index_parse_failed");
+    assert_eq!(
+        envelope["error"]["diagnostics"][0]["field"],
+        "plugins[0].published_at"
+    );
+    assert!(!out.join("index.json").exists(), "no output on failure");
 }
 
 /// Malformed `<name>@<version>` → exit 2 (usage error). Clap's

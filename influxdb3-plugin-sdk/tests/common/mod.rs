@@ -37,7 +37,7 @@ pub(crate) fn minimal_plugin_dir(base: &Path, name: &str) -> PathBuf {
 
 pub(crate) fn empty_index() -> Index {
     Index {
-        index_schema_version: IndexSchemaVersion::new(1, 0),
+        index_schema_version: IndexSchemaVersion::CURRENT,
         artifacts_url: ArtifactsUrl::try_new("https://plugins.example.com/artifacts").unwrap(),
         plugins: vec![],
     }

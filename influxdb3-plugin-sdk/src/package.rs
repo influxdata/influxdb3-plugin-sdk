@@ -79,7 +79,7 @@ pub fn package_plugin(plugin_dir: &Path, input_index: Index) -> Result<PackageOu
 #[cfg(test)]
 mod tests {
     use super::*;
-    use influxdb3_plugin_schemas::{ArtifactsUrl, IndexSchemaVersion};
+    use influxdb3_plugin_schemas::{ArtifactsUrl, IndexSchemaVersion, PublishedAt};
     use std::fs;
 
     fn write_valid_plugin(dir: &Path) {
@@ -106,7 +106,7 @@ mod tests {
 
     fn empty_index() -> Index {
         Index {
-            index_schema_version: IndexSchemaVersion::new(1, 0),
+            index_schema_version: IndexSchemaVersion::CURRENT,
             artifacts_url: ArtifactsUrl::try_new("https://example.com/artifacts").unwrap(),
             plugins: vec![],
         }
@@ -130,6 +130,31 @@ mod tests {
             "entry version should match manifest"
         );
         assert_eq!(out.new_entry.hash, out.hash, "entry hash matches computed");
+        assert_eq!(
+            out.derived_index.plugins[0].published_at, out.new_entry.published_at,
+            "new_entry and derived index must expose the same publication timestamp"
+        );
+    }
+
+    #[test]
+    fn happy_path_assigns_current_utc_published_at() {
+        let td = tempfile::tempdir().unwrap();
+        let dir = td.path().join("downsampler");
+        write_valid_plugin(&dir);
+
+        let before = PublishedAt::now_utc();
+        let out = package_plugin(&dir, empty_index()).unwrap();
+        let after = PublishedAt::now_utc();
+
+        assert!(out.new_entry.published_at >= before);
+        assert!(out.new_entry.published_at <= after);
+        assert_eq!(
+            out.new_entry.published_at.as_str().len(),
+            "YYYY-MM-DDTHH:MM:SSZ".len()
+        );
+        assert!(out.new_entry.published_at.as_str().ends_with('Z'));
+        assert!(!out.new_entry.published_at.as_str().contains('.'));
+        assert!(!out.new_entry.published_at.as_str().contains('+'));
     }
 
     #[test]

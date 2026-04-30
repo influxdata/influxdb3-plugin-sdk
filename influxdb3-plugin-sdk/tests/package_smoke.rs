@@ -10,7 +10,7 @@
 
 #![allow(unused_crate_dependencies)]
 
-use influxdb3_plugin_schemas::{Index, TriggerType};
+use influxdb3_plugin_schemas::{Index, PublishedAt, TriggerType};
 use influxdb3_plugin_sdk::package::package_plugin;
 use influxdb3_plugin_sdk::scaffold;
 use std::path::{Path, PathBuf};
@@ -38,7 +38,27 @@ fn happy_path_against_valid_fixture() {
     assert_eq!(entry.name.as_str(), "valid-plugin");
     assert_eq!(entry.version, semver::Version::new(0, 1, 0));
     assert_eq!(entry.hash, out.hash);
+    assert_eq!(entry.published_at, out.new_entry.published_at);
     assert!(!entry.yanked);
+}
+
+#[test]
+fn package_assigns_current_utc_published_at() {
+    let plugin_dir = fixtures().join("valid_plugin");
+
+    let before = PublishedAt::now_utc();
+    let out = package_plugin(&plugin_dir, empty_index()).expect("package should succeed");
+    let after = PublishedAt::now_utc();
+
+    assert!(out.new_entry.published_at >= before);
+    assert!(out.new_entry.published_at <= after);
+    assert_eq!(
+        out.new_entry.published_at.as_str().len(),
+        "YYYY-MM-DDTHH:MM:SSZ".len()
+    );
+    assert!(out.new_entry.published_at.as_str().ends_with('Z'));
+    assert!(!out.new_entry.published_at.as_str().contains('.'));
+    assert!(!out.new_entry.published_at.as_str().contains('+'));
 }
 
 #[test]

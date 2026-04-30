@@ -9,6 +9,7 @@
 
 #![allow(unused_crate_dependencies)]
 
+use influxdb3_plugin_schemas::{Index, PublishedAt};
 use rstest::rstest;
 use std::path::{Path, PathBuf};
 
@@ -53,14 +54,14 @@ fn package_happy_path_writes_artifact_and_derived_index() {
     assert!(out_dir.join("index.json").exists());
 
     // Derived index round-trips via Index::parse_json + carries the new entry.
-    let derived: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(out_dir.join("index.json")).unwrap())
-            .unwrap();
-    let plugins = derived["plugins"].as_array().unwrap();
-    assert_eq!(plugins.len(), 1);
-    assert_eq!(plugins[0]["name"], "downsampler");
-    assert_eq!(plugins[0]["version"], "1.2.0");
-    assert!(plugins[0]["hash"].as_str().unwrap().starts_with("sha256:"));
+    let derived =
+        Index::parse_json(&std::fs::read_to_string(out_dir.join("index.json")).unwrap()).unwrap();
+    assert_eq!(derived.plugins.len(), 1);
+    let plugin = &derived.plugins[0];
+    assert_eq!(plugin.name.as_str(), "downsampler");
+    assert_eq!(plugin.version.to_string(), "1.2.0");
+    PublishedAt::try_new(plugin.published_at.as_str()).unwrap();
+    assert!(plugin.hash.as_str().starts_with("sha256:"));
 }
 
 /// The input `--index` file's bytes are byte-identical pre/post.
@@ -98,23 +99,23 @@ fn package_rejects_duplicate_name_version() {
     // Seed two prior versions of `downsampler` plus an unrelated entry
     // to confirm the payload only enumerates `downsampler`'s versions.
     let preexisting = serde_json::json!({
-        "index_schema_version": "1.0",
+        "index_schema_version": "2.0",
         "artifacts_url": "https://plugins.example.com/artifacts",
         "plugins": [
             {
-                "name": "downsampler", "version": "1.0.0",
+                "name": "downsampler", "version": "1.0.0", "published_at": "2026-04-29T18:45:12Z",
                 "description": "v1.0", "triggers": ["process_writes"],
                 "dependencies": { "database_version": ">=3.0.0", "python": [] },
                 "hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
             },
             {
-                "name": "downsampler", "version": "1.2.0",
+                "name": "downsampler", "version": "1.2.0", "published_at": "2026-04-30T00:00:00Z",
                 "description": "v1.2", "triggers": ["process_writes"],
                 "dependencies": { "database_version": ">=3.0.0", "python": [] },
                 "hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
             },
             {
-                "name": "other", "version": "9.9.9",
+                "name": "other", "version": "9.9.9", "published_at": "2027-01-02T03:04:05Z",
                 "description": "unrelated", "triggers": ["process_writes"],
                 "dependencies": { "database_version": ">=3.0.0", "python": [] },
                 "hash": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
@@ -244,11 +245,11 @@ database_version = ">=3.0.0"
 /// `(name, version)`.
 fn seeded_index_with(name: &str, version: &str) -> String {
     serde_json::to_string_pretty(&serde_json::json!({
-        "index_schema_version": "1.0",
+        "index_schema_version": "2.0",
         "artifacts_url": "https://plugins.example.com/artifacts",
         "plugins": [
             {
-                "name": name, "version": version,
+                "name": name, "version": version, "published_at": "2026-04-29T18:45:12Z",
                 "description": "seed", "triggers": ["process_writes"],
                 "dependencies": { "database_version": ">=3.0.0", "python": [] },
                 "hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
@@ -347,6 +348,16 @@ fn package_accepts_different_versions_of_same_canonical_name() {
     spawn_package(&plugin_dir, &index_path, &out_dir, &[]).success();
     assert!(out_dir.join("my_plugin-1.0.1.tar.gz").exists());
     assert!(out_dir.join("index.json").exists());
+    let derived: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(out_dir.join("index.json")).unwrap())
+            .unwrap();
+    let seeded = derived["plugins"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["version"] == "1.0.0")
+        .expect("seeded entry preserved");
+    assert_eq!(seeded["published_at"], "2026-04-29T18:45:12Z");
 }
 
 /// Input/output non-overlap: every equivalence form for
@@ -458,6 +469,34 @@ fn package_failure_in_json_mode_emits_error_envelope() {
     );
 }
 
+#[test]
+fn package_invalid_published_at_in_input_index_fails_before_outputs() {
+    let td = tempfile::tempdir().unwrap();
+    let plugin_dir = td.path().join("p");
+    write_valid_plugin(&plugin_dir);
+    let index_dir = td.path().join("reg");
+    std::fs::create_dir_all(&index_dir).unwrap();
+    let index_path = index_dir.join("index.json");
+    let bad_index = SEEDED_INDEX.replace("2026-04-29T18:45:12Z", "2026-04-29T18:45:12.123Z");
+    std::fs::write(&index_path, bad_index).unwrap();
+    let out_dir = td.path().join("build");
+
+    let assert = spawn_package(&plugin_dir, &index_path, &out_dir, &["--output", "json"])
+        .failure()
+        .code(1);
+
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
+    let envelope: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(envelope["status"], "error");
+    assert_eq!(envelope["error"]["code"], "package::index_parse_failed");
+    assert_eq!(
+        envelope["error"]["diagnostics"][0]["field"],
+        "plugins[0].published_at"
+    );
+    assert!(!out_dir.join("index.json").exists());
+    assert!(!out_dir.join("downsampler-1.2.0.tar.gz").exists());
+}
+
 /// JSON success snapshot — strip the per-machine paths so the snapshot
 /// is reproducible. Output is now an envelope:
 /// `{"status":"ok","result":{...PackageOutput...}}`
@@ -497,6 +536,15 @@ fn package_json_success_snapshot() {
         "hash format unexpected: {hash}"
     );
     result.insert("hash".into(), "sha256:<64 hex>".into());
+    let published_at = result["new_entry_published_at"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    PublishedAt::try_new(&published_at).unwrap();
+    result.insert(
+        "new_entry_published_at".into(),
+        "2026-04-29T18:45:12Z".into(),
+    );
 
     insta::assert_json_snapshot!("package_success", envelope);
 }

@@ -1,5 +1,6 @@
 ---
 source: influxdb3-plugin-cli/tests/package_smoke.rs
+assertion_line: 523
 expression: envelope
 ---
 {
@@ -8,6 +9,7 @@ expression: envelope
     "hash": "sha256:<64 hex>",
     "index_path": "<TMPDIR>/build/index.json",
     "new_entry_name": "downsampler",
+    "new_entry_published_at": "2026-04-29T18:45:12Z",
     "new_entry_version": "1.2.0"
   },
   "status": "ok"

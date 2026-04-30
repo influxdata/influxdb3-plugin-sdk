@@ -82,11 +82,11 @@ fn index_scaffold_emits_current_index_schema_version() {
 
     let raw = fs::read_to_string(dir.join("index.json")).unwrap();
     let idx = Index::parse_json(&raw).expect("scaffolded index must parse");
-    assert_eq!(idx.index_schema_version.major(), 1, "schema major");
+    assert_eq!(idx.index_schema_version.major(), 2, "schema major");
     assert_eq!(
         idx.index_schema_version.minor(),
-        1,
-        "schema minor: current = 1.1"
+        0,
+        "schema minor: current = 2.0"
     );
 }
 

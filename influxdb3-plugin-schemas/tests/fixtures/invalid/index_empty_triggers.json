@@ -1,10 +1,11 @@
 {
-  "index_schema_version": "1.0",
+  "index_schema_version": "2.0",
   "artifacts_url": "https://plugins.example.com/artifacts",
   "plugins": [
     {
       "name": "no-triggers",
       "version": "0.1.0",
+      "published_at": "2026-04-29T18:45:12Z",
       "description": "Per-entry triggers array is empty; rejected by Index::validate.",
       "triggers": [],
       "dependencies": {

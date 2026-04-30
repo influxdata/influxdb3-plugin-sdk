@@ -27,7 +27,7 @@
 
 use influxdb3_plugin_schemas::{
     ArtifactHash, ArtifactsUrl, Dependencies, Description, Index, IndexEntry, IndexSchemaVersion,
-    PluginName, TriggerType,
+    PluginName, PublishedAt, TriggerType,
 };
 use proptest::prelude::*;
 use proptest::test_runner::{Config as ProptestConfig, RngAlgorithm};
@@ -49,6 +49,7 @@ fn arb_entry() -> impl Strategy<Value = IndexEntry> {
     (arb_name(), arb_version(), any::<bool>()).prop_map(|(name, version, yanked)| IndexEntry {
         name,
         version,
+        published_at: PublishedAt::try_new("2026-04-29T18:45:12Z").unwrap(),
         description: Description::try_new("desc").unwrap(),
         triggers: vec![TriggerType::ProcessWrites],
         homepage: None,
@@ -68,7 +69,7 @@ fn arb_entry() -> impl Strategy<Value = IndexEntry> {
 
 fn arb_index() -> impl Strategy<Value = Index> {
     proptest::collection::vec(arb_entry(), 0..=8).prop_map(|plugins| Index {
-        index_schema_version: IndexSchemaVersion::new(1, 0),
+        index_schema_version: IndexSchemaVersion::CURRENT,
         artifacts_url: ArtifactsUrl::try_new("https://example.com/artifacts").unwrap(),
         plugins,
     })

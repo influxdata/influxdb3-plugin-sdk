@@ -1,10 +1,11 @@
 ---
 source: influxdb3-plugin-schemas/tests/parse_fixtures.rs
+assertion_line: 63
 expression: index
 ---
 Index {
     index_schema_version: IndexSchemaVersion {
-        major: 1,
+        major: 2,
         minor: 0,
     },
     artifacts_url: ArtifactsUrl(
@@ -34,6 +35,9 @@ Index {
                 minor: 2,
                 patch: 0,
             },
+            published_at: PublishedAt(
+                "2026-04-29T18:45:12Z",
+            ),
             description: Description(
                 "Notify an HTTP endpoint on every WAL commit.",
             ),

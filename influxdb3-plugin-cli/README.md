@@ -45,8 +45,9 @@ influxdb3-plugin validate ./my-plugin --index ./registry/index.json
 
 ### `package [plugin-dir]`
 
-Validate, archive, hash, and emit a derived index entry. Writes
-`<out>/<name>-<version>.tar.gz` and `<out>/index.json`. The input
+Validate, archive, hash, and emit a derived index entry with current UTC
+`published_at`. Writes `<out>/<name>-<version>.tar.gz` and
+`<out>/index.json`. The input
 `--index` is read-only (Spec 2 § S2-11); `--out` must NOT resolve to
 the directory containing `--index` (S2-12).
 
@@ -56,9 +57,10 @@ influxdb3-plugin package ./my-plugin --index ./registry/index.json --out ./build
 
 ### `yank <name>@<version>`
 
-Toggle the `yanked` flag on an existing index entry. Idempotent per
-Spec 2: re-yanking already-yanked (or `--undo`-ing not-yanked) is a
-successful no-op with an informational marker.
+Toggle the `yanked` flag on an existing index entry while preserving its
+original `published_at`. Idempotent per Spec 2: re-yanking already-yanked
+(or `--undo`-ing not-yanked) is a successful no-op with an informational
+marker.
 
 ```bash
 influxdb3-plugin yank downsampler@1.2.0 --index ./registry/index.json --out ./build

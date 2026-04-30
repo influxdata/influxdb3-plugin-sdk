@@ -22,7 +22,7 @@ mod raw;
 
 pub use error::{IndexInsertError, ReportedError, SchemaError, SchemaErrors};
 pub use identity::{PluginId, PluginName};
-pub use index::{ArtifactHash, ArtifactsUrl, Index, IndexEntry, IndexSchemaVersion};
+pub use index::{ArtifactHash, ArtifactsUrl, Index, IndexEntry, IndexSchemaVersion, PublishedAt};
 pub use index_query::{
     IndexInfo, IndexInfoQuery, IndexInfoResult, IndexSearchHit, IndexSearchQuery,
     IndexSearchResult, IndexVersionVisibility, IndexVisibilityReason,

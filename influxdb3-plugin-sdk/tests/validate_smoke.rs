@@ -120,18 +120,19 @@ fn bad_python_syntax_reports_python_parse() {
 fn validate_with_index_reports_name_version_conflict() {
     use influxdb3_plugin_schemas::{
         ArtifactHash, ArtifactsUrl, Dependencies, Description, Index, IndexEntry,
-        IndexSchemaVersion, TriggerType,
+        IndexSchemaVersion, PublishedAt, TriggerType,
     };
 
     let plugin_dir = fixtures().join("valid_plugin");
     // valid_plugin's manifest declares name="valid-plugin", version="0.1.0".
     // Construct an index that already contains that (name, version).
     let index = Index {
-        index_schema_version: IndexSchemaVersion::new(1, 0),
+        index_schema_version: IndexSchemaVersion::CURRENT,
         artifacts_url: ArtifactsUrl::try_new("https://example.com/artifacts").unwrap(),
         plugins: vec![IndexEntry {
             name: "valid-plugin".parse().unwrap(),
             version: semver::Version::new(0, 1, 0),
+            published_at: PublishedAt::try_new("2026-04-29T18:45:12Z").unwrap(),
             description: Description::try_new("preexisting").unwrap(),
             triggers: vec![TriggerType::ProcessWrites],
             homepage: None,

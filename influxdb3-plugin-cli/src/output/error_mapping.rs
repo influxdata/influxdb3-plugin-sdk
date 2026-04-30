@@ -166,6 +166,9 @@ pub(crate) fn schema_error_details(err: &SchemaError) -> serde_json::Value {
         SE::InvalidHash { value } => {
             serde_json::json!({ "schema_variant": variant, "value": value })
         }
+        SE::InvalidPublishedAt { value } => {
+            serde_json::json!({ "schema_variant": variant, "value": value })
+        }
         SE::DuplicateIndexEntry { name, version } => {
             serde_json::json!({ "schema_variant": variant, "name": name, "version": version })
         }
@@ -770,6 +773,9 @@ mod tests {
             SchemaError::InvalidHash {
                 value: "notahash".into(),
             },
+            SchemaError::InvalidPublishedAt {
+                value: "2026-04-29T18:45:12.123Z".into(),
+            },
             SchemaError::DuplicateIndexEntry {
                 name: "dup".into(),
                 version: "1.0.0".into(),
@@ -784,8 +790,8 @@ mod tests {
                 supported: 1,
             },
             SchemaError::UnsupportedIndexMajor {
-                found: "2.0".into(),
-                supported: 1,
+                found: "3.0".into(),
+                supported: 2,
             },
             SchemaError::MalformedSchemaVersion {
                 value: "abc".into(),
@@ -803,8 +809,8 @@ mod tests {
 
         assert_eq!(
             all_schema_errors.len(),
-            22,
-            "expected 22 SchemaError variants"
+            23,
+            "expected 23 SchemaError variants"
         );
 
         for se in &all_schema_errors {

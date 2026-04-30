@@ -1,11 +1,9 @@
 //! Crate-private raw deserialization types for two-phase parsing.
 //!
-//! Phase 1 accepts any document that matches the *shape* (field presence and
-//! types). Phase 2 runs structured validation (name regex, SemVer, URL scheme,
-//! PEP 508, etc.) over the raw values and collects errors with field-path
-//! context into `SchemaErrors` — this is what lets a parse report every defect
-//! at once instead of stopping at the first. See `Manifest::parse_toml` and
-//! `Index::parse_json`.
+//! Phase 1 accepts documents with the expected container shape and raw values.
+//! Phase 2 enforces required fields, precise scalar types, and semantic
+//! validation (name regex, SemVer, URL scheme, PEP 508, etc.) while collecting
+//! field-path-aware errors. See `Manifest::parse_toml` and `Index::parse_json`.
 //!
 #[derive(Debug, serde::Deserialize)]
 pub(crate) struct RawManifest {
@@ -46,6 +44,8 @@ pub(crate) struct RawIndex {
 pub(crate) struct RawIndexEntry {
     pub name: String,
     pub version: String,
+    #[serde(default)]
+    pub published_at: Option<serde_json::Value>,
     pub description: String,
     pub triggers: Vec<String>,
     #[serde(default)]

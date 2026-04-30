@@ -13,6 +13,7 @@ The crate exposes three core types plus their supporting newtypes:
 
 - `Manifest` — parsed `manifest.toml` with `PluginMetadata` and `Dependencies`
 - `Index` / `IndexEntry` — parsed `index.json` with canonical serialization
+  and required per-version `PublishedAt` publication timestamps
 - `PluginId` — the `(source, name, version)` identity tuple
 
 `Manifest::parse_toml` and `Index::parse_json` perform two-phase parsing:
@@ -94,6 +95,19 @@ decision lands or a deviation is reconciled.
 - **Tests:** new inline tests in `src/index.rs` for empty triggers,
   invalid URL schemes, and unknown top-level field tolerance. New invalid
   fixtures under `tests/fixtures/invalid/`.
+- **Remaining gaps:** none.
+
+### Published plugin-version timestamps
+
+- **Approved rule:** every published plugin-version index entry carries a
+  required `published_at` value matching Cargo registry-index `pubtime`:
+  `YYYY-MM-DDTHH:MM:SSZ` in UTC, with no offsets or fractional seconds.
+- **Code:** `PublishedAt` validates and serializes the timestamp, and
+  `IndexEntry` exposes it directly. `Index::parse_json` reports missing,
+  non-string, or malformed values at `plugins[N].published_at`.
+- **Tests:** inline tests in `src/index.rs`, fixture coverage under
+  `tests/fixtures/`, and query tests that ensure search and info results
+  expose the selected version's publication timestamp.
 - **Remaining gaps:** none.
 
 ### Error policy for invalid parsed fields

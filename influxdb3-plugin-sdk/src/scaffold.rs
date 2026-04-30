@@ -106,7 +106,7 @@ pub fn plugin(
 
 /// Scaffolds a new index directory under `dir`.
 ///
-/// Writes `dir/index.json` with `index_schema_version = "1.1"`, an empty
+/// Writes `dir/index.json` with the current index schema version, an empty
 /// `plugins` array, and `artifacts_url` set to either `artifacts_url` or,
 /// when `None`, `file://<absolute-but-not-canonicalized dir>` — making a
 /// fresh local registry immediately usable as a `file://` registry while

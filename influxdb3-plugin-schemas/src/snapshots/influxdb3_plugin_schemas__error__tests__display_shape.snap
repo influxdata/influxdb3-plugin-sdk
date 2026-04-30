@@ -1,5 +1,6 @@
 ---
 source: influxdb3-plugin-schemas/src/error.rs
+assertion_line: 427
 expression: rendered
 ---
 - "plugin name \"Bad Name\" must match `[a-zA-Z][a-zA-Z0-9_-]*` (1-64 chars, ASCII alphanumerics / `-` / `_`, starting with a letter)"
@@ -16,10 +17,11 @@ expression: rendered
 - "python requirement \"requests>>=2.0\" is not PEP 508-parseable: no such comparison operator \">>=\", must be one of ~= == != <= >= < > ===\nrequests>>=2.0\n        ^^^^^^"
 - "artifacts_url \"s3://bucket/foo\" uses unsupported scheme \"s3\"; allowed: http, https, file"
 - "hash \"notahash\" must be formatted as sha256:<64 lowercase hex chars>"
+- "published_at \"2026-04-29T18:45:12.123Z\" must be formatted as YYYY-MM-DDTHH:MM:SSZ in UTC"
 - "duplicate plugin entry (\"dup\", \"1.0.0\") in index"
 - "canonical collision: plugin name \"my-plugin\" conflicts with existing entries sharing canonical form \"my_plugin\": [(\"my_plugin\", \"1.0.0\")]. Rename to one of the existing spellings or choose a distinct name."
 - "manifest_schema_version \"2.0\" has unsupported major; this library supports major 1"
-- "index_schema_version \"2.0\" has unsupported major; this library supports major 1"
+- "index_schema_version \"3.0\" has unsupported major; this library supports major 2"
 - "schema version \"abc\" must be formatted as <major>.<minor>"
 - "TOML parse error: TOML parse error at line 1, column 1\n  |\n1 | = \n  | ^\ninvalid key\n"
 - "JSON parse error: EOF while parsing an object at line 1 column 1"
