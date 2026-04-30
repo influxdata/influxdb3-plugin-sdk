@@ -20,7 +20,7 @@
 //! directory but does not write the archive or index. The caller owns the
 //! output target so input/output separation can be enforced there.
 
-use influxdb3_plugin_schemas::{ArtifactHash, Index, IndexEntry};
+use influxdb3_plugin_schemas::{ArtifactHash, Index, IndexEntry, PublishedAt};
 use std::path::Path;
 
 use crate::{SdkError, archive, hash, mutate_index, validate};
@@ -55,6 +55,14 @@ pub struct PackageOutput {
 /// - [`SdkError::CanonicalCollision`] — `name` canonicalizes to an existing
 ///   entry's form but spellings differ (e.g., `my-plugin` vs `my_plugin`).
 pub fn package_plugin(plugin_dir: &Path, input_index: Index) -> Result<PackageOutput, SdkError> {
+    package_plugin_with_published_at(plugin_dir, input_index, PublishedAt::now_utc())
+}
+
+fn package_plugin_with_published_at(
+    plugin_dir: &Path,
+    input_index: Index,
+    published_at: PublishedAt,
+) -> Result<PackageOutput, SdkError> {
     let manifest = validate::plugin_dir(plugin_dir)?;
 
     let archive_bytes =
@@ -62,7 +70,8 @@ pub fn package_plugin(plugin_dir: &Path, input_index: Index) -> Result<PackageOu
 
     let hash_value = hash::sha256_of_bytes(&archive_bytes);
 
-    let new_entry = IndexEntry::from_manifest(manifest, hash_value.clone());
+    let new_entry =
+        IndexEntry::from_manifest_with_published_at(manifest, hash_value.clone(), published_at);
 
     // Append to a clone; duplicate `(name, version)` fires here.
     let mut derived_index = input_index;
@@ -79,7 +88,7 @@ pub fn package_plugin(plugin_dir: &Path, input_index: Index) -> Result<PackageOu
 #[cfg(test)]
 mod tests {
     use super::*;
-    use influxdb3_plugin_schemas::{ArtifactsUrl, IndexSchemaVersion, PublishedAt};
+    use influxdb3_plugin_schemas::{ArtifactsUrl, IndexSchemaVersion};
     use std::fs;
 
     fn write_valid_plugin(dir: &Path) {
@@ -137,24 +146,17 @@ mod tests {
     }
 
     #[test]
-    fn happy_path_assigns_current_utc_published_at() {
+    fn happy_path_assigns_injected_published_at() {
         let td = tempfile::tempdir().unwrap();
         let dir = td.path().join("downsampler");
         write_valid_plugin(&dir);
+        let published_at = PublishedAt::try_new("2027-01-02T03:04:05Z").unwrap();
 
-        let before = PublishedAt::now_utc();
-        let out = package_plugin(&dir, empty_index()).unwrap();
-        let after = PublishedAt::now_utc();
+        let out =
+            package_plugin_with_published_at(&dir, empty_index(), published_at.clone()).unwrap();
 
-        assert!(out.new_entry.published_at >= before);
-        assert!(out.new_entry.published_at <= after);
-        assert_eq!(
-            out.new_entry.published_at.as_str().len(),
-            "YYYY-MM-DDTHH:MM:SSZ".len()
-        );
-        assert!(out.new_entry.published_at.as_str().ends_with('Z'));
-        assert!(!out.new_entry.published_at.as_str().contains('.'));
-        assert!(!out.new_entry.published_at.as_str().contains('+'));
+        assert_eq!(out.new_entry.published_at, published_at);
+        assert_eq!(out.derived_index.plugins[0].published_at, published_at);
     }
 
     #[test]
