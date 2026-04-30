@@ -2,13 +2,13 @@
 source: influxdb3-plugin-cli/tests/cross_cutting.rs
 expression: stdout
 ---
-Inspect one plugin in a local registry index
+Search plugins in a local registry index
 
-Usage: influxdb3-plugin index info [OPTIONS] --index <INDEX> <NAME>
+Usage: influxdb3-plugin search [OPTIONS] --index <INDEX> [QUERY]
 
 Arguments:
-  <NAME>
-          Plugin name to inspect
+  [QUERY]
+          Optional text query. Omitted or whitespace-only matches all visible plugins
 
 Options:
       --output <OUTPUT>
@@ -21,17 +21,19 @@ Options:
       --index <INDEX>
           Input registry index (read-only)
 
-      --version <VERSION>
-          Exact plugin version to inspect
+      --trigger-type <TRIGGER_TYPE>
+          Keep only plugins whose selected matching version supports this trigger type
+          
+          [possible values: process_writes, process_scheduled_call, process_request]
 
       --database-version <DATABASE_VERSION>
-          Database version used for compatibility visibility
+          Database version used for compatibility filtering
 
       --include-yanked
-          Include yanked versions when selecting by name without --version
+          Include yanked versions in search selection
 
       --include-incompatible
-          Include incompatible versions when selecting by name without --version
+          Include versions incompatible with --database-version in search selection
 
   -h, --help
           Print help (see a summary with '-h')

@@ -54,13 +54,13 @@ pub(crate) struct PackageOutput {
     pub new_entry_published_at: String,
 }
 
-/// `--output json` payload emitted by `index search` on success.
+/// `--output json` payload emitted by `search` on success.
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct IndexSearchOutput {
     pub hits: Vec<IndexSearchHitOutput>,
 }
 
-/// One projected row in an `index search` JSON result.
+/// One projected row in a `search` JSON result.
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct IndexSearchHitOutput {
     pub name: String,
@@ -89,7 +89,7 @@ pub(crate) enum IndexVisibilityReasonOutput {
     IncompatibleDatabaseVersion { required: String, actual: String },
 }
 
-/// `--output json` payload emitted by `index info` on success.
+/// `--output json` payload emitted by `info` on success.
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "outcome", rename_all = "snake_case")]
 pub(crate) enum IndexInfoOutput {
@@ -107,7 +107,7 @@ pub(crate) enum IndexInfoOutput {
     },
 }
 
-/// Full plugin metadata projected by `index info`.
+/// Full plugin metadata projected by `info`.
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct IndexInfoPluginOutput {
     pub name: String,
@@ -126,7 +126,7 @@ pub(crate) struct IndexInfoPluginOutput {
     pub visibility: IndexVisibilityOutput,
 }
 
-/// Dependency metadata projected by `index info`.
+/// Dependency metadata projected by `info`.
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct IndexDependenciesOutput {
     pub database_version: String,

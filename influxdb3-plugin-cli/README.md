@@ -31,7 +31,7 @@ influxdb3-plugin new process_writes ./my-plugin
 influxdb3-plugin new index ./my-registry --artifacts-url https://plugins.example.com/artifacts
 ```
 
-### `index search [query]`
+### `search [query]`
 
 Search a local registry `index.json` without mutating it or fetching
 artifacts. Human mode prints compact rows. JSON mode emits a stable
@@ -39,12 +39,12 @@ envelope with one projected hit per plugin, including the selected
 version's `published_at` timestamp and visibility.
 
 ```bash
-influxdb3-plugin index search --index ./registry/index.json downsample
-influxdb3-plugin index search --index ./registry/index.json --trigger-type process_request
-influxdb3-plugin index search --index ./registry/index.json --database-version 3.2.0 --include-incompatible
+influxdb3-plugin search --index ./registry/index.json downsample
+influxdb3-plugin search --index ./registry/index.json --trigger-type process_request
+influxdb3-plugin search --index ./registry/index.json --database-version 3.2.0 --include-incompatible
 ```
 
-### `index info <name>`
+### `info <name>`
 
 Inspect one plugin in a local registry `index.json`. Exact-version
 lookup uses `--version <version>`; `name@version` is not accepted for
@@ -52,9 +52,9 @@ this command. Missing plugins and filtered-out name-only lookups are
 successful inspection outcomes with exit code `0`.
 
 ```bash
-influxdb3-plugin index info --index ./registry/index.json downsampler
-influxdb3-plugin index info --index ./registry/index.json downsampler --version 1.2.0
-influxdb3-plugin index info --index ./registry/index.json legacy_rollup --include-yanked
+influxdb3-plugin info --index ./registry/index.json downsampler
+influxdb3-plugin info --index ./registry/index.json downsampler --version 1.2.0
+influxdb3-plugin info --index ./registry/index.json legacy_rollup --include-yanked
 ```
 
 ### `validate [plugin-dir]`

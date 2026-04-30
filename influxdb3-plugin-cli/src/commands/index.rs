@@ -1,10 +1,10 @@
-//! `influxdb3-plugin index` — read-only inspection of a local registry index.
+//! Read-only inspection of a local registry index.
 //!
 //! This module owns CLI concerns only: argument parsing, filesystem reads,
 //! stable JSON projection, and human rendering. Search/filter semantics stay
 //! in `influxdb3-plugin-schemas` through `Index::search` and `Index::info`.
 
-use clap::{Args as ClapArgs, Subcommand, ValueEnum};
+use clap::{Args as ClapArgs, ValueEnum};
 use influxdb3_plugin_schemas::{
     Dependencies, Index, IndexInfo, IndexInfoQuery, IndexInfoResult, IndexSearchHit,
     IndexSearchQuery, IndexVersionVisibility, IndexVisibilityReason, PluginName, TriggerType,
@@ -20,23 +20,6 @@ use crate::output::json::{
     write_envelope_ok,
 };
 use crate::output::{Env, OutputMode, RealEnv, resolve_output_mode};
-
-#[derive(Debug, Subcommand)]
-pub(crate) enum IndexCommand {
-    /// Search plugins in a local registry index.
-    Search(SearchArgs),
-    /// Inspect one plugin in a local registry index.
-    Info(InfoArgs),
-}
-
-impl IndexCommand {
-    pub(crate) fn run(self) -> anyhow::Result<()> {
-        match self {
-            Self::Search(args) => run_search(args, &RealEnv),
-            Self::Info(args) => run_info(args, &RealEnv),
-        }
-    }
-}
 
 #[derive(Debug, ClapArgs)]
 pub(crate) struct SearchArgs {
@@ -69,6 +52,12 @@ pub(crate) struct SearchArgs {
     include_incompatible: bool,
 }
 
+impl SearchArgs {
+    pub(crate) fn run(self) -> anyhow::Result<()> {
+        run_search(self, &RealEnv)
+    }
+}
+
 #[derive(Debug, ClapArgs)]
 pub(crate) struct InfoArgs {
     /// Plugin name to inspect.
@@ -98,6 +87,12 @@ pub(crate) struct InfoArgs {
     /// Include incompatible versions when selecting by name without --version.
     #[arg(long)]
     include_incompatible: bool,
+}
+
+impl InfoArgs {
+    pub(crate) fn run(self) -> anyhow::Result<()> {
+        run_info(self, &RealEnv)
+    }
 }
 
 /// Clap-facing trigger enum. Keeping this separate from the schema enum gives

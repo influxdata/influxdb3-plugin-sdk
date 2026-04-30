@@ -1,4 +1,4 @@
-//! Integration tests for `influxdb3-plugin index`.
+//! Integration tests for `influxdb3-plugin search` and `influxdb3-plugin info`.
 //!
 //! Covers the CLI boundary for local, read-only index inspection: argument
 //! parsing, JSON projection, human rendering, exit codes, failure envelopes,
@@ -128,7 +128,7 @@ fn spawn_index_search(
     extra: &[&str],
 ) -> assert_cmd::assert::Assert {
     let mut cmd = cli_cmd();
-    cmd.args(["index", "search"]);
+    cmd.arg("search");
     cmd.arg("--index").arg(index_path);
     if let Some(q) = query {
         cmd.arg(q);
@@ -141,7 +141,7 @@ fn spawn_index_search(
 
 fn spawn_index_info(index_path: &Path, name: &str, extra: &[&str]) -> assert_cmd::assert::Assert {
     let mut cmd = cli_cmd();
-    cmd.args(["index", "info"]);
+    cmd.arg("info");
     cmd.arg("--index").arg(index_path);
     cmd.arg(name);
     for arg in extra {
@@ -646,7 +646,7 @@ fn json_output_never_contains_ansi_or_cli_unknown() {
     let success = {
         let mut cmd = cli_cmd();
         cmd.env("FORCE_COLOR", "1")
-            .args(["index", "search", "--output", "json"])
+            .args(["search", "--output", "json"])
             .arg("--index")
             .arg(&path);
         cmd.assert().success()
@@ -664,14 +664,7 @@ fn json_output_never_contains_ansi_or_cli_unknown() {
     let failure = {
         let mut cmd = cli_cmd();
         cmd.env("FORCE_COLOR", "1")
-            .args([
-                "index",
-                "search",
-                "--database-version",
-                "nope",
-                "--output",
-                "json",
-            ])
+            .args(["search", "--database-version", "nope", "--output", "json"])
             .arg("--index")
             .arg(&path);
         cmd.assert()
