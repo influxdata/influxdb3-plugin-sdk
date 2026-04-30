@@ -3,4 +3,4 @@ source: influxdb3-plugin-schemas/tests/parse_fixtures.rs
 assertion_line: 85
 expression: errors.to_string()
 ---
-index_schema_version: index_schema_version "3.0" has unsupported major; this library supports major 2
+plugins[0].published_at: published_at "2026-04-29T18:45:12.123Z" must be formatted as YYYY-MM-DDTHH:MM:SSZ in UTC

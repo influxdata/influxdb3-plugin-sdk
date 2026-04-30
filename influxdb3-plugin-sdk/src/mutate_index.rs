@@ -92,22 +92,31 @@ mod tests {
     use super::*;
     use influxdb3_plugin_schemas::{
         ArtifactHash, ArtifactsUrl, Dependencies, Description, IndexEntry, IndexSchemaVersion,
-        TriggerType,
+        PublishedAt, TriggerType,
     };
     use rstest::rstest;
 
     fn empty_index() -> Index {
         Index {
-            index_schema_version: IndexSchemaVersion::new(1, 0),
+            index_schema_version: IndexSchemaVersion::CURRENT,
             artifacts_url: ArtifactsUrl::try_new("https://example.com/artifacts").unwrap(),
             plugins: vec![],
         }
     }
 
     fn make_entry(name: &str, version: Version) -> IndexEntry {
+        make_entry_with_published_at(name, version, "2026-04-29T18:45:12Z")
+    }
+
+    fn make_entry_with_published_at(
+        name: &str,
+        version: Version,
+        published_at: &str,
+    ) -> IndexEntry {
         IndexEntry {
             name: name.parse().unwrap(),
             version,
+            published_at: PublishedAt::try_new(published_at).unwrap(),
             description: Description::try_new("desc").unwrap(),
             triggers: vec![TriggerType::ProcessWrites],
             homepage: None,
@@ -139,6 +148,23 @@ mod tests {
         let err = add_entry(&mut idx, make_entry("a", Version::new(1, 0, 0))).unwrap_err();
         assert!(matches!(err, SdkError::AlreadyPublished { .. }));
         assert_eq!(idx.plugins.len(), 1);
+    }
+
+    #[test]
+    fn add_entry_rejects_duplicate_name_version_even_with_different_published_at() {
+        let mut idx = empty_index();
+        add_entry(
+            &mut idx,
+            make_entry_with_published_at("a", Version::new(1, 0, 0), "2026-04-29T18:45:12Z"),
+        )
+        .unwrap();
+        let err = add_entry(
+            &mut idx,
+            make_entry_with_published_at("a", Version::new(1, 0, 0), "2027-01-02T03:04:05Z"),
+        )
+        .unwrap_err();
+        assert!(matches!(err, SdkError::AlreadyPublished { .. }));
+        assert_eq!(idx.plugins[0].published_at.as_str(), "2026-04-29T18:45:12Z");
     }
 
     /// Duplicate-rejection error must list every existing version of the
@@ -265,6 +291,15 @@ mod tests {
     }
 
     #[test]
+    fn yank_preserves_published_at() {
+        let mut idx = empty_index();
+        add_entry(&mut idx, make_entry("a", Version::new(1, 0, 0))).unwrap();
+        let before = idx.plugins[0].published_at.clone();
+        yank(&mut idx, "a", &Version::new(1, 0, 0)).unwrap();
+        assert_eq!(idx.plugins[0].published_at, before);
+    }
+
+    #[test]
     fn yank_is_idempotent() {
         let mut idx = empty_index();
         add_entry(&mut idx, make_entry("a", Version::new(1, 0, 0))).unwrap();
@@ -308,6 +343,16 @@ mod tests {
         yank(&mut idx, "a", &Version::new(1, 0, 0)).unwrap();
         unyank(&mut idx, "a", &Version::new(1, 0, 0)).unwrap();
         assert!(!idx.plugins[0].yanked);
+    }
+
+    #[test]
+    fn unyank_preserves_published_at() {
+        let mut idx = empty_index();
+        add_entry(&mut idx, make_entry("a", Version::new(1, 0, 0))).unwrap();
+        yank(&mut idx, "a", &Version::new(1, 0, 0)).unwrap();
+        let before = idx.plugins[0].published_at.clone();
+        unyank(&mut idx, "a", &Version::new(1, 0, 0)).unwrap();
+        assert_eq!(idx.plugins[0].published_at, before);
     }
 
     #[test]

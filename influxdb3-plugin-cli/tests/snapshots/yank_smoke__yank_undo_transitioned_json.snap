@@ -1,5 +1,6 @@
 ---
 source: influxdb3-plugin-cli/tests/yank_smoke.rs
+assertion_line: 145
 expression: envelope
 ---
 {
@@ -7,6 +8,7 @@ expression: envelope
     "index_path": "<TMPDIR>/build/index.json",
     "name": "downsampler",
     "outcome": "unyanked",
+    "published_at": "2026-04-29T18:45:12Z",
     "version": "1.2.0"
   },
   "status": "ok"

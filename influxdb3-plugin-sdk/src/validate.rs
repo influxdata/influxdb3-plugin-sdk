@@ -524,11 +524,12 @@ def process_writes(a, b, c):
     fn build_index_with_one_entry(name: &str, version: &str) -> influxdb3_plugin_schemas::Index {
         let json = format!(
             r#"{{
-                "index_schema_version": "1.0",
+                "index_schema_version": "2.0",
                 "artifacts_url": "https://x.example/a",
                 "plugins": [{{
                     "name": "{name}",
                     "version": "{version}",
+                    "published_at": "2026-04-29T18:45:12Z",
                     "description": "seed",
                     "triggers": ["process_writes"],
                     "dependencies": {{ "database_version": ">=3.0.0", "python": [] }},

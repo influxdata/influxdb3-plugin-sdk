@@ -19,9 +19,11 @@ wraps in user-facing subcommands.
 - **`hash`** — SHA-256 of archive bytes in the canonical
   `sha256:<64 lowercase hex chars>` form.
 - **`mutate_index`** — add, yank, and unyank entries in an existing index.
-  Enforces Spec 1 S1-4 / Spec 2 S2-2 immutability on add.
+  Enforces Spec 1 S1-4 / Spec 2 S2-2 immutability on add and preserves
+  original publication timestamps when yanking or unyanking.
 - **`package`** — composes validate → archive → hash → mutate_index into a
-  single pipeline.
+  single pipeline, assigning current UTC `published_at` to newly packaged
+  plugin versions.
 
 ## Stability
 

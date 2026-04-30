@@ -1,10 +1,11 @@
 ---
 source: influxdb3-plugin-schemas/tests/parse_fixtures.rs
+assertion_line: 63
 expression: index
 ---
 Index {
     index_schema_version: IndexSchemaVersion {
-        major: 1,
+        major: 2,
         minor: 0,
     },
     artifacts_url: ArtifactsUrl(

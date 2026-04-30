@@ -172,9 +172,18 @@ fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
         })
     })?;
 
+    let published_at = index
+        .plugins
+        .iter()
+        .find(|entry| entry.name == name && entry.version == version)
+        .expect("mutate_index succeeded, so target entry must exist")
+        .published_at
+        .to_string();
+
     let payload = YankOutput {
         name: name.as_str().to_owned(),
         version: version.to_string(),
+        published_at,
         outcome: outcome_wire(sdk_outcome, args.undo),
         index_path: canonicalize_or_keep(&derived_index_path),
     };

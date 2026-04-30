@@ -199,11 +199,12 @@ fn validate_with_index_surfaces_uniqueness_collision() {
     write_valid_plugin(&plugin_dir);
 
     let index = serde_json::json!({
-        "index_schema_version": "1.0",
+        "index_schema_version": "2.0",
         "artifacts_url": "https://plugins.example.com/artifacts",
         "plugins": [{
             "name": "downsampler",
             "version": "1.2.0",
+            "published_at": "2026-04-29T18:45:12Z",
             "description": "preexisting",
             "triggers": ["process_writes"],
             "dependencies": { "database_version": ">=3.0.0", "python": [] },
@@ -282,11 +283,12 @@ database_version = ">=3.0.0"
     std::fs::write(plugin_dir.join("manifest.toml"), manifest).unwrap();
     std::fs::write(plugin_dir.join("__init__.py"), VALID_INIT).unwrap();
     let index = serde_json::json!({
-        "index_schema_version": "1.0",
+        "index_schema_version": "2.0",
         "artifacts_url": "https://x.example/a",
         "plugins": [{
             "name": "foo_bar",
             "version": "0.1.0",
+            "published_at": "2026-04-29T18:45:12Z",
             "description": "seed",
             "triggers": ["process_writes"],
             "dependencies": { "database_version": ">=3.0.0", "python": [] },
@@ -335,11 +337,12 @@ database_version = ">=3.0.0"
     std::fs::write(plugin_dir.join("manifest.toml"), manifest).unwrap();
     std::fs::write(plugin_dir.join("__init__.py"), VALID_INIT).unwrap();
     let index = serde_json::json!({
-        "index_schema_version": "1.0",
+        "index_schema_version": "2.0",
         "artifacts_url": "https://x.example/a",
         "plugins": [{
             "name": "foo",
             "version": "0.1.0",
+            "published_at": "2026-04-29T18:45:12Z",
             "description": "seed",
             "triggers": ["process_writes"],
             "dependencies": { "database_version": ">=3.0.0", "python": [] },
@@ -467,11 +470,12 @@ fn validate_with_index_schema_errors_emits_all_diagnostics() {
     let plugin_dir = td.path().join("p");
     write_valid_plugin(&plugin_dir);
     let bad_index = serde_json::json!({
-        "index_schema_version": "1.0",
+        "index_schema_version": "2.0",
         "artifacts_url": "s3://nope",
         "plugins": [{
             "name": "downsampler",
             "version": "v1",
+            "published_at": "2026-04-29T18:45:12Z",
             "description": "seed",
             "triggers": ["process_writes"],
             "dependencies": { "database_version": ">=3.0.0", "python": [] },

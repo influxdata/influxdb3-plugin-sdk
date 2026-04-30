@@ -86,6 +86,9 @@ pub enum SchemaError {
     #[error("hash {value:?} must be formatted as sha256:<64 lowercase hex chars>")]
     InvalidHash { value: String },
 
+    #[error("published_at {value:?} must be formatted as YYYY-MM-DDTHH:MM:SSZ in UTC")]
+    InvalidPublishedAt { value: String },
+
     #[error("duplicate plugin entry ({name:?}, {version:?}) in index")]
     DuplicateIndexEntry { name: String, version: String },
 
@@ -156,6 +159,7 @@ impl SchemaError {
             Self::InvalidPythonRequirement { .. } => "InvalidPythonRequirement",
             Self::UnsupportedArtifactScheme { .. } => "UnsupportedArtifactScheme",
             Self::InvalidHash { .. } => "InvalidHash",
+            Self::InvalidPublishedAt { .. } => "InvalidPublishedAt",
             Self::DuplicateIndexEntry { .. } => "DuplicateIndexEntry",
             Self::CanonicalCollision { .. } => "CanonicalCollision",
             Self::UnsupportedManifestMajor { .. } => "UnsupportedManifestMajor",
@@ -380,6 +384,9 @@ mod tests {
             SchemaError::InvalidHash {
                 value: "notahash".into(),
             },
+            SchemaError::InvalidPublishedAt {
+                value: "2026-04-29T18:45:12.123Z".into(),
+            },
             SchemaError::DuplicateIndexEntry {
                 name: "dup".into(),
                 version: "1.0.0".into(),
@@ -394,8 +401,8 @@ mod tests {
                 supported: 1,
             },
             SchemaError::UnsupportedIndexMajor {
-                found: "2.0".into(),
-                supported: 1,
+                found: "3.0".into(),
+                supported: 2,
             },
             SchemaError::MalformedSchemaVersion {
                 value: "abc".into(),

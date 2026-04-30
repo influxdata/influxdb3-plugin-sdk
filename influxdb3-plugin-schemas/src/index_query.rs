@@ -1,6 +1,8 @@
 //! Index query primitives: search and info over parsed registry indexes.
 
-use crate::{ArtifactHash, Dependencies, Description, IndexEntry, PluginName, TriggerType};
+use crate::{
+    ArtifactHash, Dependencies, Description, IndexEntry, PluginName, PublishedAt, TriggerType,
+};
 
 /// Search query parameters for browsing an index.
 #[derive(Debug, Clone, Default)]
@@ -23,6 +25,7 @@ pub struct IndexSearchResult {
 pub struct IndexSearchHit {
     pub name: PluginName,
     pub version: semver::Version,
+    pub published_at: PublishedAt,
     pub description: Description,
     pub triggers: Vec<TriggerType>,
     pub visibility: IndexVersionVisibility,
@@ -75,6 +78,7 @@ pub enum IndexInfoResult {
 pub struct IndexInfo {
     pub name: PluginName,
     pub version: semver::Version,
+    pub published_at: PublishedAt,
     pub description: Description,
     pub triggers: Vec<TriggerType>,
     pub homepage: Option<url::Url>,
@@ -112,6 +116,7 @@ fn info_from_entry(entry: &IndexEntry, visibility: IndexVersionVisibility) -> In
     IndexInfo {
         name: entry.name.clone(),
         version: entry.version.clone(),
+        published_at: entry.published_at.clone(),
         description: entry.description.clone(),
         triggers: entry.triggers.clone(),
         homepage: entry.homepage.clone(),
@@ -190,6 +195,7 @@ impl crate::Index {
             hits.push(IndexSearchHit {
                 name: entry.name.clone(),
                 version: entry.version.clone(),
+                published_at: entry.published_at.clone(),
                 description: entry.description.clone(),
                 triggers: entry.triggers.clone(),
                 visibility: vis.clone(),
@@ -298,15 +304,20 @@ mod tests {
     use super::*;
     use crate::{
         ArtifactHash, ArtifactsUrl, Dependencies, Description, Index, IndexEntry,
-        IndexSchemaVersion, PythonRequirement, TriggerType,
+        IndexSchemaVersion, PublishedAt, PythonRequirement, TriggerType,
     };
     use assert_matches::assert_matches;
     use pretty_assertions::assert_eq;
 
     fn make_entry(name: &str, version: &str) -> IndexEntry {
+        make_entry_with_published_at(name, version, "2026-04-29T18:45:12Z")
+    }
+
+    fn make_entry_with_published_at(name: &str, version: &str, published_at: &str) -> IndexEntry {
         IndexEntry {
             name: name.parse().unwrap(),
             version: version.parse().unwrap(),
+            published_at: PublishedAt::try_new(published_at).unwrap(),
             description: Description::try_new("desc").unwrap(),
             triggers: vec![TriggerType::ProcessWrites],
             homepage: None,
@@ -326,7 +337,7 @@ mod tests {
 
     fn make_index(entries: Vec<IndexEntry>) -> Index {
         Index {
-            index_schema_version: IndexSchemaVersion::new(1, 0),
+            index_schema_version: IndexSchemaVersion::CURRENT,
             artifacts_url: ArtifactsUrl::try_new("https://example.com/artifacts").unwrap(),
             plugins: entries,
         }
@@ -707,6 +718,18 @@ mod tests {
         assert_eq!(result.hits.len(), 1);
         assert_eq!(result.hits[0].description.as_str(), "new description");
         assert_eq!(result.hits[0].triggers.len(), 2);
+    }
+
+    #[test]
+    fn search_hit_exposes_published_at_from_selected_version() {
+        let index = make_index(vec![
+            make_entry_with_published_at("alpha", "1.0.0", "2026-04-29T18:45:12Z"),
+            make_entry_with_published_at("alpha", "2.0.0", "2027-01-02T03:04:05Z"),
+        ]);
+        let result = index.search(&IndexSearchQuery::default());
+        assert_eq!(result.hits.len(), 1);
+        assert_eq!(result.hits[0].version, semver::Version::new(2, 0, 0));
+        assert_eq!(result.hits[0].published_at.as_str(), "2027-01-02T03:04:05Z");
     }
 
     #[test]
@@ -1123,6 +1146,25 @@ mod tests {
     }
 
     #[test]
+    fn info_exposes_published_at() {
+        let index = make_index(vec![make_entry_with_published_at(
+            "alpha",
+            "1.0.0",
+            "2027-01-02T03:04:05Z",
+        )]);
+        let result = index.info(&IndexInfoQuery {
+            name: "alpha".parse().unwrap(),
+            version: Some("1.0.0".parse().unwrap()),
+            database_version: None,
+            include_yanked: false,
+            include_incompatible: false,
+        });
+        assert_matches!(&result, IndexInfoResult::Found(info) => {
+            assert_eq!(info.published_at.as_str(), "2027-01-02T03:04:05Z");
+        });
+    }
+
+    #[test]
     fn info_incompatible_reason_includes_versions(/* spec 47 */) {
         let mut entry = make_entry("alpha", "1.0.0");
         entry.dependencies.database_version = ">=4.0.0".parse().unwrap();
@@ -1156,6 +1198,7 @@ mod tests {
         assert!(json["hits"].is_array());
         assert_eq!(json["hits"][0]["name"], "alpha");
         assert_eq!(json["hits"][0]["version"], "1.0.0");
+        assert_eq!(json["hits"][0]["published_at"], "2026-04-29T18:45:12Z");
         assert!(json["hits"][0]["description"].is_string());
         assert!(json["hits"][0]["triggers"].is_array());
         assert_eq!(json["hits"][0]["visibility"], "Visible");
@@ -1175,6 +1218,7 @@ mod tests {
         let found = &json["Found"];
         assert_eq!(found["name"], "alpha");
         assert_eq!(found["version"], "1.0.0");
+        assert_eq!(found["published_at"], "2026-04-29T18:45:12Z");
         assert!(found["description"].is_string());
         assert!(found["triggers"].is_array());
         assert!(found["dependencies"].is_object());

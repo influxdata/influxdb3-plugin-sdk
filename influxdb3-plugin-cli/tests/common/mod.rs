@@ -20,19 +20,20 @@ database_version = ">=3.0.0"
 pub(crate) const VALID_INIT: &str = "def process_writes(a, b, c):\n    pass\n";
 
 pub(crate) const EMPTY_INDEX: &str = r#"{
-  "index_schema_version": "1.0",
+  "index_schema_version": "2.0",
   "artifacts_url": "https://plugins.example.com/artifacts",
   "plugins": []
 }
 "#;
 
 pub(crate) const SEEDED_INDEX: &str = r#"{
-  "index_schema_version": "1.0",
+  "index_schema_version": "2.0",
   "artifacts_url": "https://plugins.example.com/artifacts",
   "plugins": [
     {
       "name": "downsampler",
       "version": "1.2.0",
+      "published_at": "2026-04-29T18:45:12Z",
       "description": "seed entry",
       "triggers": ["process_writes"],
       "dependencies": { "database_version": ">=3.0.0", "python": [] },

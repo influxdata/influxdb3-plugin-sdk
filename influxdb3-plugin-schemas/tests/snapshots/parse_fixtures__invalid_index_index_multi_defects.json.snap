@@ -1,7 +1,9 @@
 ---
 source: influxdb3-plugin-schemas/tests/parse_fixtures.rs
+assertion_line: 85
 expression: errors.to_string()
 ---
-2 schema validation errors:
-  1. plugins[1].hash: hash "not-a-hash" must be formatted as sha256:<64 lowercase hex chars>
-  2. plugins[2]: duplicate plugin entry ("alpha", "1.0.0") in index
+3 schema validation errors:
+  1. plugins[1].published_at: published_at "2026-04-29T18:45:12.123Z" must be formatted as YYYY-MM-DDTHH:MM:SSZ in UTC
+  2. plugins[1].hash: hash "not-a-hash" must be formatted as sha256:<64 lowercase hex chars>
+  3. plugins[2]: duplicate plugin entry ("alpha", "1.0.0") in index
