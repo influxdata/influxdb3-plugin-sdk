@@ -12,8 +12,9 @@ validating, packaging, and publishing plugins to InfluxDB 3's Processing Engine.
   `validate`, `package`, `yank`, `mutate_index`). Internal; consumed through
   the CLI crate's public API.
 - **`influxdb3-plugin-cli`** — The `influxdb3-plugin` binary plus the embeddable
-  `PluginConfig` type. Published semver-stable for future embedding into
-  `influxdb_pro`.
+  `PluginConfig` type. Provides scaffold, validate, package, yank, and
+  read-only local index inspection commands. Published semver-stable for future
+  embedding into `influxdb_pro`.
 
 ## Development
 

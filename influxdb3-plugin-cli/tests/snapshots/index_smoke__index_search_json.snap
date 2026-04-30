@@ -1,0 +1,59 @@
+---
+source: influxdb3-plugin-cli/tests/index_smoke.rs
+expression: doc
+---
+{
+  "result": {
+    "hits": [
+      {
+        "description": "Alpha writer plugin",
+        "name": "alpha_writer",
+        "published_at": "2026-04-29T18:45:12Z",
+        "triggers": [
+          "process_writes"
+        ],
+        "version": "1.0.0",
+        "visibility": {
+          "status": "visible"
+        }
+      },
+      {
+        "description": "Downsample writes",
+        "name": "downsampler",
+        "published_at": "2026-05-01T11:22:33Z",
+        "triggers": [
+          "process_writes"
+        ],
+        "version": "1.2.0",
+        "visibility": {
+          "status": "visible"
+        }
+      },
+      {
+        "description": "Future writer plugin",
+        "name": "future_writer",
+        "published_at": "2026-05-02T12:00:00Z",
+        "triggers": [
+          "process_writes"
+        ],
+        "version": "2.0.0",
+        "visibility": {
+          "status": "visible"
+        }
+      },
+      {
+        "description": "Authenticate request plugins",
+        "name": "http_auth",
+        "published_at": "2026-05-03T12:00:00Z",
+        "triggers": [
+          "process_request"
+        ],
+        "version": "0.3.0",
+        "visibility": {
+          "status": "visible"
+        }
+      }
+    ]
+  },
+  "status": "ok"
+}

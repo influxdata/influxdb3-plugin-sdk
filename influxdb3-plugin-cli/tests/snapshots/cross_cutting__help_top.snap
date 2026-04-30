@@ -1,6 +1,5 @@
 ---
 source: influxdb3-plugin-cli/tests/cross_cutting.rs
-assertion_line: 209
 expression: stdout
 ---
 Author-side tooling for InfluxDB 3 plugins.
@@ -9,6 +8,8 @@ Usage: influxdb3-plugin <COMMAND>
 
 Commands:
   new       Scaffold a new plugin or index from a built-in template
+  search    Search plugins in a local registry index
+  info      Inspect one plugin in a local registry index
   validate  Validate a plugin directory
   package   Validate, archive, hash, and emit a derived index entry
   yank      Toggle the `yanked` flag on an existing index entry

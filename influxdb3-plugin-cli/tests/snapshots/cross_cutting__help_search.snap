@@ -1,0 +1,39 @@
+---
+source: influxdb3-plugin-cli/tests/cross_cutting.rs
+expression: stdout
+---
+Search plugins in a local registry index
+
+Usage: influxdb3-plugin search [OPTIONS] --index <INDEX> [QUERY]
+
+Arguments:
+  [QUERY]
+          Optional text query. Omitted or whitespace-only matches all visible plugins
+
+Options:
+      --output <OUTPUT>
+          Output format. Auto-detected from stdout's TTY status and `CI` when omitted
+
+          Possible values:
+          - human: Colorized, human-readable rendering. Default on TTY
+          - json:  Machine-readable JSON on stdout. Default in CI / when stdout is not a terminal
+
+      --index <INDEX>
+          Input registry index (read-only)
+
+      --trigger-type <TRIGGER_TYPE>
+          Keep only plugins whose selected matching version supports this trigger type
+          
+          [possible values: process_writes, process_scheduled_call, process_request]
+
+      --database-version <DATABASE_VERSION>
+          Database version used for compatibility filtering
+
+      --include-yanked
+          Include yanked versions in search selection
+
+      --include-incompatible
+          Include versions incompatible with --database-version in search selection
+
+  -h, --help
+          Print help (see a summary with '-h')

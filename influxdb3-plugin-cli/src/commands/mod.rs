@@ -3,6 +3,7 @@
 //! Each submodule wraps one SDK function and adds the CLI-specific
 //! plumbing — argument parsing, path resolution, output-mode rendering.
 
+pub(crate) mod index;
 pub(crate) mod new;
 pub(crate) mod package;
 pub(crate) mod validate;

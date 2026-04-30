@@ -40,6 +40,10 @@ enum Command {
     /// Scaffold a new plugin or index from a built-in template.
     #[command(subcommand)]
     New(crate::commands::new::NewCommand),
+    /// Search plugins in a local registry index.
+    Search(crate::commands::index::SearchArgs),
+    /// Inspect one plugin in a local registry index.
+    Info(crate::commands::index::InfoArgs),
     /// Validate a plugin directory.
     Validate(crate::commands::validate::Args),
     /// Validate, archive, hash, and emit a derived index entry.
@@ -90,6 +94,8 @@ impl PluginConfig {
     pub async fn run(self) -> anyhow::Result<()> {
         match self.command {
             Command::New(sub) => sub.run(),
+            Command::Search(args) => args.run(),
+            Command::Info(args) => args.run(),
             Command::Validate(args) => args.run(),
             Command::Package(args) => args.run(),
             Command::Yank(args) => args.run(),

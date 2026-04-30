@@ -1,0 +1,17 @@
+---
+source: influxdb3-plugin-cli/tests/index_smoke.rs
+expression: doc
+---
+{
+  "result": {
+    "name": "legacy_rollup",
+    "outcome": "filtered_out",
+    "reasons": [
+      {
+        "kind": "yanked"
+      }
+    ],
+    "version": null
+  },
+  "status": "ok"
+}

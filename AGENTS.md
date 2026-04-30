@@ -50,6 +50,11 @@ cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo fmt --all -- --check
 cargo deny check all
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --locked
+cargo semver-checks -p influxdb3-plugin-cli --baseline-rev "$(git describe --tags --abbrev=0)"
+cargo semver-checks -p influxdb3-plugin-schemas --baseline-rev "$(git describe --tags --abbrev=0)"
+cargo package --list -p influxdb3-plugin-schemas --locked
+cargo package --list -p influxdb3-plugin-sdk --locked
+cargo package --list -p influxdb3-plugin-cli --locked
 ./scripts/check-manifest-invariants.sh
 ./scripts/check-changelog-format.sh
 ```

@@ -199,6 +199,8 @@ fn help_text_snapshots() {
         ("validate", &["validate", "--help"]),
         ("package", &["package", "--help"]),
         ("yank", &["yank", "--help"]),
+        ("search", &["search", "--help"]),
+        ("info", &["info", "--help"]),
     ] {
         let assert = Command::cargo_bin("influxdb3-plugin")
             .unwrap()
