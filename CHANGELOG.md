@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Added
 - `influxdb3-plugin-schemas`: required Cargo-style UTC `published_at` timestamps on every published plugin-version entry, exposed through index entries, search hits, and info results.
 - `influxdb3-plugin-cli`: package and yank JSON success payloads now include the affected plugin version's publication timestamp.
+- `influxdb3-plugin-cli`: `index search` and `index info` commands for read-only local registry index inspection in human and JSON modes.
 
 ### Changed
 - `influxdb3-plugin-schemas`: index schema version is now `2.0`; non-empty indexes must include strict `YYYY-MM-DDTHH:MM:SSZ` UTC publication timestamps.
