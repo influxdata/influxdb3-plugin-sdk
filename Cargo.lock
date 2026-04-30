@@ -587,7 +587,7 @@ dependencies = [
 
 [[package]]
 name = "influxdb3-plugin-cli"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "anstyle",
  "anyhow",
@@ -611,7 +611,7 @@ dependencies = [
 
 [[package]]
 name = "influxdb3-plugin-schemas"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "assert_matches",
  "insta",
@@ -631,7 +631,7 @@ dependencies = [
 
 [[package]]
 name = "influxdb3-plugin-sdk"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "filetime",
  "flate2",
