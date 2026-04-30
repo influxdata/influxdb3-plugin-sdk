@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-04-30
+
 ### Added
 - `influxdb3-plugin-schemas`: required Cargo-style UTC `published_at` timestamps on every published plugin-version entry, exposed through index entries, search hits, and info results.
 - `influxdb3-plugin-cli`: package and yank JSON success payloads now include the affected plugin version's publication timestamp.
