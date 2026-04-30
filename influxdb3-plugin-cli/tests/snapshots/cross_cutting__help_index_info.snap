@@ -1,0 +1,37 @@
+---
+source: influxdb3-plugin-cli/tests/cross_cutting.rs
+expression: stdout
+---
+Inspect one plugin in a local registry index
+
+Usage: influxdb3-plugin index info [OPTIONS] --index <INDEX> <NAME>
+
+Arguments:
+  <NAME>
+          Plugin name to inspect
+
+Options:
+      --output <OUTPUT>
+          Output format. Auto-detected from stdout's TTY status and `CI` when omitted
+
+          Possible values:
+          - human: Colorized, human-readable rendering. Default on TTY
+          - json:  Machine-readable JSON on stdout. Default in CI / when stdout is not a terminal
+
+      --index <INDEX>
+          Input registry index (read-only)
+
+      --version <VERSION>
+          Exact plugin version to inspect
+
+      --database-version <DATABASE_VERSION>
+          Database version used for compatibility visibility
+
+      --include-yanked
+          Include yanked versions when selecting by name without --version
+
+      --include-incompatible
+          Include incompatible versions when selecting by name without --version
+
+  -h, --help
+          Print help (see a summary with '-h')

@@ -1,0 +1,12 @@
+---
+source: influxdb3-plugin-cli/tests/index_smoke.rs
+expression: missing_name
+---
+{
+  "result": {
+    "name": "no_such_plugin",
+    "outcome": "not_found",
+    "version": null
+  },
+  "status": "ok"
+}

@@ -1,0 +1,32 @@
+---
+source: influxdb3-plugin-cli/tests/index_smoke.rs
+expression: doc
+---
+{
+  "result": {
+    "outcome": "found",
+    "plugin": {
+      "dependencies": {
+        "database_version": ">=3.0.0",
+        "python": [
+          "requests>=2.31,<3"
+        ]
+      },
+      "description": "Downsample writes",
+      "documentation": "https://docs.example.com/downsampler",
+      "hash": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "homepage": "https://example.com/downsampler",
+      "name": "downsampler",
+      "published_at": "2026-05-01T11:22:33Z",
+      "repository": "https://github.com/example/downsampler",
+      "triggers": [
+        "process_writes"
+      ],
+      "version": "1.2.0",
+      "visibility": {
+        "status": "visible"
+      }
+    }
+  },
+  "status": "ok"
+}
