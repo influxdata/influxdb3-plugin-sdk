@@ -21,7 +21,6 @@ use crate::output::json::{
 };
 use crate::output::{Env, OutputMode, RealEnv, resolve_output_mode};
 
-/// `index` command namespace.
 #[derive(Debug, Subcommand)]
 pub(crate) enum IndexCommand {
     /// Search plugins in a local registry index.
@@ -39,7 +38,6 @@ impl IndexCommand {
     }
 }
 
-/// Parsed `index search` arguments.
 #[derive(Debug, ClapArgs)]
 pub(crate) struct SearchArgs {
     /// Optional text query. Omitted or whitespace-only matches all visible plugins.
@@ -71,7 +69,6 @@ pub(crate) struct SearchArgs {
     include_incompatible: bool,
 }
 
-/// Parsed `index info` arguments.
 #[derive(Debug, ClapArgs)]
 pub(crate) struct InfoArgs {
     /// Plugin name to inspect.

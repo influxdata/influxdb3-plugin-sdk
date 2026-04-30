@@ -156,6 +156,28 @@ fn parse_stdout(output: &std::process::Output) -> serde_json::Value {
         .unwrap_or_else(|e| panic!("stdout must be valid JSON: {e}\n{stdout}"))
 }
 
+fn assert_json_success(assert: assert_cmd::assert::Assert) -> serde_json::Value {
+    let assert = assert.success().stderr(predicates::str::is_empty());
+    let doc = parse_stdout(assert.get_output());
+    assert_eq!(doc["status"], "ok");
+    doc
+}
+
+fn assert_json_error(
+    assert: assert_cmd::assert::Assert,
+    exit_code: i32,
+    error_code: &str,
+) -> serde_json::Value {
+    let assert = assert
+        .failure()
+        .code(exit_code)
+        .stderr(predicates::str::is_empty());
+    let doc = parse_stdout(assert.get_output());
+    assert_eq!(doc["status"], "error");
+    assert_eq!(doc["error"]["code"], error_code);
+    doc
+}
+
 fn hit_names(doc: &serde_json::Value) -> Vec<String> {
     doc["result"]["hits"]
         .as_array()
@@ -180,10 +202,8 @@ fn search_all_visible_plugins_json() {
     let path = index_path(&td);
     write_rich_index(&path);
 
-    let assert = spawn_index_search(&path, None, &["--output", "json"]).success();
-    let doc = parse_stdout(assert.get_output());
+    let doc = assert_json_success(spawn_index_search(&path, None, &["--output", "json"]));
 
-    assert_eq!(doc["status"], "ok");
     assert_eq!(
         hit_names(&doc),
         vec!["alpha_writer", "downsampler", "future_writer", "http_auth"]
@@ -211,13 +231,18 @@ fn search_text_filters_by_name_and_description() {
     let path = index_path(&td);
     write_rich_index(&path);
 
-    let by_name =
-        parse_stdout(spawn_index_search(&path, Some("http"), &["--output", "json"]).get_output());
+    let by_name = assert_json_success(spawn_index_search(
+        &path,
+        Some("http"),
+        &["--output", "json"],
+    ));
     assert_eq!(hit_names(&by_name), vec!["http_auth"]);
 
-    let by_description = parse_stdout(
-        spawn_index_search(&path, Some("Authenticate"), &["--output", "json"]).get_output(),
-    );
+    let by_description = assert_json_success(spawn_index_search(
+        &path,
+        Some("Authenticate"),
+        &["--output", "json"],
+    ));
     assert_eq!(hit_names(&by_description), vec!["http_auth"]);
 }
 
@@ -227,15 +252,11 @@ fn search_trigger_filter_returns_only_matching_triggers() {
     let path = index_path(&td);
     write_rich_index(&path);
 
-    let doc = parse_stdout(
-        spawn_index_search(
-            &path,
-            None,
-            &["--trigger-type", "process_request", "--output", "json"],
-        )
-        .success()
-        .get_output(),
-    );
+    let doc = assert_json_success(spawn_index_search(
+        &path,
+        None,
+        &["--trigger-type", "process_request", "--output", "json"],
+    ));
 
     assert_eq!(hit_names(&doc), vec!["http_auth"]);
     for hit in doc["result"]["hits"].as_array().unwrap() {
@@ -256,14 +277,15 @@ fn search_hides_and_includes_yanked_versions() {
     let path = index_path(&td);
     write_rich_index(&path);
 
-    let default_doc =
-        parse_stdout(spawn_index_search(&path, None, &["--output", "json"]).get_output());
+    let default_doc = assert_json_success(spawn_index_search(&path, None, &["--output", "json"]));
     assert!(!hit_names(&default_doc).contains(&"legacy_rollup".to_owned()));
     assert_eq!(find_hit(&default_doc, "downsampler")["version"], "1.2.0");
 
-    let included = parse_stdout(
-        spawn_index_search(&path, None, &["--include-yanked", "--output", "json"]).get_output(),
-    );
+    let included = assert_json_success(spawn_index_search(
+        &path,
+        None,
+        &["--include-yanked", "--output", "json"],
+    ));
     assert!(hit_names(&included).contains(&"legacy_rollup".to_owned()));
     assert_eq!(find_hit(&included, "downsampler")["version"], "2.0.0");
     assert_eq!(
@@ -281,30 +303,28 @@ fn search_hides_and_includes_incompatible_versions() {
     let path = index_path(&td);
     write_rich_index(&path);
 
-    let default_doc = parse_stdout(
-        spawn_index_search(
-            &path,
-            None,
-            &["--database-version", "3.2.0", "--output", "json"],
-        )
-        .get_output(),
+    let default_doc = assert_json_success(spawn_index_search(
+        &path,
+        None,
+        &["--database-version", "3.2.0", "--output", "json"],
+    ));
+    assert_eq!(
+        hit_names(&default_doc),
+        vec!["alpha_writer", "downsampler", "http_auth"]
     );
     assert!(!hit_names(&default_doc).contains(&"future_writer".to_owned()));
 
-    let included = parse_stdout(
-        spawn_index_search(
-            &path,
-            None,
-            &[
-                "--database-version",
-                "3.2.0",
-                "--include-incompatible",
-                "--output",
-                "json",
-            ],
-        )
-        .get_output(),
-    );
+    let included = assert_json_success(spawn_index_search(
+        &path,
+        None,
+        &[
+            "--database-version",
+            "3.2.0",
+            "--include-incompatible",
+            "--output",
+            "json",
+        ],
+    ));
     let future = find_hit(&included, "future_writer");
     assert_eq!(
         future["visibility"],
@@ -325,8 +345,7 @@ fn search_empty_index_and_zero_match_are_successful() {
     let path = index_path(&td);
     write_index(&path, empty_index());
 
-    let empty = parse_stdout(spawn_index_search(&path, None, &["--output", "json"]).get_output());
-    assert_eq!(empty["status"], "ok");
+    let empty = assert_json_success(spawn_index_search(&path, None, &["--output", "json"]));
     assert_eq!(empty["result"]["hits"], serde_json::json!([]));
 
     write_rich_index(&path);
@@ -342,10 +361,12 @@ fn info_by_name_selects_latest_visible_version_json() {
     let path = index_path(&td);
     write_rich_index(&path);
 
-    let assert = spawn_index_info(&path, "downsampler", &["--output", "json"]).success();
-    let doc = parse_stdout(assert.get_output());
+    let doc = assert_json_success(spawn_index_info(
+        &path,
+        "downsampler",
+        &["--output", "json"],
+    ));
 
-    assert_eq!(doc["status"], "ok");
     assert_eq!(doc["result"]["outcome"], "found");
     assert_eq!(doc["result"]["plugin"]["version"], "1.2.0");
     assert_eq!(
@@ -374,14 +395,11 @@ fn info_exact_version_returns_requested_version() {
     let path = index_path(&td);
     write_rich_index(&path);
 
-    let doc = parse_stdout(
-        spawn_index_info(
-            &path,
-            "downsampler",
-            &["--version", "1.0.0", "--output", "json"],
-        )
-        .get_output(),
-    );
+    let doc = assert_json_success(spawn_index_info(
+        &path,
+        "downsampler",
+        &["--version", "1.0.0", "--output", "json"],
+    ));
 
     assert_eq!(doc["result"]["outcome"], "found");
     assert_eq!(doc["result"]["plugin"]["version"], "1.0.0");
@@ -393,14 +411,11 @@ fn info_exact_hidden_versions_are_found_with_visibility_reasons() {
     let path = index_path(&td);
     write_rich_index(&path);
 
-    let yanked = parse_stdout(
-        spawn_index_info(
-            &path,
-            "legacy_rollup",
-            &["--version", "0.9.0", "--output", "json"],
-        )
-        .get_output(),
-    );
+    let yanked = assert_json_success(spawn_index_info(
+        &path,
+        "legacy_rollup",
+        &["--version", "0.9.0", "--output", "json"],
+    ));
     assert_eq!(yanked["result"]["outcome"], "found");
     assert_eq!(
         yanked["result"]["plugin"]["visibility"],
@@ -410,21 +425,18 @@ fn info_exact_hidden_versions_are_found_with_visibility_reasons() {
         })
     );
 
-    let incompatible = parse_stdout(
-        spawn_index_info(
-            &path,
-            "future_writer",
-            &[
-                "--version",
-                "2.0.0",
-                "--database-version",
-                "3.2.0",
-                "--output",
-                "json",
-            ],
-        )
-        .get_output(),
-    );
+    let incompatible = assert_json_success(spawn_index_info(
+        &path,
+        "future_writer",
+        &[
+            "--version",
+            "2.0.0",
+            "--database-version",
+            "3.2.0",
+            "--output",
+            "json",
+        ],
+    ));
     assert_eq!(incompatible["result"]["outcome"], "found");
     assert_eq!(
         incompatible["result"]["plugin"]["visibility"],
@@ -445,24 +457,22 @@ fn info_not_found_outcomes_are_successful_json() {
     let path = index_path(&td);
     write_rich_index(&path);
 
-    let missing_name =
-        parse_stdout(spawn_index_info(&path, "no_such_plugin", &["--output", "json"]).get_output());
-    assert_eq!(missing_name["status"], "ok");
+    let missing_name = assert_json_success(spawn_index_info(
+        &path,
+        "no_such_plugin",
+        &["--output", "json"],
+    ));
     assert_eq!(missing_name["result"]["outcome"], "not_found");
     assert_eq!(missing_name["result"]["name"], "no_such_plugin");
     assert_eq!(missing_name["result"]["version"], serde_json::Value::Null);
 
     insta::assert_json_snapshot!("index_info_not_found_json", missing_name);
 
-    let missing_version = parse_stdout(
-        spawn_index_info(
-            &path,
-            "downsampler",
-            &["--version", "9.9.9", "--output", "json"],
-        )
-        .get_output(),
-    );
-    assert_eq!(missing_version["status"], "ok");
+    let missing_version = assert_json_success(spawn_index_info(
+        &path,
+        "downsampler",
+        &["--version", "9.9.9", "--output", "json"],
+    ));
     assert_eq!(missing_version["result"]["outcome"], "not_found");
     assert_eq!(missing_version["result"]["name"], "downsampler");
     assert_eq!(missing_version["result"]["version"], "9.9.9");
@@ -474,9 +484,11 @@ fn info_filtered_out_is_successful_json() {
     let path = index_path(&td);
     write_rich_index(&path);
 
-    let doc =
-        parse_stdout(spawn_index_info(&path, "legacy_rollup", &["--output", "json"]).get_output());
-    assert_eq!(doc["status"], "ok");
+    let doc = assert_json_success(spawn_index_info(
+        &path,
+        "legacy_rollup",
+        &["--output", "json"],
+    ));
     assert_eq!(doc["result"]["outcome"], "filtered_out");
     assert_eq!(doc["result"]["name"], "legacy_rollup");
     assert_eq!(
@@ -528,22 +540,19 @@ fn index_read_and_parse_failures_emit_typed_json_errors() {
     let td = tempfile::tempdir().unwrap();
     let missing = td.path().join("missing.json");
 
-    let read_failure = spawn_index_search(&missing, None, &["--output", "json"])
-        .failure()
-        .code(1);
-    let read_doc = parse_stdout(read_failure.get_output());
-    assert_eq!(read_doc["status"], "error");
-    assert_eq!(read_doc["error"]["code"], "index::index_read_failed");
-    assert!(read_failure.get_output().stderr.is_empty());
+    assert_json_error(
+        spawn_index_search(&missing, None, &["--output", "json"]),
+        1,
+        "index::index_read_failed",
+    );
 
     let path = index_path(&td);
     std::fs::write(&path, "not valid json").unwrap();
-    let parse_failure = spawn_index_info(&path, "downsampler", &["--output", "json"])
-        .failure()
-        .code(1);
-    let parse_doc = parse_stdout(parse_failure.get_output());
-    assert_eq!(parse_doc["status"], "error");
-    assert_eq!(parse_doc["error"]["code"], "index::index_parse_failed");
+    let parse_doc = assert_json_error(
+        spawn_index_info(&path, "downsampler", &["--output", "json"]),
+        1,
+        "index::index_parse_failed",
+    );
     assert!(
         !parse_doc["error"]["diagnostics"]
             .as_array()
@@ -551,7 +560,6 @@ fn index_read_and_parse_failures_emit_typed_json_errors() {
             .is_empty(),
         "parse failure must include schema diagnostics: {parse_doc:#}"
     );
-    assert!(parse_failure.get_output().stderr.is_empty());
 }
 
 #[test]
@@ -560,42 +568,39 @@ fn usage_errors_emit_exit_two_json_envelopes() {
     let path = index_path(&td);
     write_rich_index(&path);
 
-    let invalid_trigger =
-        spawn_index_search(&path, None, &["--trigger-type", "nope", "--output", "json"])
-            .failure()
-            .code(2);
-    let doc = parse_stdout(invalid_trigger.get_output());
-    assert_eq!(doc["status"], "error");
-    assert_eq!(doc["error"]["code"], "usage::invalid_value");
-    assert!(invalid_trigger.get_output().stderr.is_empty());
+    assert_json_error(
+        spawn_index_search(&path, None, &["--trigger-type", "nope", "--output", "json"]),
+        2,
+        "usage::invalid_value",
+    );
 
-    let invalid_database = spawn_index_search(
-        &path,
-        None,
-        &["--database-version", "nope", "--output", "json"],
-    )
-    .failure()
-    .code(2);
-    let doc = parse_stdout(invalid_database.get_output());
-    assert_eq!(doc["error"]["code"], "usage::invalid_database_version");
+    let doc = assert_json_error(
+        spawn_index_search(
+            &path,
+            None,
+            &["--database-version", "nope", "--output", "json"],
+        ),
+        2,
+        "usage::invalid_database_version",
+    );
     assert_eq!(doc["error"]["details"]["value"], "nope");
 
-    let invalid_version = spawn_index_info(
-        &path,
-        "downsampler",
-        &["--version", "nope", "--output", "json"],
-    )
-    .failure()
-    .code(2);
-    let doc = parse_stdout(invalid_version.get_output());
-    assert_eq!(doc["error"]["code"], "usage::value_validation");
+    let doc = assert_json_error(
+        spawn_index_info(
+            &path,
+            "downsampler",
+            &["--version", "nope", "--output", "json"],
+        ),
+        2,
+        "usage::value_validation",
+    );
     assert_eq!(doc["error"]["field"], "--version");
 
-    let invalid_name = spawn_index_info(&path, "7plugin", &["--output", "json"])
-        .failure()
-        .code(2);
-    let doc = parse_stdout(invalid_name.get_output());
-    assert_eq!(doc["error"]["code"], "usage::invalid_name");
+    let doc = assert_json_error(
+        spawn_index_info(&path, "7plugin", &["--output", "json"]),
+        2,
+        "usage::invalid_name",
+    );
     assert!(
         doc["error"]["message"]
             .as_str()
@@ -604,12 +609,12 @@ fn usage_errors_emit_exit_two_json_envelopes() {
         "invalid-name message should carry the schema rule: {doc:#}"
     );
 
-    let name_at_version = spawn_index_info(&path, "downsampler@1.2.0", &["--output", "json"])
-        .failure()
-        .code(2);
-    let doc = parse_stdout(name_at_version.get_output());
-    assert_eq!(doc["error"]["code"], "usage::invalid_name");
-    assert_ne!(doc["status"], "ok");
+    let doc = assert_json_error(
+        spawn_index_info(&path, "downsampler@1.2.0", &["--output", "json"]),
+        2,
+        "usage::invalid_name",
+    );
+    assert_eq!(doc["status"], "error");
 }
 
 #[test]
@@ -617,15 +622,15 @@ fn invalid_arguments_fail_before_index_read() {
     let td = tempfile::tempdir().unwrap();
     let missing = td.path().join("missing.json");
 
-    let assert = spawn_index_info(
-        &missing,
-        "downsampler",
-        &["--database-version", "nope", "--output", "json"],
-    )
-    .failure()
-    .code(2);
-    let doc = parse_stdout(assert.get_output());
-    assert_eq!(doc["error"]["code"], "usage::invalid_database_version");
+    let doc = assert_json_error(
+        spawn_index_info(
+            &missing,
+            "downsampler",
+            &["--database-version", "nope", "--output", "json"],
+        ),
+        2,
+        "usage::invalid_database_version",
+    );
     assert!(
         !doc.to_string().contains("index_read_failed"),
         "usage validation must run before filesystem reads: {doc:#}"
@@ -669,7 +674,10 @@ fn json_output_never_contains_ansi_or_cli_unknown() {
             ])
             .arg("--index")
             .arg(&path);
-        cmd.assert().failure().code(2)
+        cmd.assert()
+            .failure()
+            .code(2)
+            .stderr(predicates::str::is_empty())
     };
     assert!(
         !failure
@@ -678,10 +686,15 @@ fn json_output_never_contains_ansi_or_cli_unknown() {
             .windows(2)
             .any(|w| w == [0x1b, b'['])
     );
-    let stdout = String::from_utf8_lossy(&failure.get_output().stdout);
+    let failure_doc = parse_stdout(failure.get_output());
+    assert_eq!(failure_doc["status"], "error");
+    assert_eq!(
+        failure_doc["error"]["code"],
+        "usage::invalid_database_version"
+    );
     assert!(
-        !stdout.contains(r#""cli::unknown""#),
-        "representative index failure must use typed errors: {stdout}"
+        !failure_doc.to_string().contains(r#""cli::unknown""#),
+        "representative index failure must use typed errors: {failure_doc:#}"
     );
 }
 
