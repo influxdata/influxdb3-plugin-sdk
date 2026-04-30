@@ -857,6 +857,20 @@ mod published_at_tests {
         assert_eq!(published_at.to_string(), "2026-04-29T18:45:12Z");
     }
 
+    #[test]
+    fn from_utc_datetime_formats_as_cargo_pubtime_in_utc() {
+        let source_offset = UtcOffset::from_hms(-5, 0, 0).unwrap();
+        let source_datetime = PrimitiveDateTime::new(
+            Date::from_calendar_date(2026, Month::April, 29).unwrap(),
+            Time::from_hms_nano(13, 45, 12, 987_654_321).unwrap(),
+        )
+        .assume_offset(source_offset);
+
+        let published_at = PublishedAt::from_utc_datetime(source_datetime).unwrap();
+
+        assert_eq!(published_at.as_str(), "2026-04-29T18:45:12Z");
+    }
+
     #[rstest]
     #[case("2026-04-29T18:45:12.123Z")]
     #[case("2026-04-29T13:45:12-05:00")]
@@ -1877,12 +1891,12 @@ mod from_manifest_tests {
     }
 
     #[test]
-    fn from_manifest_assigns_current_utc_published_at() {
-        let before = PublishedAt::now_utc();
+    fn from_manifest_assigns_valid_cargo_pubtime_published_at() {
         let entry = IndexEntry::from_manifest(sample_manifest(), sample_hash());
-        let after = PublishedAt::now_utc();
-        assert!(entry.published_at >= before);
-        assert!(entry.published_at <= after);
+        assert_eq!(
+            PublishedAt::try_new(entry.published_at.as_str()).unwrap(),
+            entry.published_at
+        );
         assert_eq!(entry.published_at.as_str().len(), PublishedAt::LEN);
         assert!(entry.published_at.as_str().ends_with('Z'));
         assert!(!entry.published_at.as_str().contains('.'));

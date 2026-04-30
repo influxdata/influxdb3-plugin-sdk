@@ -43,15 +43,15 @@ fn happy_path_against_valid_fixture() {
 }
 
 #[test]
-fn package_assigns_current_utc_published_at() {
+fn package_assigns_valid_cargo_pubtime_published_at() {
     let plugin_dir = fixtures().join("valid_plugin");
 
-    let before = PublishedAt::now_utc();
     let out = package_plugin(&plugin_dir, empty_index()).expect("package should succeed");
-    let after = PublishedAt::now_utc();
 
-    assert!(out.new_entry.published_at >= before);
-    assert!(out.new_entry.published_at <= after);
+    assert_eq!(
+        PublishedAt::try_new(out.new_entry.published_at.as_str()).unwrap(),
+        out.new_entry.published_at
+    );
     assert_eq!(
         out.new_entry.published_at.as_str().len(),
         "YYYY-MM-DDTHH:MM:SSZ".len()

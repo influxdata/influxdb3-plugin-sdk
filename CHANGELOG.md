@@ -14,6 +14,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `influxdb3-plugin-schemas`: index schema version is now `2.0`; non-empty indexes must include strict `YYYY-MM-DDTHH:MM:SSZ` UTC publication timestamps.
 - `influxdb3-plugin-sdk`: package assigns current UTC publication time to new entries and yank/unyank preserves the original publication time.
 
+### Fixed
+- `influxdb3-plugin-schemas`: published timestamp tests no longer depend on live wall-clock bounds.
+
 ## [0.1.1] - 2026-04-29
 
 ### Added
