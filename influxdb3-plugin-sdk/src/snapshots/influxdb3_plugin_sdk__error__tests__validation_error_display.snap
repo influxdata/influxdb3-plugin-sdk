@@ -1,5 +1,6 @@
 ---
 source: influxdb3-plugin-sdk/src/error.rs
+assertion_line: 356
 expression: rendered
 ---
 - "plugin.description: description must not be empty"
@@ -7,4 +8,6 @@ expression: rendered
 - "__init__.py does not parse as valid Python: unexpected token"
 - "trigger ProcessWrites is declared in manifest.toml but has no matching top-level `def process_writes(...)` in __init__.py"
 - "trigger ProcessScheduledCall is implemented as `async def` in __init__.py; the runtime invokes trigger functions synchronously"
+- no Python entry point found in the plugin directory (no .py files at the top level)
+- "multiple .py files found at the top level without __init__.py: [\"a.py\", \"b.py\"]; add __init__.py for a multi-file plugin, or keep only one .py file"
 - "plugin (\"downsampler\", \"1.2.0\") already exists in the target index"

@@ -28,17 +28,14 @@ fn valid_plugin_passes() {
 }
 
 #[test]
-fn missing_init_reports_missing_required_file() {
+fn missing_init_reports_no_entry_point() {
     let err = validate::plugin_dir(&fixtures().join("invalid_plugins/missing_init")).unwrap_err();
     match err {
         SdkError::ValidationErrors(errs) => {
             assert_eq!(errs.len(), 1);
-            assert!(matches!(
-                errs[0],
-                ValidationError::MissingRequiredFile { .. }
-            ));
+            assert!(matches!(errs[0], ValidationError::NoEntryPoint));
         }
-        other => panic!("expected ValidationErrors(MissingRequiredFile), got {other:?}"),
+        other => panic!("expected ValidationErrors(NoEntryPoint), got {other:?}"),
     }
 }
 
@@ -73,7 +70,8 @@ fn missing_trigger_impl_reports_trigger_not_implemented() {
             assert!(matches!(
                 errs[0],
                 ValidationError::TriggerNotImplemented {
-                    trigger: TriggerType::ProcessWrites
+                    trigger: TriggerType::ProcessWrites,
+                    ..
                 }
             ));
         }
@@ -90,7 +88,8 @@ fn async_trigger_reports_async_trigger_fn() {
             assert!(matches!(
                 errs[0],
                 ValidationError::AsyncTriggerFn {
-                    trigger: TriggerType::ProcessWrites
+                    trigger: TriggerType::ProcessWrites,
+                    ..
                 }
             ));
         }
@@ -196,7 +195,8 @@ fn multi_cross_file_defects_collected_in_one_pass() {
         matches!(
             e,
             ValidationError::AsyncTriggerFn {
-                trigger: TriggerType::ProcessWrites
+                trigger: TriggerType::ProcessWrites,
+                ..
             }
         )
     });
@@ -204,7 +204,8 @@ fn multi_cross_file_defects_collected_in_one_pass() {
         matches!(
             e,
             ValidationError::TriggerNotImplemented {
-                trigger: TriggerType::ProcessScheduledCall
+                trigger: TriggerType::ProcessScheduledCall,
+                ..
             }
         )
     });

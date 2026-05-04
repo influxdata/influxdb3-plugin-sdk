@@ -163,21 +163,33 @@ pub enum ValidationError {
     #[error("required file {file:?} is missing from the plugin directory")]
     MissingRequiredFile { file: String },
 
-    #[error("__init__.py does not parse as valid Python: {message}")]
-    PythonParse { message: String },
+    #[error("{entry_point} does not parse as valid Python: {message}")]
+    PythonParse { entry_point: String, message: String },
 
     #[error(
         "trigger {trigger:?} is declared in manifest.toml but has no matching \
-         top-level `def {}(...)` in __init__.py",
+         top-level `def {}(...)` in {entry_point}",
         .trigger.as_str()
     )]
-    TriggerNotImplemented { trigger: TriggerType },
+    TriggerNotImplemented {
+        trigger: TriggerType,
+        entry_point: String,
+    },
 
     #[error(
-        "trigger {trigger:?} is implemented as `async def` in __init__.py; \
+        "trigger {trigger:?} is implemented as `async def` in {entry_point}; \
          the runtime invokes trigger functions synchronously"
     )]
-    AsyncTriggerFn { trigger: TriggerType },
+    AsyncTriggerFn {
+        trigger: TriggerType,
+        entry_point: String,
+    },
+
+    #[error("no Python entry point found in the plugin directory (no .py files at the top level)")]
+    NoEntryPoint,
+
+    #[error("multiple .py files found at the top level without __init__.py: {files:?}; add __init__.py for a multi-file plugin, or keep only one .py file")]
+    AmbiguousEntryPoint { files: Vec<String> },
 
     /// Plugin `(name, version)` already exists in the target index. Surfaces
     /// from [`crate::validate::plugin_dir_with_index`] so index-aware
@@ -197,6 +209,8 @@ impl ValidationError {
             Self::PythonParse { .. } => "PythonParse",
             Self::TriggerNotImplemented { .. } => "TriggerNotImplemented",
             Self::AsyncTriggerFn { .. } => "AsyncTriggerFn",
+            Self::NoEntryPoint => "NoEntryPoint",
+            Self::AmbiguousEntryPoint { .. } => "AmbiguousEntryPoint",
             Self::NameVersionConflict { .. } => "NameVersionConflict",
         }
     }
@@ -296,13 +310,20 @@ mod tests {
                 file: "__init__.py".into(),
             },
             ValidationError::PythonParse {
+                entry_point: "__init__.py".into(),
                 message: "unexpected token".into(),
             },
             ValidationError::TriggerNotImplemented {
                 trigger: TriggerType::ProcessWrites,
+                entry_point: "__init__.py".into(),
             },
             ValidationError::AsyncTriggerFn {
                 trigger: TriggerType::ProcessScheduledCall,
+                entry_point: "__init__.py".into(),
+            },
+            ValidationError::NoEntryPoint,
+            ValidationError::AmbiguousEntryPoint {
+                files: vec!["a.py".into(), "b.py".into()],
             },
             ValidationError::NameVersionConflict {
                 name: "downsampler".into(),
