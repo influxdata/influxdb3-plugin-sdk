@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-05-04
+
 ### Added
 - Single-file plugin support: `validate` and `package` now accept plugin directories containing a single `.py` file (no `__init__.py`) as the entry point.
 - New validation errors: `NoEntryPoint` (no `.py` files found) and `AmbiguousEntryPoint` (multiple `.py` files without `__init__.py`).
