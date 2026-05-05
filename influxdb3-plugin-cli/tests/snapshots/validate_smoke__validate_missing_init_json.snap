@@ -1,5 +1,6 @@
 ---
 source: influxdb3-plugin-cli/tests/validate_smoke.rs
+assertion_line: 111
 expression: payload
 ---
 {
@@ -7,12 +8,8 @@ expression: payload
     "code": "validate::failed",
     "diagnostics": [
       {
-        "code": "validate::missing_required_file",
-        "details": {
-          "file": "__init__.py"
-        },
-        "field": "__init__.py",
-        "message": "required file \"__init__.py\" is missing from the plugin directory"
+        "code": "validate::no_entry_point",
+        "message": "no Python entry point found in the plugin directory (no .py files at the top level)"
       }
     ],
     "message": "1 validation diagnostic(s)"

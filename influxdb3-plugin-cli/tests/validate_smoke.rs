@@ -45,9 +45,9 @@ fn validate_happy_path_emits_empty_diagnostics_array() {
     insta::assert_json_snapshot!("validate_happy_path_json", payload);
 }
 
-/// Empty plugin directory: BOTH `manifest.toml` and `__init__.py` are
+/// Empty plugin directory: both a Python entry point and `manifest.toml` are
 /// missing. Spec says all validation errors are collected, so both
-/// `MissingRequiredFile` diagnostics must surface in one run.
+/// `NoEntryPoint` and `MissingRequiredFile` diagnostics must surface in one run.
 #[test]
 fn validate_empty_plugin_dir_reports_both_missing_files_in_json() {
     let td = tempfile::tempdir().unwrap();
@@ -65,18 +65,24 @@ fn validate_empty_plugin_dir_reports_both_missing_files_in_json() {
         .as_array()
         .expect("diagnostics array");
     assert_eq!(diags.len(), 2, "expected two diagnostics, got {payload}");
-    let mut codes_and_fields: Vec<(&str, &str)> = diags
+    let codes: Vec<&str> = diags
         .iter()
-        .map(|d| (d["code"].as_str().unwrap(), d["field"].as_str().unwrap()))
+        .map(|d| d["code"].as_str().unwrap())
         .collect();
-    codes_and_fields.sort();
-    assert_eq!(
-        codes_and_fields,
-        vec![
-            ("validate::missing_required_file", "__init__.py"),
-            ("validate::missing_required_file", "manifest.toml"),
-        ]
+    assert!(
+        codes.contains(&"validate::no_entry_point"),
+        "expected no_entry_point diagnostic, got {codes:?}"
     );
+    assert!(
+        codes.contains(&"validate::missing_required_file"),
+        "expected missing_required_file diagnostic, got {codes:?}"
+    );
+    // The missing_required_file diagnostic should point at manifest.toml
+    let manifest_diag = diags
+        .iter()
+        .find(|d| d["code"] == "validate::missing_required_file")
+        .unwrap();
+    assert_eq!(manifest_diag["field"], "manifest.toml");
 }
 
 /// Validator idiom: failure path emits a single JSON envelope on STDOUT
@@ -87,7 +93,7 @@ fn validate_failure_emits_diagnostics_on_stdout_and_exits_one() {
     let dir = td.path().join("p");
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("manifest.toml"), VALID_MANIFEST).unwrap();
-    // No __init__.py — should surface MissingRequiredFile.
+    // No .py files — should surface NoEntryPoint.
 
     let assert = spawn_validate(&dir, &["--output", "json"])
         .failure()
@@ -101,8 +107,7 @@ fn validate_failure_emits_diagnostics_on_stdout_and_exits_one() {
         .as_array()
         .expect("diagnostics array");
     assert_eq!(diags.len(), 1);
-    assert_eq!(diags[0]["code"], "validate::missing_required_file");
-    assert_eq!(diags[0]["field"], "__init__.py");
+    assert_eq!(diags[0]["code"], "validate::no_entry_point");
     insta::assert_json_snapshot!("validate_missing_init_json", payload);
 }
 
