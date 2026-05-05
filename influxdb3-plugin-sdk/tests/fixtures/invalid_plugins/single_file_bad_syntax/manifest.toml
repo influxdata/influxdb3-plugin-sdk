@@ -1,0 +1,10 @@
+manifest_schema_version = "1.0"
+
+[plugin]
+name = "bad-syntax"
+version = "0.1.0"
+description = "Single .py file with invalid Python syntax."
+triggers = ["process_writes"]
+
+[dependencies]
+database_version = ">=3.0.0"

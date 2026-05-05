@@ -11,6 +11,7 @@
 
 use influxdb3_plugin_schemas::{Index, PublishedAt};
 use rstest::rstest;
+use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
 mod common;
@@ -547,4 +548,74 @@ fn package_json_success_snapshot() {
     );
 
     insta::assert_json_snapshot!("package_success", envelope);
+}
+
+// ---------------------------------------------------------------------------
+// Single-file plugin packaging
+// ---------------------------------------------------------------------------
+
+/// Returns the path to the SDK crate's test fixtures directory.
+fn sdk_fixtures() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../influxdb3-plugin-sdk/tests/fixtures")
+}
+
+/// Packages the `valid_single_file_plugin` fixture and verifies:
+/// - exit 0
+/// - artifact tarball exists at expected name
+/// - derived index.json exists and is parseable
+/// - archive contains `single-file-plugin-0.1.0/manifest.toml` and
+///   `single-file-plugin-0.1.0/my_plugin.py`
+/// - archive does NOT contain any `__init__.py`
+#[test]
+fn package_single_file_plugin() {
+    let td = tempfile::tempdir().unwrap();
+    let fixture = sdk_fixtures().join("valid_single_file_plugin");
+    let index_dir = td.path().join("reg");
+    std::fs::create_dir_all(&index_dir).unwrap();
+    let index_path = index_dir.join("index.json");
+    write_empty_index(&index_path);
+    let out_dir = td.path().join("build");
+
+    spawn_package(&fixture, &index_path, &out_dir, &["--output", "json"]).success();
+
+    // Artifact and derived index exist.
+    let tarball_path = out_dir.join("single-file-plugin-0.1.0.tar.gz");
+    assert!(
+        tarball_path.exists(),
+        "expected tarball at {}",
+        tarball_path.display()
+    );
+    assert!(out_dir.join("index.json").exists());
+
+    // Derived index round-trips and carries the new entry.
+    let derived =
+        Index::parse_json(&std::fs::read_to_string(out_dir.join("index.json")).unwrap()).unwrap();
+    assert_eq!(derived.plugins.len(), 1);
+    let plugin = &derived.plugins[0];
+    assert_eq!(plugin.name.as_str(), "single-file-plugin");
+    assert_eq!(plugin.version.to_string(), "0.1.0");
+
+    // Inspect the archive contents.
+    let tarball_bytes = std::fs::read(&tarball_path).unwrap();
+    let gz = flate2::read::GzDecoder::new(Cursor::new(tarball_bytes));
+    let mut archive = tar::Archive::new(gz);
+    let paths: Vec<String> = archive
+        .entries()
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .map(|e| e.path().unwrap().to_string_lossy().into_owned())
+        .collect();
+
+    assert!(
+        paths.contains(&"single-file-plugin-0.1.0/manifest.toml".to_owned()),
+        "archive must contain manifest.toml, got: {paths:?}"
+    );
+    assert!(
+        paths.contains(&"single-file-plugin-0.1.0/my_plugin.py".to_owned()),
+        "archive must contain my_plugin.py, got: {paths:?}"
+    );
+    assert!(
+        !paths.iter().any(|p| p.contains("__init__.py")),
+        "archive must NOT contain __init__.py, got: {paths:?}"
+    );
 }

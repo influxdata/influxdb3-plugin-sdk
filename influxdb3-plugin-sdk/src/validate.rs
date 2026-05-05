@@ -1,11 +1,24 @@
 //! Plugin-directory validation.
 //!
+//! Two plugin formats are supported:
+//!
+//! - **Multi-file** — a directory containing `__init__.py` (entry point) plus
+//!   any number of helper modules. Detected when `__init__.py` exists as a
+//!   regular file at the top level.
+//! - **Single-file** — a directory containing exactly one `.py` file (no
+//!   `__init__.py`). Detected when no `__init__.py` exists and there is
+//!   exactly one regular `.py` file at the top level.
+//!
+//! Entry-point detection uses `symlink_metadata()` so symbolic links are
+//! excluded (matching archive-collection semantics — archives store the link
+//! target, not the link itself).
+//!
 //! Two check categories:
 //!
 //! - **Structural** (via [`Manifest::parse_toml`]): manifest well-formedness,
 //!   required-file presence, name/version/trigger/URL/dep parseability,
 //!   description length, non-empty triggers array, URL scheme allowlist.
-//! - **Code / manifest cross-reference**: `__init__.py` parses as valid
+//! - **Code / manifest cross-reference**: the entry point parses as valid
 //!   Python 3, and each trigger declared in `manifest.plugin.triggers` has
 //!   a top-level synchronous `def <trigger>(...)`. Indirect definitions
 //!   (re-exports, module-level assignments, class methods) and `async def`
@@ -28,6 +41,92 @@ use std::path::Path;
 
 use crate::{SdkError, ValidationError, ValidationReport};
 
+/// Result of scanning the top level of a plugin directory for a Python entry
+/// point. Crate-private — only used within `validate`.
+enum DetectedEntryPoint {
+    /// `__init__.py` exists as a regular file (multi-file plugin).
+    MultiFile { contents: String },
+    /// Exactly one `.py` file exists (no `__init__.py`) — single-file plugin.
+    SingleFile { filename: String, contents: String },
+}
+
+/// Scans the top level of `dir` for a Python entry point.
+///
+/// Uses `symlink_metadata()` to exclude symbolic links (matching archive-
+/// collection semantics). Returns `None` when an error is pushed to `report`.
+fn detect_entry_point(dir: &Path, report: &mut ValidationReport) -> Option<DetectedEntryPoint> {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            report.push(ValidationError::NoEntryPoint);
+            return None;
+        }
+        Err(_) => {
+            report.push(ValidationError::NoEntryPoint);
+            return None;
+        }
+    };
+
+    // Check for __init__.py first (multi-file takes priority).
+    let init_path = dir.join("__init__.py");
+    if let Ok(meta) = std::fs::symlink_metadata(&init_path)
+        && meta.is_file()
+    {
+        match std::fs::read_to_string(&init_path) {
+            Ok(contents) => {
+                return Some(DetectedEntryPoint::MultiFile { contents });
+            }
+            Err(_) => {
+                report.push(ValidationError::NoEntryPoint);
+                return None;
+            }
+        }
+    }
+
+    // No __init__.py — scan for regular .py files.
+    let mut py_files: Vec<String> = Vec::new();
+    for entry in entries {
+        let Ok(entry) = entry else { continue };
+        let file_name = entry.file_name();
+        let name = file_name.to_string_lossy();
+        if !name.ends_with(".py") {
+            continue;
+        }
+        // Use symlink_metadata to exclude symlinks.
+        let path = entry.path();
+        let Ok(meta) = std::fs::symlink_metadata(&path) else {
+            continue;
+        };
+        if !meta.is_file() {
+            continue;
+        }
+        py_files.push(name.into_owned());
+    }
+
+    match py_files.len() {
+        0 => {
+            report.push(ValidationError::NoEntryPoint);
+            None
+        }
+        1 => {
+            let filename = py_files.into_iter().next().unwrap();
+            let path = dir.join(&filename);
+            match std::fs::read_to_string(&path) {
+                Ok(contents) => Some(DetectedEntryPoint::SingleFile { filename, contents }),
+                Err(_) => {
+                    report.push(ValidationError::NoEntryPoint);
+                    None
+                }
+            }
+        }
+        _ => {
+            py_files.sort();
+            report.push(ValidationError::AmbiguousEntryPoint { files: py_files });
+            None
+        }
+    }
+}
+
 /// Validates a plugin directory.
 ///
 /// Returns the parsed [`Manifest`] on success so downstream callers (e.g.
@@ -35,29 +134,40 @@ use crate::{SdkError, ValidationError, ValidationReport};
 /// - `SdkError::Io` — I/O error other than `NotFound` on required files.
 /// - `SdkError::ValidationErrors` — structural or cross-file check failures.
 ///
-/// Missing-file failures (`manifest.toml`, `__init__.py`) surface as
-/// `ValidationError::MissingRequiredFile`. Structural manifest parse
-/// failure is fail-fast: without a valid manifest, the set of declared
-/// triggers is unknown and cross-file checks can't run. Cross-file failures
-/// accumulate so multiple missing triggers or an unparseable Python source
-/// come back together in one report.
+/// Entry-point detection runs unconditionally (before the manifest check).
+/// Missing `manifest.toml` surfaces as `ValidationError::MissingRequiredFile`.
+/// Structural manifest parse failure is fail-fast: without a valid manifest,
+/// the set of declared triggers is unknown and cross-file checks can't run.
+/// Cross-file failures accumulate so multiple missing triggers or an
+/// unparseable Python source come back together in one report.
 pub fn plugin_dir(dir: &Path) -> Result<Manifest, SdkError> {
     let mut report = ValidationReport::new();
 
+    // Entry-point detection runs unconditionally.
+    let entry_point = detect_entry_point(dir, &mut report);
+
     let manifest_raw =
         read_optional_required(&dir.join("manifest.toml"), "manifest.toml", &mut report)?;
-    let init_raw = read_optional_required(&dir.join("__init__.py"), "__init__.py", &mut report)?;
 
     // Without manifest contents, the trigger list is unknown, so cross-file
-    // checks can't run. Surface the collected file-existence diagnostics now.
+    // checks can't run. Surface the collected diagnostics now.
     let Some(manifest_raw) = manifest_raw else {
         report.into_result()?;
         unreachable!("non-empty report always returns Err");
     };
     let manifest = Manifest::parse_toml(&manifest_raw)?;
 
-    if let Some(init_raw) = init_raw {
-        check_python_source(&init_raw, &manifest.plugin.triggers, &mut report);
+    if let Some(ep) = entry_point {
+        let (entry_point_name, contents) = match ep {
+            DetectedEntryPoint::MultiFile { contents } => ("__init__.py".to_owned(), contents),
+            DetectedEntryPoint::SingleFile { filename, contents } => (filename, contents),
+        };
+        check_python_source(
+            &contents,
+            &manifest.plugin.triggers,
+            &entry_point_name,
+            &mut report,
+        );
     }
     report.into_result()?;
     Ok(manifest)
@@ -136,6 +246,7 @@ pub fn plugin_dir_with_index(
 fn check_python_source(
     source: &str,
     declared_triggers: &[TriggerType],
+    entry_point: &str,
     report: &mut ValidationReport,
 ) {
     let mut parser = tree_sitter::Parser::new();
@@ -146,6 +257,7 @@ fn check_python_source(
 
     let Some(tree) = parser.parse(source, None) else {
         report.push(ValidationError::PythonParse {
+            entry_point: entry_point.to_owned(),
             message: "tree-sitter produced no parse tree".into(),
         });
         return;
@@ -154,6 +266,7 @@ fn check_python_source(
     let root = tree.root_node();
     if root.has_error() {
         report.push(ValidationError::PythonParse {
+            entry_point: entry_point.to_owned(),
             message: format_parse_error(root, source),
         });
         return;
@@ -174,10 +287,14 @@ fn check_python_source(
     for trigger in declared_triggers {
         let expected = trigger.as_str();
         match top_level_defs.get(expected) {
-            None => report.push(ValidationError::TriggerNotImplemented { trigger: *trigger }),
-            Some(DefKind::Async) => {
-                report.push(ValidationError::AsyncTriggerFn { trigger: *trigger })
-            }
+            None => report.push(ValidationError::TriggerNotImplemented {
+                trigger: *trigger,
+                entry_point: entry_point.to_owned(),
+            }),
+            Some(DefKind::Async) => report.push(ValidationError::AsyncTriggerFn {
+                trigger: *trigger,
+                entry_point: entry_point.to_owned(),
+            }),
             Some(DefKind::Sync) => {}
         }
     }
@@ -278,6 +395,7 @@ mod tests {
         check_python_source(
             src,
             &trigger_list(&[TriggerType::ProcessWrites]),
+            "__init__.py",
             &mut report,
         );
         assert!(report.is_empty(), "expected no errors, got {report:?}");
@@ -290,6 +408,7 @@ mod tests {
         check_python_source(
             src,
             &trigger_list(&[TriggerType::ProcessWrites]),
+            "__init__.py",
             &mut report,
         );
         assert_eq!(report.len(), 1);
@@ -300,7 +419,8 @@ mod tests {
         assert!(matches!(
             errs[0],
             ValidationError::TriggerNotImplemented {
-                trigger: TriggerType::ProcessWrites
+                trigger: TriggerType::ProcessWrites,
+                ..
             }
         ));
     }
@@ -312,6 +432,7 @@ mod tests {
         check_python_source(
             src,
             &trigger_list(&[TriggerType::ProcessWrites]),
+            "__init__.py",
             &mut report,
         );
         let err = report.into_result().unwrap_err();
@@ -332,6 +453,7 @@ mod tests {
         check_python_source(
             src,
             &trigger_list(&[TriggerType::ProcessWrites]),
+            "__init__.py",
             &mut report,
         );
         assert_eq!(report.len(), 1);
@@ -353,6 +475,7 @@ mod tests {
         check_python_source(
             src,
             &trigger_list(&[TriggerType::ProcessWrites]),
+            "__init__.py",
             &mut report,
         );
         assert_eq!(report.len(), 1);
@@ -363,7 +486,8 @@ mod tests {
         assert!(matches!(
             errs[0],
             ValidationError::TriggerNotImplemented {
-                trigger: TriggerType::ProcessWrites
+                trigger: TriggerType::ProcessWrites,
+                ..
             }
         ));
     }
@@ -382,6 +506,7 @@ def process_writes():
         check_python_source(
             src,
             &trigger_list(&[TriggerType::ProcessWrites]),
+            "__init__.py",
             &mut report,
         );
         assert_eq!(report.len(), 1);
@@ -392,7 +517,8 @@ def process_writes():
         assert!(matches!(
             errs[0],
             ValidationError::TriggerNotImplemented {
-                trigger: TriggerType::ProcessWrites
+                trigger: TriggerType::ProcessWrites,
+                ..
             }
         ));
     }
@@ -404,6 +530,7 @@ def process_writes():
         check_python_source(
             src,
             &trigger_list(&[TriggerType::ProcessWrites]),
+            "__init__.py",
             &mut report,
         );
         let err = report.into_result().unwrap_err();
@@ -425,6 +552,7 @@ def process_writes():
                 TriggerType::ProcessScheduledCall,
                 TriggerType::ProcessRequest,
             ]),
+            "__init__.py",
             &mut report,
         );
         assert_eq!(report.len(), 3);
@@ -435,7 +563,7 @@ def process_writes():
         let mut missing: Vec<TriggerType> = errs
             .iter()
             .map(|e| match e {
-                ValidationError::TriggerNotImplemented { trigger } => *trigger,
+                ValidationError::TriggerNotImplemented { trigger, .. } => *trigger,
                 other => panic!("expected TriggerNotImplemented, got {other:?}"),
             })
             .collect();
@@ -466,6 +594,7 @@ def process_scheduled_call(a, b, c):
                 TriggerType::ProcessWrites,
                 TriggerType::ProcessScheduledCall,
             ]),
+            "__init__.py",
             &mut report,
         );
         assert!(report.is_empty());
@@ -482,6 +611,7 @@ def process_writes(a, b, c):
         check_python_source(
             src,
             &trigger_list(&[TriggerType::ProcessWrites]),
+            "__init__.py",
             &mut report,
         );
         assert!(report.is_empty(), "got {report:?}");
@@ -504,6 +634,7 @@ def process_writes(a, b, c):
         check_python_source(
             src,
             &trigger_list(&[TriggerType::ProcessWrites]),
+            "__init__.py",
             &mut report,
         );
         let err = report.into_result().unwrap_err();
@@ -511,7 +642,7 @@ def process_writes(a, b, c):
             panic!("expected ValidationErrors")
         };
         assert_eq!(errs.len(), 1);
-        let ValidationError::PythonParse { message } = &errs[0] else {
+        let ValidationError::PythonParse { message, .. } = &errs[0] else {
             panic!("expected PythonParse, got {:?}", errs[0])
         };
         // Earliest error is on line 2; later lines also contain errors.
@@ -616,7 +747,7 @@ database_version = ">=3.0.0"
     }
 
     #[test]
-    fn plugin_dir_reports_both_missing_required_files() {
+    fn empty_dir_reports_missing_manifest_and_no_entry_point() {
         let td = tempfile::tempdir().unwrap();
         let err = plugin_dir(td.path()).expect_err("empty dir must fail");
         let SdkError::ValidationErrors(errs) = err else {
@@ -627,16 +758,20 @@ database_version = ">=3.0.0"
             2,
             "expected exactly two diagnostics, got {errs:?}"
         );
-        let files: std::collections::BTreeSet<&str> = errs
-            .iter()
-            .map(|e| match e {
-                ValidationError::MissingRequiredFile { file } => file.as_str(),
-                other => panic!("expected MissingRequiredFile, got {other:?}"),
-            })
-            .collect();
-        assert_eq!(
-            files,
-            std::collections::BTreeSet::from(["manifest.toml", "__init__.py"]),
+        // First: NoEntryPoint (entry-point detection runs unconditionally first)
+        assert!(
+            matches!(errs[0], ValidationError::NoEntryPoint),
+            "expected NoEntryPoint, got {:?}",
+            errs[0]
+        );
+        // Second: MissingRequiredFile for manifest.toml
+        assert!(
+            matches!(
+                &errs[1],
+                ValidationError::MissingRequiredFile { file } if file == "manifest.toml"
+            ),
+            "expected MissingRequiredFile(manifest.toml), got {:?}",
+            errs[1]
         );
     }
 }

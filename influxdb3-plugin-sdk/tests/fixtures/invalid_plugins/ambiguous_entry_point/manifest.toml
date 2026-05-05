@@ -1,0 +1,10 @@
+manifest_schema_version = "1.0"
+
+[plugin]
+name = "ambiguous"
+version = "0.1.0"
+description = "Two .py files without __init__.py — ambiguous entry point."
+triggers = ["process_writes"]
+
+[dependencies]
+database_version = ">=3.0.0"

@@ -52,27 +52,52 @@ pub(crate) fn json_error_from_validation(err: &ValidationError) -> JsonError {
             diagnostics: vec![],
             cause: vec![],
         },
-        ValidationError::PythonParse { message } => JsonError {
+        ValidationError::PythonParse {
+            entry_point,
+            message,
+        } => JsonError {
             code: "validate::python_parse".into(),
             message: err.to_string(),
-            field: Some("__init__.py".into()),
+            field: Some(entry_point.clone()),
             details: Some(serde_json::json!({ "parse_message": message })),
             diagnostics: vec![],
             cause: vec![],
         },
-        ValidationError::TriggerNotImplemented { trigger } => JsonError {
+        ValidationError::TriggerNotImplemented {
+            trigger,
+            entry_point,
+        } => JsonError {
             code: "validate::trigger_not_implemented".into(),
             message: err.to_string(),
-            field: Some("__init__.py".into()),
+            field: Some(entry_point.clone()),
             details: Some(serde_json::json!({ "trigger": trigger.as_str() })),
             diagnostics: vec![],
             cause: vec![],
         },
-        ValidationError::AsyncTriggerFn { trigger } => JsonError {
+        ValidationError::AsyncTriggerFn {
+            trigger,
+            entry_point,
+        } => JsonError {
             code: "validate::async_trigger_fn".into(),
             message: err.to_string(),
-            field: Some("__init__.py".into()),
+            field: Some(entry_point.clone()),
             details: Some(serde_json::json!({ "trigger": trigger.as_str() })),
+            diagnostics: vec![],
+            cause: vec![],
+        },
+        ValidationError::NoEntryPoint => JsonError {
+            code: "validate::no_entry_point".into(),
+            message: err.to_string(),
+            field: None,
+            details: None,
+            diagnostics: vec![],
+            cause: vec![],
+        },
+        ValidationError::AmbiguousEntryPoint { files } => JsonError {
+            code: "validate::ambiguous_entry_point".into(),
+            message: err.to_string(),
+            field: None,
+            details: Some(serde_json::json!({ "files": files })),
             diagnostics: vec![],
             cause: vec![],
         },
@@ -616,13 +641,16 @@ mod tests {
                 file: "__init__.py".into(),
             },
             ValidationError::PythonParse {
+                entry_point: "__init__.py".into(),
                 message: "unexpected token".into(),
             },
             ValidationError::TriggerNotImplemented {
                 trigger: TriggerType::ProcessWrites,
+                entry_point: "__init__.py".into(),
             },
             ValidationError::AsyncTriggerFn {
                 trigger: TriggerType::ProcessScheduledCall,
+                entry_point: "__init__.py".into(),
             },
             ValidationError::NameVersionConflict {
                 name: "downsampler".into(),
@@ -705,6 +733,7 @@ mod tests {
     fn trigger_details_use_trigger_type_as_str() {
         let ve = ValidationError::TriggerNotImplemented {
             trigger: TriggerType::ProcessWrites,
+            entry_point: "__init__.py".into(),
         };
         let je = json_error_from_validation(&ve);
         let details = je.details.as_ref().expect("details should be Some");
@@ -715,6 +744,7 @@ mod tests {
 
         let ve2 = ValidationError::AsyncTriggerFn {
             trigger: TriggerType::ProcessScheduledCall,
+            entry_point: "__init__.py".into(),
         };
         let je2 = json_error_from_validation(&ve2);
         let details2 = je2.details.as_ref().expect("details should be Some");

@@ -13,7 +13,8 @@ wraps in user-facing subcommands.
 - **`validate`** — structural + cross-file checks against a plugin directory:
   manifest well-formedness, required-file presence, and (via
   `tree-sitter-python`) top-level sync-def implementation of every declared
-  trigger.
+  trigger. Supports both multi-file plugins (with `__init__.py`) and
+  single-file plugins (a sole `.py` file at the top level, no local imports).
 - **`archive`** — canonical tar.gz construction per Spec 2 Reproducibility.
   Byte-deterministic across machines given identical inputs.
 - **`hash`** — SHA-256 of archive bytes in the canonical

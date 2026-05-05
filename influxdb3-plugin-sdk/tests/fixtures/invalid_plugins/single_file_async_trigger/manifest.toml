@@ -1,0 +1,10 @@
+manifest_schema_version = "1.0"
+
+[plugin]
+name = "async-trigger"
+version = "0.1.0"
+description = "Single .py file with async trigger function."
+triggers = ["process_writes"]
+
+[dependencies]
+database_version = ">=3.0.0"

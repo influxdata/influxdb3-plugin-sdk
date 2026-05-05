@@ -59,10 +59,12 @@ influxdb3-plugin info --index ./registry/index.json legacy_rollup --include-yank
 
 ### `validate [plugin-dir]`
 
-Run the manifest + cross-file checks. Emits a `{ "diagnostics": [...] }`
-JSON document on stdout in `--output json` mode regardless of pass /
-fail (Spec 2 § S2-15 validator idiom). Optional `--index <path>`
-adds the `(name, version)` uniqueness check (Spec 2 § S2-2).
+Run the manifest + cross-file checks. Accepts both multi-file plugins
+(with `__init__.py`) and single-file plugins (a sole `.py` file at the
+top level). Emits a `{ "diagnostics": [...] }` JSON document on stdout
+in `--output json` mode regardless of pass / fail (Spec 2 § S2-15
+validator idiom). Optional `--index <path>` adds the `(name, version)`
+uniqueness check (Spec 2 § S2-2).
 
 ```bash
 influxdb3-plugin validate ./my-plugin

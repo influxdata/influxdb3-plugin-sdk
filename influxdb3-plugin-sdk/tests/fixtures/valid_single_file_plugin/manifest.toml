@@ -1,0 +1,10 @@
+manifest_schema_version = "1.0"
+
+[plugin]
+name = "single-file-plugin"
+version = "0.1.0"
+description = "A single-file plugin with no __init__.py."
+triggers = ["process_writes"]
+
+[dependencies]
+database_version = ">=3.0.0"

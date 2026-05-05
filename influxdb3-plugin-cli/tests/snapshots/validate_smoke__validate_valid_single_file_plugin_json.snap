@@ -1,0 +1,9 @@
+---
+source: influxdb3-plugin-cli/tests/validate_smoke.rs
+assertion_line: 492
+expression: payload
+---
+{
+  "result": {},
+  "status": "ok"
+}

@@ -1,0 +1,24 @@
+---
+source: influxdb3-plugin-cli/tests/validate_smoke.rs
+assertion_line: 534
+expression: payload
+---
+{
+  "error": {
+    "code": "validate::failed",
+    "diagnostics": [
+      {
+        "code": "validate::ambiguous_entry_point",
+        "details": {
+          "files": [
+            "bar.py",
+            "foo.py"
+          ]
+        },
+        "message": "multiple .py files found at the top level without __init__.py: [\"bar.py\", \"foo.py\"]; add __init__.py for a multi-file plugin, or keep only one .py file"
+      }
+    ],
+    "message": "1 validation diagnostic(s)"
+  },
+  "status": "error"
+}
