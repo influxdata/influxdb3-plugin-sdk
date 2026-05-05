@@ -17,11 +17,15 @@ use tokio as _;
 #[cfg(test)]
 use assert_cmd as _;
 #[cfg(test)]
+use flate2 as _;
+#[cfg(test)]
 use insta as _;
 #[cfg(test)]
 use pep508_rs as _;
 #[cfg(test)]
 use predicates as _;
+#[cfg(test)]
+use tar as _;
 #[cfg(test)]
 use tempfile as _;
 #[cfg(test)]

@@ -466,6 +466,96 @@ fn validate_with_unreadable_index_emits_json_diagnostic() {
     assert_eq!(diags[0]["field"], missing.display().to_string());
 }
 
+// ---------------------------------------------------------------------------
+// Single-file plugin tests (fixtures from influxdb3-plugin-sdk/tests/fixtures/)
+// ---------------------------------------------------------------------------
+
+/// Returns the path to the SDK crate's test fixtures directory.
+fn sdk_fixtures() -> std::path::PathBuf {
+    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../influxdb3-plugin-sdk/tests/fixtures")
+}
+
+#[test]
+fn validate_valid_single_file_plugin_json() {
+    let fixture = sdk_fixtures().join("valid_single_file_plugin");
+    let assert = spawn_validate(&fixture, &["--output", "json"]).success();
+
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
+    let payload: serde_json::Value =
+        serde_json::from_str(&stdout).expect("validator stdout is JSON");
+    assert_eq!(
+        payload,
+        serde_json::json!({ "status": "ok", "result": {} }),
+        "valid single-file plugin must pass validation"
+    );
+    insta::assert_json_snapshot!("validate_valid_single_file_plugin_json", payload);
+}
+
+#[test]
+fn validate_no_entry_point_json() {
+    let fixture = sdk_fixtures().join("invalid_plugins/no_entry_point");
+    let assert = spawn_validate(&fixture, &["--output", "json"])
+        .failure()
+        .code(1);
+
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
+    let payload: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(payload["status"], "error");
+    let diags = payload["error"]["diagnostics"]
+        .as_array()
+        .expect("diagnostics array");
+    assert_eq!(diags.len(), 1);
+    assert_eq!(diags[0]["code"], "validate::no_entry_point");
+    insta::assert_json_snapshot!("validate_no_entry_point_json", payload);
+}
+
+#[test]
+fn validate_ambiguous_entry_point_json() {
+    let fixture = sdk_fixtures().join("invalid_plugins/ambiguous_entry_point");
+    let assert = spawn_validate(&fixture, &["--output", "json"])
+        .failure()
+        .code(1);
+
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
+    let payload: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(payload["status"], "error");
+    let diags = payload["error"]["diagnostics"]
+        .as_array()
+        .expect("diagnostics array");
+    assert_eq!(diags.len(), 1);
+    assert_eq!(diags[0]["code"], "validate::ambiguous_entry_point");
+    let details = diags[0]["details"].as_object().expect("details object");
+    let files = details["files"].as_array().expect("files array");
+    assert!(
+        files.len() >= 2,
+        "ambiguous entry point must list multiple files, got {files:?}"
+    );
+    insta::assert_json_snapshot!("validate_ambiguous_entry_point_json", payload);
+}
+
+#[test]
+fn validate_single_file_missing_trigger_json() {
+    let fixture = sdk_fixtures().join("invalid_plugins/single_file_missing_trigger");
+    let assert = spawn_validate(&fixture, &["--output", "json"])
+        .failure()
+        .code(1);
+
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
+    let payload: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(payload["status"], "error");
+    let diags = payload["error"]["diagnostics"]
+        .as_array()
+        .expect("diagnostics array");
+    assert_eq!(diags.len(), 1);
+    assert_eq!(diags[0]["code"], "validate::trigger_not_implemented");
+    assert_eq!(
+        diags[0]["field"], "my_plugin.py",
+        "field must name the single-file entry point"
+    );
+    insta::assert_json_snapshot!("validate_single_file_missing_trigger_json", payload);
+}
+
 /// Multi-error case: an index with two distinct schema defects (bad URL
 /// scheme + non-SemVer version) surfaces via `json_error_from_sdk` for
 /// `SdkError::Schema`.

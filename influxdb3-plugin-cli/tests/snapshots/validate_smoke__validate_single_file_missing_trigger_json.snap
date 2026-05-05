@@ -1,0 +1,22 @@
+---
+source: influxdb3-plugin-cli/tests/validate_smoke.rs
+assertion_line: 556
+expression: payload
+---
+{
+  "error": {
+    "code": "validate::failed",
+    "diagnostics": [
+      {
+        "code": "validate::trigger_not_implemented",
+        "details": {
+          "trigger": "process_writes"
+        },
+        "field": "my_plugin.py",
+        "message": "trigger ProcessWrites is declared in manifest.toml but has no matching top-level `def process_writes(...)` in my_plugin.py"
+      }
+    ],
+    "message": "1 validation diagnostic(s)"
+  },
+  "status": "error"
+}
