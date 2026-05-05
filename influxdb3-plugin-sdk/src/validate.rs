@@ -69,17 +69,14 @@ fn detect_entry_point(dir: &Path, report: &mut ValidationReport) -> Option<Detec
 
     // Check for __init__.py first (multi-file takes priority).
     let init_path = dir.join("__init__.py");
-    if let Ok(meta) = std::fs::symlink_metadata(&init_path) {
-        if meta.is_file() {
-            match std::fs::read_to_string(&init_path) {
-                Ok(contents) => {
-                    return Some(DetectedEntryPoint::MultiFile { contents });
-                }
-                Err(_) => {
-                    // If we can't read it, treat as missing.
-                    report.push(ValidationError::NoEntryPoint);
-                    return None;
-                }
+    if let Ok(meta) = std::fs::symlink_metadata(&init_path) && meta.is_file() {
+        match std::fs::read_to_string(&init_path) {
+            Ok(contents) => {
+                return Some(DetectedEntryPoint::MultiFile { contents });
+            }
+            Err(_) => {
+                report.push(ValidationError::NoEntryPoint);
+                return None;
             }
         }
     }
