@@ -52,7 +52,10 @@ pub(crate) fn json_error_from_validation(err: &ValidationError) -> JsonError {
             diagnostics: vec![],
             cause: vec![],
         },
-        ValidationError::PythonParse { entry_point, message } => JsonError {
+        ValidationError::PythonParse {
+            entry_point,
+            message,
+        } => JsonError {
             code: "validate::python_parse".into(),
             message: err.to_string(),
             field: Some(entry_point.clone()),
@@ -60,7 +63,10 @@ pub(crate) fn json_error_from_validation(err: &ValidationError) -> JsonError {
             diagnostics: vec![],
             cause: vec![],
         },
-        ValidationError::TriggerNotImplemented { trigger, entry_point } => JsonError {
+        ValidationError::TriggerNotImplemented {
+            trigger,
+            entry_point,
+        } => JsonError {
             code: "validate::trigger_not_implemented".into(),
             message: err.to_string(),
             field: Some(entry_point.clone()),
@@ -68,7 +74,10 @@ pub(crate) fn json_error_from_validation(err: &ValidationError) -> JsonError {
             diagnostics: vec![],
             cause: vec![],
         },
-        ValidationError::AsyncTriggerFn { trigger, entry_point } => JsonError {
+        ValidationError::AsyncTriggerFn {
+            trigger,
+            entry_point,
+        } => JsonError {
             code: "validate::async_trigger_fn".into(),
             message: err.to_string(),
             field: Some(entry_point.clone()),

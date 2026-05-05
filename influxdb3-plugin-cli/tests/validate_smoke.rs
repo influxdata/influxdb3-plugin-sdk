@@ -65,10 +65,7 @@ fn validate_empty_plugin_dir_reports_both_missing_files_in_json() {
         .as_array()
         .expect("diagnostics array");
     assert_eq!(diags.len(), 2, "expected two diagnostics, got {payload}");
-    let codes: Vec<&str> = diags
-        .iter()
-        .map(|d| d["code"].as_str().unwrap())
-        .collect();
+    let codes: Vec<&str> = diags.iter().map(|d| d["code"].as_str().unwrap()).collect();
     assert!(
         codes.contains(&"validate::no_entry_point"),
         "expected no_entry_point diagnostic, got {codes:?}"

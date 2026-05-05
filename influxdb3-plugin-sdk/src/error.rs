@@ -164,7 +164,10 @@ pub enum ValidationError {
     MissingRequiredFile { file: String },
 
     #[error("{entry_point} does not parse as valid Python: {message}")]
-    PythonParse { entry_point: String, message: String },
+    PythonParse {
+        entry_point: String,
+        message: String,
+    },
 
     #[error(
         "trigger {trigger:?} is declared in manifest.toml but has no matching \
@@ -188,7 +191,9 @@ pub enum ValidationError {
     #[error("no Python entry point found in the plugin directory (no .py files at the top level)")]
     NoEntryPoint,
 
-    #[error("multiple .py files found at the top level without __init__.py: {files:?}; add __init__.py for a multi-file plugin, or keep only one .py file")]
+    #[error(
+        "multiple .py files found at the top level without __init__.py: {files:?}; add __init__.py for a multi-file plugin, or keep only one .py file"
+    )]
     AmbiguousEntryPoint { files: Vec<String> },
 
     /// Plugin `(name, version)` already exists in the target index. Surfaces
