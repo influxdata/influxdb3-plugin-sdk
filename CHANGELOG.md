@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+- Single-file plugin support: `validate` and `package` now accept plugin directories containing a single `.py` file (no `__init__.py`) as the entry point.
+- New validation errors: `NoEntryPoint` (no `.py` files found) and `AmbiguousEntryPoint` (multiple `.py` files without `__init__.py`).
+
+### Changed
+- Validation error messages for `PythonParse`, `TriggerNotImplemented`, and `AsyncTriggerFn` now name the actual entry point file instead of hardcoding `__init__.py`.
+- The `missing_init` validation case now produces `NoEntryPoint` instead of `MissingRequiredFile`.
+
 ## [0.2.0] - 2026-04-30
 
 ### Added

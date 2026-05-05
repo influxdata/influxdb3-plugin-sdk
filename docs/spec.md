@@ -130,7 +130,7 @@ Consumers (the database resolver, the SDK's `validate --index`) reject index ent
 ### Artifact Format
 
 - Archive format: gzipped tar (`tar.gz`). v1 supports `tar.gz` exclusively; no per-entry format selection. Migrating to another format (e.g., zstd) is an additive future-schema change — add an optional `format` field with `tar.gz` as the default.
-- Contents: the full plugin directory, including `manifest.toml` and `__init__.py`. Files not needed for execution should be excluded.
+- Contents: the full plugin directory, including `manifest.toml` and the plugin's Python source file(s). Files not needed for execution should be excluded.
 - Integrity anchor: SHA-256 of the archive bytes, recorded in the entry's `hash` field. Verified before extraction. The hash is the sole trust anchor in v1.
 - Immutability: once `(name, version)` is published, the artifact and its index entry (excluding `yanked` toggling) are immutable. The `published_at` value records original publication time and is preserved across derived indexes, including yank and unyank operations. Publishing the same `(name, version)` again is rejected.
 
@@ -675,7 +675,9 @@ The SDK's validation step — invoked directly by `validate` and as the first st
 
 **Structural (manifest + required files):**
 - Manifest is well-formed TOML and conforms to the declared `manifest_schema_version`.
-- Required files exist at the plugin-dir root: `manifest.toml`, `__init__.py`.
+- Required files exist at the plugin-dir root: `manifest.toml` is always required. The Python entry point is detected as either `__init__.py` (multi-file plugin) or the sole regular `.py` file at the top level (single-file plugin). Symlinks are excluded from detection. Two new structural error cases apply:
+  - **No entry point:** no regular `.py` files exist at the top level.
+  - **Ambiguous entry point:** multiple `.py` files exist at the top level but none is `__init__.py`.
 - `plugin.name` matches the rule `[a-zA-Z][a-zA-Z0-9_-]*` (1–64 ASCII chars, starting with a letter; case-preserving) and is not a Windows reserved device name (`con`/`prn`/`aux`/`nul`/`com0-9`/`lpt0-9`, case-insensitive).
 - `plugin.version` is SemVer 2.0.0 compliant.
 - `plugin.description` is non-empty, contains no line breaks (CR or LF), and ≤ 200 characters.
@@ -685,8 +687,8 @@ The SDK's validation step — invoked directly by `validate` and as the first st
 - `dependencies.python` entries are PEP 508-parseable.
 
 **Code / manifest cross-reference**:
-- `__init__.py` parses as valid Python 3 syntax.
-- For each identifier in `plugin.triggers`, a top-level synchronous `def <name>(...):` exists in `__init__.py`. Shifts "declared but not implemented" from trigger-execute-time on the db to package-time on the author's machine. Two explicit non-matches, both by design:
+- The entry point file parses as valid Python 3 syntax.
+- For each identifier in `plugin.triggers`, a top-level synchronous `def <name>(...):` exists in the entry point file. Shifts "declared but not implemented" from trigger-execute-time on the db to package-time on the author's machine. Two explicit non-matches, both by design:
   - `async def <name>` is rejected. The runtime invokes trigger functions synchronously via PyO3's `call1()` and cannot await coroutines; matching the runtime's lenient `getattr` tolerance would falsely certify `async def` as valid and defer the failure to production.
   - Indirect definitions — re-exports (`from .handler import process_writes`), module-level assignments (`process_writes = some_callable`), class-based callables — are not recognized. Only plain top-level `def` appears in current production plugins and bundled test fixtures. Authors adopting an indirect pattern will need a future opt-out; v1 provides none.
 
