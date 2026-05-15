@@ -1,8 +1,58 @@
 # Contributing to influxdb3-plugin-sdk
 
-This document covers contribution conventions for the SDK workspace, with a focus on **versioning and the per-crate cascade**. For release operator instructions (`cut-version`, `tag-version`, etc.), see `RELEASE.md`.
+Thank you for contributing to `influxdb3-plugin-sdk`.
 
-## Workspace structure
+This repository contains Rust tooling for authoring, validating, packaging, and publishing InfluxDB 3 plugins. This guide covers public contribution expectations first, followed by maintainer notes for versioning, cascade rules, and release discipline.
+
+For release operator instructions (`cut-version`, `tag-version`, etc.), see `RELEASE.md`.
+
+## Contributor License Agreement
+
+Anyone with a GitHub account may file issues on the project.
+
+If you want to contribute code or documentation, you need to sign InfluxData's Individual Contributor License Agreement (CLA). More information is available on the [InfluxData CLA page](https://www.influxdata.com/legal/cla/).
+
+## Submitting Issues and Feature Requests
+
+Before filing an issue, search existing open and closed issues for similar reports.
+
+When reporting a bug, include:
+
+- the `influxdb3-plugin --version` output
+- your operating system and architecture
+- the command you ran
+- the smallest plugin or registry index input that reproduces the problem, when applicable
+- expected behavior and actual behavior
+- any relevant stderr/stdout output
+
+For feature requests, describe the use case, the current workaround, and the affected surface: CLI, schema types, SDK library, or registry-hosting workflow.
+
+## Contributing Changes
+
+For significant changes, open an issue or discussion before implementing. This is especially important for:
+
+- public API changes in `influxdb3-plugin-cli` or `influxdb3-plugin-schemas`
+- JSON output shape changes
+- manifest or index schema changes
+- release process or CI changes
+- dependency additions
+- changes that affect plugin package reproducibility or registry-index compatibility
+
+## Making a Pull Request
+
+Fork the repository, work on a branch, and open a pull request when ready.
+
+Use `.github/PULL_REQUEST_TEMPLATE.md` as the source of truth for PR structure, required checks, and applicable manual review items.
+
+## Running Checks
+
+The canonical checklist for PR checks is `.github/PULL_REQUEST_TEMPLATE.md`. Release-prep PRs also use `.github/RELEASE_CHECKLIST.md` and the release procedure in `RELEASE.md`.
+
+## Maintainer Notes
+
+The rest of this document covers contribution conventions for the SDK workspace, with a focus on versioning and the per-crate cascade.
+
+### Workspace structure
 
 The SDK workspace has three crates with distinct stability tiers:
 
@@ -12,7 +62,7 @@ The SDK workspace has three crates with distinct stability tiers:
 
 Each crate has its own `[package].version` (per the per-crate versioning model). The workspace `Cargo.toml`'s `[workspace.dependencies]` declares path-deps with explicit caret-versioned constraints.
 
-## The dependency cascade
+### The dependency cascade
 
 Internal dependency graph:
 
@@ -34,7 +84,7 @@ cli depends on both sdk and schemas directly (schemas via re-export of types in 
 
 **Cargo enforces the cascade at build time:** if you bump a crate without updating consumers, `cargo build --workspace` refuses to resolve. CI's `manifest-invariants` and `cargo-package-check` jobs additionally check the constraint shape (added in later PRs).
 
-## Version bump rules (when to bump what)
+### Version bump rules (when to bump what)
 
 | Change | Semver impact | Bump |
 |---|---|---|
@@ -48,7 +98,7 @@ cli depends on both sdk and schemas directly (schemas via re-export of types in 
 
 For breaking bumps that cascade, use `just cut-version <crate> X.Y.Z --cascade` (see `RELEASE.md`).
 
-## Stability tiers (when do they bind?)
+### Stability tiers (when do they bind?)
 
 The three SDK crates have distinct stability policies that bind at each crate's own `1.0.0` release. During `0.x`, Cargo's SemVer convention permits breaking changes at any minor bump; the policies below describe the contract that engages at `1.0.0` and after.
 
@@ -61,17 +111,10 @@ After a crate hits `1.0.0`:
 - Breaking changes require a major bump (and `cargo-semver-checks` will refuse otherwise).
 - `cli`'s embedding contract, the JSON output schema, and the `--version` output shape become hard contracts.
 
-## PR checklist (informal — no CI gate)
+### PR checklist for crate changes
 
-For PRs that touch crate code:
+Use `.github/PULL_REQUEST_TEMPLATE.md` for the exact crate-change checklist. The versioning and cascade rules above explain why those checklist items matter.
 
-- [ ] If your change is a public-API change in `cli` or `schemas`, add a one-line entry under `## [Unreleased]` in `CHANGELOG.md` describing the user-visible change.
-- [ ] If your change is a breaking change requiring a cascade (per the cascade table above), call it out in the PR description so the next release manager remembers to bump consumers.
-- [ ] If your change adds a new dependency, confirm `deny.toml` is satisfied (CI's `cargo-deny` will catch this anyway).
-- [ ] Run `cargo test --workspace` locally before pushing.
-
-There is **no automated changeset gate** — discipline is in the PR review.
-
-## Related docs
+### Related docs
 
 - Release procedure: `RELEASE.md`
