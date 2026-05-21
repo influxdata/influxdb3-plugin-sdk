@@ -52,8 +52,8 @@ Update the schema documentation when a PR changes any of the following:
 
 When applicable, update:
 
-- `docs/src/reference/manifest.md`
-- `docs/src/reference/registry-index.md`
+- `docs/src/02-reference/manifest.md`
+- `docs/src/02-reference/registry-index.md`
 - `docs/internal/spec.md`
 
 If a schema-related code change does not require documentation changes, call that out in the PR description so reviewers can verify the reasoning.
