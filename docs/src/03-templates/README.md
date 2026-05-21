@@ -6,6 +6,6 @@ The v1 template is a GitHub Actions workflow for private GitHub Release registri
 
 | Template | Purpose | Status |
 |---|---|---|
-| GitHub Actions publish workflow | Publish plugin artifacts and `index.json` to a private GitHub Release. | Added in the recipes and templates stage |
+| [GitHub Actions publish workflow](./github-actions/) | Publish plugin artifacts and `index.json` to a private GitHub Release. | Current |
 
 For the repository scenarios that use this template, see [Getting Started](../01-getting-started/).

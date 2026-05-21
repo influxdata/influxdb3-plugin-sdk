@@ -6,8 +6,8 @@ The v1 documentation is focused on private GitHub repositories that publish a re
 
 | Repo host | CI runner | Registry host | Visibility | Action | Guide |
 |---|---|---|---|---|---|
-| GitHub | GitHub Actions | GitHub Releases | Private | New repository | Added in the recipes stage |
-| GitHub | GitHub Actions | GitHub Releases | Private | Migrate from `gh:` | Added in the recipes stage |
+| GitHub | GitHub Actions | GitHub Releases | Private | New repository | [Create a new private registry](./recipes/github--ghactions--ghreleases--private--new.md) |
+| GitHub | GitHub Actions | GitHub Releases | Private | Migrate from `gh:` | [Migrate from `gh:`](./recipes/github--ghactions--ghreleases--private--migrate.md) |
 
 ## Install The CLI
 
