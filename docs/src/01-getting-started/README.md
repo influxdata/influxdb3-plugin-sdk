@@ -32,4 +32,4 @@ The v1 recipes produce the same end state:
 - A private GitHub Release that stores the registry `index.json` and versioned plugin archives.
 - A migration path that does not remove or break existing `gh:` source files.
 
-Next: [Reference overview](../02-reference/README.md).
+Next: [Reference overview](../02-reference/).

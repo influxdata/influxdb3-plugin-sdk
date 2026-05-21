@@ -9,6 +9,8 @@
 # Reference
 
 - [Overview](./02-reference/README.md)
+  - [Manifest format](./02-reference/manifest.md)
+  - [Index format](./02-reference/registry-index.md)
 
 # Templates
 

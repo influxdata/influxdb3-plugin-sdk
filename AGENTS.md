@@ -18,6 +18,8 @@ Keep documentation in sync with code and process changes. In particular, conside
 
 - `README.md`
 - crate READMEs
+- user-facing mdBook docs under `docs/src/`
+- internal design and specification docs under `docs/internal/`
 - `CONTRIBUTING.md`
 - `RELEASE.md`
 - `.github/RELEASE_CHECKLIST.md`

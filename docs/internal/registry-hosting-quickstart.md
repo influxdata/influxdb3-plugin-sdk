@@ -2,8 +2,6 @@
 
 How to host a public plugin registry. Two options: S3 or GitHub Releases. Both serve the same static files — `index.json` and `{name}-{version}.tar.gz` artifacts.
 
-For design rationale, see `public-registry-hosting.md`.
-
 ## Option A: S3
 
 ### 1. Create and configure the bucket
@@ -222,4 +220,4 @@ Private/internal repos: same URLs work for authenticated org members (browser se
 
 ## Using Both
 
-S3 as the source of truth, GitHub Releases as a mirror. The workflow runs the publish script once against the S3 index, uploads to S3, then syncs artifacts and a rewritten index to the GitHub Release. See `influxdata/influxdb3_plugins` branch `demo/public-registry-mvp` for a working example.
+S3 as the source of truth, GitHub Releases as a mirror. The workflow runs the publish script once against the S3 index, uploads to S3, then syncs artifacts and a rewritten index to the GitHub Release.

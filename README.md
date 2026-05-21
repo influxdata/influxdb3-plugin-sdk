@@ -28,9 +28,10 @@ cargo install --git https://github.com/influxdata/influxdb3-plugin-sdk --tag vX.
 Start with the documentation when setting up a plugin repository:
 
 - [Documentation source](docs/src/introduction.md)
-- [Getting started](docs/src/01-getting-started/README.md)
-- [Reference overview](docs/src/02-reference/README.md)
-- [Templates overview](docs/src/03-templates/README.md)
+- [Getting started](docs/src/01-getting-started/)
+- [Manifest format](docs/src/02-reference/manifest.md)
+- [Index format](docs/src/02-reference/registry-index.md)
+- [Templates overview](docs/src/03-templates/)
 
 The rendered documentation site will be published at <https://influxdata.github.io/influxdb3-plugin-sdk/>.
 
