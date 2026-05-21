@@ -38,6 +38,26 @@ For significant changes, open an issue or discussion before implementing. This i
 - dependency additions
 - changes that affect plugin package reproducibility or registry-index compatibility
 
+### Schema documentation sync
+
+The `manifest.toml` and `index.json` formats are public contracts. Any change that affects either format must keep the user-facing reference docs and internal spec in sync.
+
+Update the schema documentation when a PR changes any of the following:
+
+- manifest or index schema versions
+- manifest or index fields, defaults, optionality, or serialized shape
+- validation rules in `influxdb3-plugin-schemas/src/manifest.rs`, `index.rs`, `identity.rs`, or `raw.rs`
+- schema fixtures under `influxdb3-plugin-schemas/tests/fixtures/`
+- CLI or SDK behavior that changes generated manifests, generated indexes, artifact hashes, yanking, or canonical serialization
+
+When applicable, update:
+
+- `docs/src/02-reference/manifest.md`
+- `docs/src/02-reference/registry-index.md`
+- `docs/internal/spec.md`
+
+If a schema-related code change does not require documentation changes, call that out in the PR description so reviewers can verify the reasoning.
+
 ## Making a Pull Request
 
 Fork the repository, work on a branch, and open a pull request when ready.

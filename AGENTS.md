@@ -14,6 +14,8 @@ Read and understand:
 
 When modifying this repo, verify every applicable item in `.github/PULL_REQUEST_TEMPLATE.md` before pushing.
 
+For manifest or index schema changes, follow `CONTRIBUTING.md`'s schema documentation sync rule.
+
 Keep documentation in sync with code and process changes. In particular, consider whether changes require updates to:
 
 - `README.md`
