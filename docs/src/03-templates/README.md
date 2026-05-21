@@ -8,4 +8,4 @@ The v1 template is a GitHub Actions workflow for private GitHub Release registri
 |---|---|---|
 | GitHub Actions publish workflow | Publish plugin artifacts and `index.json` to a private GitHub Release. | Added in the recipes and templates stage |
 
-For the repository scenarios that use this template, see [Getting Started](../01-getting-started/README.md).
+For the repository scenarios that use this template, see [Getting Started](../01-getting-started/).

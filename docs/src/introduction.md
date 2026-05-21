@@ -33,7 +33,7 @@ cargo install --git https://github.com/influxdata/influxdb3-plugin-sdk --tag vX.
 
 ## Pick A Path
 
-Start with [Getting Started](./01-getting-started/README.md) to choose the repository setup that matches your situation.
+Start with [Getting Started](./01-getting-started/) to choose the repository setup that matches your situation.
 
 The v1 documentation focuses on plugin repository maintainers. Plugin-author tutorials, plugin-user guides, and full CLI reference coverage are planned for later phases.
 
@@ -41,11 +41,11 @@ The v1 documentation focuses on plugin repository maintainers. Plugin-author tut
 
 The public schema contracts are:
 
-- `manifest.toml`, owned by each plugin version.
-- `index.json`, owned by each registry.
+- [`manifest.toml`](./02-reference/manifest.md), owned by each plugin version.
+- [`index.json`](./02-reference/registry-index.md), owned by each registry.
 
-The reference section is where those formats are documented as stable contracts. See the [Reference overview](./02-reference/README.md).
+The reference section is where those formats are documented as stable contracts. See the [Reference overview](./02-reference/).
 
 ## Templates
 
-The templates section collects copy-pasteable CI/CD files and their walkthroughs. See the [Templates overview](./03-templates/README.md).
+The templates section collects copy-pasteable CI/CD files and their walkthroughs. See the [Templates overview](./03-templates/).
