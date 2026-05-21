@@ -1,18 +1,47 @@
 # influxdb3-plugin-sdk
 
-Rust tooling for authoring, validating, packaging, and publishing InfluxDB 3 plugins.
+Tools for publishing versioned InfluxDB 3 Processing Engine plugins.
 
-This repository contains the author-side SDK for InfluxDB 3 Processing Engine plugins. It provides the `influxdb3-plugin` CLI plus shared Rust crates for plugin manifest and registry-index handling.
+This repository contains the public SDK for maintainers of InfluxDB 3 plugin repositories. It provides the `influxdb3-plugin` CLI plus Rust crates for validating plugin manifests, packaging plugin artifacts, and maintaining registry indexes.
 
-## Getting Started
+## Why Use It
 
-Start with the [`influxdb3-plugin-cli` README](influxdb3-plugin-cli/README.md) for installation and command usage.
+- Publish versioned plugin artifacts instead of relying only on `gh:` source-file fetches.
+- Validate `manifest.toml` and `index.json` before a broken plugin reaches users.
+- Automate private plugin registry publishing from CI while keeping existing `gh:` consumers working during migration.
 
-For crate-specific details, see:
+## Quickstart
 
-- [`influxdb3-plugin-schemas`](influxdb3-plugin-schemas/README.md)
-- [`influxdb3-plugin-sdk`](influxdb3-plugin-sdk/README.md)
-- [`influxdb3-plugin-cli`](influxdb3-plugin-cli/README.md)
+At public go-live, install the CLI from crates.io:
+
+```bash
+cargo install influxdb3-plugin-cli --locked
+influxdb3-plugin --help
+```
+
+Until the crates are publicly published, install the pinned GitHub Release binary or build from a tagged source checkout:
+
+```bash
+cargo install --git https://github.com/influxdata/influxdb3-plugin-sdk --tag vX.Y.Z influxdb3-plugin-cli
+```
+
+Start with the documentation when setting up a plugin repository:
+
+- [Documentation source](docs/src/introduction.md)
+- [Getting started](docs/src/01-getting-started/README.md)
+- [Reference overview](docs/src/02-reference/README.md)
+- [Templates overview](docs/src/03-templates/README.md)
+
+The rendered documentation site will be published at <https://influxdata.github.io/influxdb3-plugin-sdk/>.
+
+## Workspace Layout
+
+| Path | Purpose |
+|---|---|
+| `influxdb3-plugin-schemas/` | Public schema types and validation for manifests and registry indexes. |
+| `influxdb3-plugin-sdk/` | Library code for scaffolding, validating, packaging, hashing, and archive generation. |
+| `influxdb3-plugin-cli/` | The `influxdb3-plugin` command-line interface. |
+| `docs/` | mdBook source and internal design/reference material. |
 
 ## Install
 
@@ -41,9 +70,20 @@ influxdb3-plugin package ./my-plugin --index ./my-registry/index.json --out ./bu
 
 ## Development
 
-Requires Rust version pinned in `rust-toolchain.toml`.
+Requires the Rust version pinned in `rust-toolchain.toml`.
 
-See [`CONTRIBUTING.md`](CONTRIBUTING.md) for contribution guidance, versioning rules, and release discipline. Use [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md) as the source of truth for PR checks.
+```bash
+cargo build --workspace --locked
+cargo nextest run --workspace --no-fail-fast --locked
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo fmt --all -- --check
+```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidance, versioning rules, and release discipline. Use [.github/PULL_REQUEST_TEMPLATE.md](.github/PULL_REQUEST_TEMPLATE.md) as the source of truth for PR checks.
+
+## Security
+
+Report security issues privately. See [SECURITY.md](SECURITY.md).
 
 ## Maintainers
 
@@ -51,16 +91,8 @@ This project is maintained by the InfluxData Product team.
 
 Primary point of contact: Ryan Cater <rcater@influxdata.com>
 
-## Help
-
-For usage questions and community discussion, use the [InfluxData Community Forum](https://community.influxdata.com/) or [InfluxData Community Slack](https://www.influxdata.com/slack/).
-
-Use GitHub issues for reproducible bugs and feature requests.
-
-## Security
-
-Please report security issues privately. See `SECURITY.md`.
+For usage questions and community discussion, use the [InfluxData Community Forum](https://community.influxdata.com/) or [InfluxData Community Slack](https://www.influxdata.com/slack/). Use GitHub issues for reproducible bugs and feature requests.
 
 ## License
 
-This project is licensed under either the MIT license or the Apache License, Version 2.0, at your option. See `LICENSE-MIT` and `LICENSE-APACHE`.
+This project is licensed under either the MIT license or the Apache License, Version 2.0, at your option. See [LICENSE-MIT](LICENSE-MIT) and [LICENSE-APACHE](LICENSE-APACHE).
