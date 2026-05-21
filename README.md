@@ -29,6 +29,8 @@ Start with the documentation when setting up a plugin repository:
 
 - [Documentation source](docs/src/introduction.md)
 - [Getting started](docs/src/01-getting-started/)
+- [Create a new private registry](docs/src/01-getting-started/recipes/github--ghactions--ghreleases--private--new.md)
+- [Migrate from `gh:`](docs/src/01-getting-started/recipes/github--ghactions--ghreleases--private--migrate.md)
 - [Manifest format](docs/src/02-reference/manifest.md)
 - [Index format](docs/src/02-reference/registry-index.md)
 - [Templates overview](docs/src/03-templates/)
