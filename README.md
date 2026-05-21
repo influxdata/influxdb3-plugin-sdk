@@ -1,31 +1,41 @@
 # influxdb3-plugin-sdk
 
-Rust workspace for the InfluxDB 3 plugin SDK. Provides tooling for authoring,
-validating, packaging, and publishing plugins to InfluxDB 3's Processing Engine.
+Rust tooling for authoring, validating, packaging, and publishing InfluxDB 3 plugins.
 
-## Crates
+This repository contains the author-side SDK for InfluxDB 3 Processing Engine plugins. It provides the `influxdb3-plugin` CLI plus shared Rust crates for plugin manifest and registry-index handling.
 
-- **`influxdb3-plugin-schemas`** — Canonical schema types (`Manifest`, `Index`,
-  `IndexEntry`, `PluginId`). Published semver-stable; consumed by the SDK and
-  by the future database runtime.
-- **`influxdb3-plugin-sdk`** — Author-side packaging library (`scaffold`,
-  `validate`, `package`, `yank`, `mutate_index`). Internal; consumed through
-  the CLI crate's public API.
-- **`influxdb3-plugin-cli`** — The `influxdb3-plugin` binary plus the embeddable
-  `PluginConfig` type. Provides scaffold, validate, package, yank, and
-  read-only local index inspection commands. Published semver-stable for future
-  embedding into `influxdb_pro`.
+## Getting Started
+
+Start with the [`influxdb3-plugin-cli` README](influxdb3-plugin-cli/README.md) for installation and command usage.
+
+For crate-specific details, see:
+
+- [`influxdb3-plugin-schemas`](influxdb3-plugin-schemas/README.md)
+- [`influxdb3-plugin-sdk`](influxdb3-plugin-sdk/README.md)
+- [`influxdb3-plugin-cli`](influxdb3-plugin-cli/README.md)
 
 ## Development
 
-Requires Rust 1.94 (pinned via `rust-toolchain.toml`).
+Requires Rust version pinned in `rust-toolchain.toml`.
 
-```shell
-cargo check --workspace        # verify all crates compile
-cargo nextest run --workspace  # run tests (install: cargo install cargo-nextest)
-cargo deny check               # audit dependency graph
-cargo clippy --workspace -- -D warnings
-```
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for contribution guidance, versioning rules, and release discipline. Use [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md) as the source of truth for PR checks.
 
-See the internal plugin version management specification for the full
-specification of the plugin lifecycle.
+## Maintainers
+
+This project is maintained by the InfluxData Product team.
+
+Primary point of contact: Ryan Cater <rcater@influxdata.com>
+
+## Help
+
+For usage questions and community discussion, use the [InfluxData Community Forum](https://community.influxdata.com/) or [InfluxData Community Slack](https://www.influxdata.com/slack/).
+
+Use GitHub issues for reproducible bugs and feature requests.
+
+## Security
+
+Please report security issues privately. See `SECURITY.md`.
+
+## License
+
+This project is licensed under either the MIT license or the Apache License, Version 2.0, at your option. See `LICENSE-MIT` and `LICENSE-APACHE`.

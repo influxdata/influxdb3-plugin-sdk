@@ -1,0 +1,7 @@
+# Default owners for everything
+* @caterryan @influxdata/product-managers
+
+# Rust crates owned by SDK maintainers
+influxdb3-plugin-cli/ @caterryan @influxdata/product-managers
+influxdb3-plugin-sdk/ @caterryan @influxdata/product-managers
+influxdb3-plugin-schemas/ @caterryan @influxdata/product-managers
