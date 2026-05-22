@@ -46,7 +46,7 @@
 - [ ] If this PR changes `influxdb3-plugin-cli/src/` or `influxdb3-plugin-schemas/src/`: added a one-line entry under `## [Unreleased]` in `CHANGELOG.md`
 - [ ] If CLI output changed: updated insta snapshots
 - [ ] If schema types changed: updated fixtures under `influxdb3-plugin-schemas/tests/fixtures/`
-- [ ] If manifest or index schema behavior changed: kept `docs/src/02-reference/manifest.md`, `docs/src/02-reference/registry-index.md`, and `docs/internal/spec.md` in sync, or explained why no docs update was needed
+- [ ] If manifest or index schema behavior changed: kept `docs/src/reference/manifest.md`, `docs/src/reference/registry-index.md`, and `docs/internal/spec.md` in sync, or explained why no docs update was needed
 - [ ] If this is a breaking change that cascades (see `CONTRIBUTING.md`): called it out in the PR description
 - [ ] If this PR adds a dependency: confirmed `deny.toml` allows its license and the dependency is not banned
 - [ ] If release process or CI checks changed: updated `RELEASE.md`, `.github/RELEASE_CHECKLIST.md`, scripts, and this template as needed
