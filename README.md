@@ -26,8 +26,8 @@ Start with the documentation when setting up a plugin repository:
 
 - [Documentation source](docs/src/introduction.md)
 - [Getting started](docs/src/getting-started/)
-- [Create a new private registry](docs/src/getting-started/recipes/github--ghactions--ghreleases--private--new.md)
-- [Migrate from `gh:`](docs/src/getting-started/recipes/github--ghactions--ghreleases--private--migrate.md)
+- [GitHub Releases + GitHub Actions recipe](docs/src/getting-started/recipes/ghreleases--ghactions.md) — covers both new repositories and migration from `gh:`
+- [How publish pipelines vary](docs/src/getting-started/concepts/publish-pipeline.md)
 - [The Manifest Format](docs/src/reference/manifest.md)
 - [The Registry Index Format](docs/src/reference/registry-index.md)
 - [Templates overview](docs/src/templates/)

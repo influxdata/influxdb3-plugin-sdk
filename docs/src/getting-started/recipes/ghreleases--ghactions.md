@@ -1,17 +1,63 @@
-# Migrate From `gh:` To A Private Registry
+# GitHub Releases + GitHub Actions
 
-This recipe migrates an existing GitHub plugin repository that is distributed with the `gh:` prefix mechanism into a private GitHub Release registry published by GitHub Actions.
+Publish versioned InfluxDB 3 plugin artifacts to a private GitHub Release by using GitHub Actions.
 
-The migration is additive. Existing `gh:` consumers continue to work because this recipe does not remove or rewrite the current source files.
+For the model that explains how this pipeline relates to other backends and runners, see [How publish pipelines vary](../concepts/publish-pipeline.md).
+
+## Scenario
+
+- Registry backend: a single GitHub Release that stores `index.json` and `{name}-{version}.tar.gz` assets.
+- CI runner: GitHub Actions on the plugin source repository.
+- Repo host: GitHub.
+- Visibility: private (see [Public visibility](#public-visibility) for the public variant).
+
+## Choose your starting state
+
+- [New repository](#new) — start a plugin source repository from scratch.
+- [Migrate from `gh:`](#migrate) — add the SDK to a repository that already distributes plugins via the `gh:` prefix mechanism.
+
+After the state-specific steps, both paths converge on [Common steps](#common-steps).
 
 ## Prerequisites
 
-- A GitHub repository that already contains plugin source files consumed with `gh:`.
-- Permission to add GitHub Actions workflows and repository secrets.
+- A GitHub account that can create the target repository.
 - The `gh` CLI installed and authenticated.
 - The `influxdb3-plugin` CLI, installed with the current path from [Install the CLI](../install.md).
 
-## Step 1: Clone The Existing Repository
+## New
+
+### Step 1: Create the repository
+
+Create a private plugin source repository:
+
+```bash
+PLUGIN_REPO="YOUR_ORG/my-private-plugins"
+
+gh repo create "${PLUGIN_REPO}" --private --clone
+cd my-private-plugins
+```
+
+Create the default plugin directory layout:
+
+```bash
+mkdir -p plugins
+influxdb3-plugin new process_writes plugins/downsampler --name downsampler
+```
+
+The scaffold writes:
+
+```text
+plugins/downsampler/
+  manifest.toml
+  __init__.py
+  README.md
+```
+
+When the repository is initialized and the `plugins/<plugin>/` scaffold is in place, continue to [Common steps](#common-steps).
+
+## Migrate
+
+### Step 1: Clone the existing repository
 
 ```bash
 PLUGIN_REPO="YOUR_ORG/existing-plugin-repo"
@@ -41,9 +87,15 @@ cp -R path/to/existing/downsampler plugins/downsampler
 
 Do not delete the old files used by `gh:` consumers.
 
-## Step 2: Author The Manifest
+When the existing `gh:` files are preserved and the new SDK packaging area is in place, continue to [Common steps](#common-steps).
 
-Add `plugins/downsampler/manifest.toml`:
+## Common steps
+
+### Step 1: Author the manifest
+
+Author `plugins/downsampler/manifest.toml`. If you followed the New path, the scaffold wrote a stub for you to fill in; if you followed the Migrate path, create the file now.
+
+Minimal shape:
 
 ```toml
 manifest_schema_version = "1.1"
@@ -58,7 +110,7 @@ triggers = ["process_writes"]
 database_version = ">=3.2.0,<4.0.0"
 ```
 
-The `triggers` array must match the functions implemented by the Python file. See [The Manifest Format](../../reference/manifest.md) for the complete schema.
+The `triggers` array must match the functions implemented by the Python file. See [The Manifest Format](../../reference/manifest.md) for all fields and validation rules.
 
 Validate locally before wiring CI:
 
@@ -66,9 +118,9 @@ Validate locally before wiring CI:
 influxdb3-plugin validate plugins/downsampler
 ```
 
-## Step 3: Create The Registry Release
+### Step 2: Create the registry release
 
-Use one GitHub Release as the registry:
+Use one GitHub Release as the registry. The release stores `index.json` and all `{name}-{version}.tar.gz` artifacts.
 
 ```bash
 REGISTRY_REPO="${PLUGIN_REPO}"
@@ -81,7 +133,7 @@ gh release create "${REGISTRY_TAG}" \
   --notes "Plugin registry index and artifacts"
 ```
 
-## Step 4: Seed The Index
+### Step 3: Seed the index
 
 Generate and upload the initial empty registry index:
 
@@ -93,7 +145,7 @@ gh release upload "${REGISTRY_TAG}" "${SEED_DIR}/index.json" --repo "${REGISTRY_
 
 See [The Registry Index Format](../../reference/registry-index.md) for the index schema.
 
-## Step 5: Add The GitHub Actions Workflow
+### Step 4: Add the GitHub Actions workflow
 
 Create the workflow directory and copy the template:
 
@@ -109,18 +161,18 @@ Edit `.github/workflows/publish.yml`:
 env:
   SDK_VERSION: "X.Y.Z"
   PLUGIN_ROOT: "plugins"
-  REGISTRY_REPO: "YOUR_ORG/existing-plugin-repo"
+  REGISTRY_REPO: "YOUR_ORG/my-private-plugins"
   REGISTRY_TAG: "plugin-registry"
 ```
 
 The template walkthrough is [GitHub Actions publish workflow](../../templates/github-actions/).
 
-## Step 6: Configure Authentication
+### Step 5: Configure authentication
 
 Create a fine-grained GitHub personal access token:
 
 - Resource owner: `YOUR_ORG`.
-- Repository access: `existing-plugin-repo`.
+- Repository access: `${REGISTRY_REPO}`.
 - Repository permissions: Contents read and write.
 
 Save it as a repository secret:
@@ -129,13 +181,13 @@ Save it as a repository secret:
 gh secret set GH_RELEASE_TOKEN --repo "${PLUGIN_REPO}"
 ```
 
-## Step 7: Trigger The First Publish
+### Step 6: Trigger the first publish
 
-Commit and push the new SDK packaging area and workflow:
+Commit and push:
 
 ```bash
-git add plugins .github/workflows/publish.yml
-git commit -m "Publish plugins through SDK registry"
+git add .
+git commit -m "Add initial plugin registry"
 git push origin main
 ```
 
@@ -159,12 +211,12 @@ gh release download "${REGISTRY_TAG}" \
   --dir /tmp/plugin-registry \
   --clobber
 
-influxdb3-plugin search --index /tmp/plugin-registry/index.json
+influxdb3-plugin search --index /tmp/plugin-registry/index.json downsampler
 ```
 
-## Step 8: Verify Installation
+### Step 7: Verify installation
 
-Download and extract one published artifact:
+Download and extract the published artifact:
 
 ```bash
 gh release download "${REGISTRY_TAG}" \
@@ -182,7 +234,7 @@ The archive extracts to a top-level `downsampler-0.1.0/` directory. Copy that di
 
 If you use the HTTP API path instead of a manual file move, extract the archive first and send the extracted file entries to `PUT /api/v3/plugins/directory`. Do not send the tarball bytes to `/api/v3/plugins/files`; that endpoint accepts single-file content, not plugin archives.
 
-## Coexistence With `gh:`
+## Coexistence with `gh:`
 
 The old `gh:` path and the SDK registry path can exist side by side:
 
@@ -192,15 +244,28 @@ The old `gh:` path and the SDK registry path can exist side by side:
 
 Keep both paths until every consumer has moved to the registry.
 
+## Public visibility
+
+The default scenario uses a private repository and a private GitHub Release. To publish to a public registry instead:
+
+- Create the repository with `--public` instead of `--private`, or change the registry repository's visibility under repo settings.
+- The `GH_RELEASE_TOKEN` secret still controls write access; tokens for read are not required because public release assets download without authentication.
+- Consumers of a public registry use the same `artifacts_url` and the same `index.json`; the URL is the same shape, just unauthenticated.
+
+Every other step in this recipe is identical for public and private registries.
+
 ## Troubleshooting
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `validate` reports a missing trigger implementation | The manifest declares a trigger that the copied Python file does not implement. | Update `triggers` or the Python entry point. |
+| `gh release upload` returns 404 | The token cannot access the registry repo. | Check `GH_RELEASE_TOKEN` and repository permissions. |
 | Workflow says the version is already present | The same `(name, version)` is already in `index.json`. | Bump `plugin.version` in `manifest.toml`. |
+| `influxdb3-plugin package` fails validation | Manifest metadata and Python entry points do not match. | Run `influxdb3-plugin validate plugins/downsampler` locally. |
+| `validate` reports a missing trigger implementation | The manifest declares a trigger that the copied Python file does not implement. | Update `triggers` or the Python entry point. |
+| No plugins are packaged | `PLUGIN_ROOT` points at the wrong directory. | Set `PLUGIN_ROOT` to the directory containing plugin subdirectories. |
 | Existing `gh:` users break | Old files were moved or deleted. | Restore the original source layout and keep SDK packaging files alongside it. |
 | `gh release download` cannot find `index.json` | The registry release was not seeded. | Run the seed-index step again. |
 
 Back to [Getting Started](../).
 
-Next: [GitHub Actions publish workflow](../../templates/github-actions/).
+Next: [The Manifest Format](../../reference/manifest.md).

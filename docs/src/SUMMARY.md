@@ -4,8 +4,8 @@
 
 - [Getting Started](./getting-started/README.md)
     - [Install the CLI](./getting-started/install.md)
-    - [New private repo](./getting-started/recipes/github--ghactions--ghreleases--private--new.md)
-    - [Migrate from `gh:`](./getting-started/recipes/github--ghactions--ghreleases--private--migrate.md)
+    - [GitHub Releases + GitHub Actions](./getting-started/recipes/ghreleases--ghactions.md)
+    - [How publish pipelines vary](./getting-started/concepts/publish-pipeline.md)
 - [Reference](./reference/README.md)
     - [The Registry](./reference/registry.md)
     - [The Manifest Format](./reference/manifest.md)
