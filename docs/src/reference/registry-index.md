@@ -4,11 +4,17 @@ A registry index describes the plugin versions published by one registry. It is 
 
 The SDK generates and updates indexes from validated manifests and packaged artifacts. Hand-editing an index is unsupported.
 
+## Scope
+
+This page specifies the on-disk format of `index.json`: required fields, validation rules, identity, and canonical serialization. It is the contract that the SDK writes and that registry consumers read.
+
+It does not specify how the index file is fetched, cached, or authenticated. Transport concerns (URL schemes for the index location, HTTP cache headers, redirect handling, private-registry credentials, missing-file responses) are the responsibility of the registry consumer and are out of scope for this document. Credentials for private registries are supplied via consumer-side registry configuration and applied at fetch time; they are never embedded in the index.
+
 ## File Format
 
-Index files are JSON.
+Index files are JSON. One file, named `index.json`, holds every published plugin version for a registry; the SDK loads the whole file in one read. There is no per-plugin file sharding and no newline-delimited-JSON layout.
 
-The current index schema version is `2.0`. Consumers accept schema major version `2` and reject unsupported majors.
+The current index schema version is `2.0`. Consumers accept schema major version `2` and reject unsupported majors. The schema marker is per-file: an unsupported major rejects the whole document rather than skipping individual entries.
 
 ## Minimal Example
 
@@ -64,6 +70,8 @@ Artifacts are addressed with this flat naming convention:
 {artifacts_url}/{name}-{version}.tar.gz
 ```
 
+The artifact URL shape is fixed. There are no templating markers in `artifacts_url` and no per-entry artifact URL override; the path is always `{name}-{version}.tar.gz` directly under the base. Consumers can compute the URL for any entry from `(artifacts_url, name, version)` alone.
+
 Supported schemes:
 
 | Scheme | Use |
@@ -98,9 +106,17 @@ Each object in `plugins[]` represents one published plugin version.
 
 Within one index, `(name, version)` must be unique.
 
+Version identity uses SemVer precedence, which ignores build metadata. `1.0.0` and `1.0.0+build.7` are the same version for uniqueness and ordering, and only one of them can appear in a registry. To publish changed plugin contents, bump the pre-release or release version, not the build metadata.
+
 Names are also checked by canonical form: lowercase, with `-` replaced by `_`. A registry cannot contain two different spellings with the same canonical name, even across versions. For example, `foo-bar` and `foo_bar` cannot both appear in one registry.
 
 Global registry identity is outside the index. Consumers identify a registry entry by `(index_url, name, version)`, where `index_url` is the URL configured by the registry consumer.
+
+### Immutability
+
+Once an entry is added to a registry, its fields are immutable. The SDK rejects any attempt to insert a second entry with the same `(name, version)`, so a published version's `description`, `triggers`, `dependencies`, `hash`, URL fields, and `published_at` cannot be changed in place. To publish changed plugin contents, bump `plugin.version` in the manifest and publish a new entry.
+
+The only field that can change after publication is `yanked`. Yanking and unyanking flip that field on the existing entry; all other fields, including `published_at`, are preserved verbatim.
 
 ### `published_at`
 
@@ -123,6 +139,8 @@ The dependency object has the same shape as the manifest's `[dependencies]` tabl
 | `database_version` | string | Yes | SemVer version requirement for compatible InfluxDB 3 database versions. |
 | `python` | array of strings | No | PEP 508 Python package requirement strings. Omitted or empty means no Python dependencies. |
 
+There is no field for plugin-to-plugin dependencies. The key `dependencies.plugins` is reserved in the manifest for a future inter-plugin dependency format and is correspondingly absent from the index.
+
 ### `hash`
 
 Hashes use this canonical form:
@@ -141,7 +159,7 @@ Yanking marks a version as unavailable for new resolution without deleting the e
 
 Index-entry validation mirrors manifest validation:
 
-- `name` follows the manifest name rule.
+- `name` follows the manifest name rule: 1–64 ASCII characters, starts with an ASCII letter, remaining characters are ASCII letters, digits, `_`, or `-`, and Windows reserved device names (`con`, `prn`, `aux`, `nul`, `com0`–`com9`, `lpt0`–`lpt9`) are rejected case-insensitively. See [Manifest: `plugin.name`](./manifest.md#pluginname) for the canonical definition.
 - `version` is valid SemVer 2.0.0.
 - `description` is non-empty, single-line, and no longer than 200 characters.
 - `triggers` is non-empty and contains only supported trigger values.
