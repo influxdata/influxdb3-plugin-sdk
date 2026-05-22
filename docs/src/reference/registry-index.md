@@ -1,20 +1,13 @@
 # The Registry Index Format
 
-A registry index describes the plugin versions published by one registry. It is a JSON file named `index.json`.
+A registry index describes the plugin versions published by one registry. It
+- is a single `index.json` file
+- is generated and updated by the SDK from validated manifests and packaged artifacts
+- contains every published plugin version
+- is consumed by tools that browse, resolve, and install plugins. 
+- should never be edited manually; edits should only be made by the SDK tooling.
 
-The SDK generates and updates indexes from validated manifests and packaged artifacts. Hand-editing an index is unsupported.
-
-## Scope
-
-This page specifies the on-disk format of `index.json`: required fields, validation rules, identity, and canonical serialization. It is the contract that the SDK writes and that registry consumers read.
-
-It does not specify how the index file is fetched, cached, or authenticated. Transport concerns (URL schemes for the index location, HTTP cache headers, redirect handling, private-registry credentials, missing-file responses) are the responsibility of the registry consumer and are out of scope for this document. Credentials for private registries are supplied via consumer-side registry configuration and applied at fetch time; they are never embedded in the index.
-
-## File Format
-
-Index files are JSON. One file, named `index.json`, holds every published plugin version for a registry; the SDK loads the whole file in one read. There is no per-plugin file sharding and no newline-delimited-JSON layout.
-
-The current index schema version is `2.0`. Consumers accept schema major version `2` and reject unsupported majors. The schema marker is per-file: an unsupported major rejects the whole document rather than skipping individual entries.
+This page specifies the on-disk format of `index.json`: required fields, validation rules, identity, and canonical serialization. It does not specify how the index file is fetched, cached, or authenticated. Transport concerns (URL schemes for the index location, HTTP cache headers, redirect handling, private-registry credentials, missing-file responses) are the responsibility of the registry consumer and are out of scope for this document. Credentials for private registries are supplied via consumer-side registry configuration and applied at fetch time; they are never embedded in the index.
 
 ## Minimal Example
 
@@ -52,19 +45,132 @@ The current index schema version is `2.0`. Consumers accept schema major version
 }
 ```
 
-## Top-Level Fields
+## JSON Schema
 
-| Field | Type | Required | Description |
+The full structure of `index.json` is shown below with comments explaining each field. The `//` comments are illustrative and are not part of the on-disk format; the SDK writes strict JSON without comments.
+
+```json
+{
+    // Index schema version in `<major>.<minor>` form.
+    // Parsed before field-level validation.
+    // Consumers accept known major `2` and reject unsupported majors.
+    "index_schema_version": "2.0",
+    // Base URL where flat artifact files are hosted.
+    // Artifacts are addressed as `{artifacts_url}/{name}-{version}.tar.gz`.
+    // Supported schemes: `https://`, `http://`, `file://`.
+    "artifacts_url": "https://plugins.example.com/artifacts",
+    // Per-version plugin entries. Empty registries use an empty array.
+    // Sorted by `name` ascending, then `version` ascending by SemVer precedence.
+    "plugins": [
+        {
+            // Plugin name copied from the manifest's `plugin.name`.
+            // 1 to 64 ASCII characters, starts with an ASCII letter, remaining
+            // characters are ASCII letters, digits, `_`, or `-`. Stored
+            // case-preserving. Canonical collision form is lowercase with `-`
+            // replaced by `_`.
+            "name": "downsampler",
+            // Plugin version copied from the manifest's `plugin.version`.
+            // Must be valid SemVer 2.0.0. Identity uses SemVer precedence and
+            // ignores build metadata.
+            "version": "1.2.0",
+            // Original publication timestamp for this exact version.
+            // Format is the Cargo `pubtime` shape: `YYYY-MM-DDThh:mm:ssZ`.
+            // UTC only, uppercase `T` and `Z`, seconds precision, no fractional
+            // seconds, no offsets. Preserved verbatim across yank and unyank.
+            "published_at": "2026-04-29T18:45:12Z",
+            // One-line description copied from the manifest's `plugin.description`.
+            // Non-empty, single-line, no more than 200 characters.
+            // Stored in Unicode NFC form by canonical serialization.
+            "description": "Notify an HTTP endpoint on every WAL commit.",
+            // Non-empty array of trigger types implemented by the plugin,
+            // copied from the manifest's `plugin.triggers`.
+            // Supported values: `process_writes`, `process_scheduled_call`,
+            // `process_request`.
+            "triggers": ["process_writes", "process_scheduled_call"],
+            // Optional HTTP or HTTPS URL for the plugin's home page.
+            // Copied from the manifest's `plugin.homepage`.
+            // Omitted when absent.
+            "homepage": "https://influxdata.com",
+            // Optional HTTP or HTTPS URL for the plugin source repository.
+            // Copied from the manifest's `plugin.repository`.
+            // Omitted when absent.
+            "repository": "https://github.com/influxdata/plugin-downsampler",
+            // Optional HTTP or HTTPS URL for the plugin documentation.
+            // Copied from the manifest's `plugin.documentation`.
+            // Omitted when absent.
+            "documentation": "https://github.com/influxdata/plugin-downsampler/readme.md",
+            // Dependency metadata copied from the manifest's `[dependencies]`
+            // table. Has the same shape as the manifest table.
+            "dependencies": {
+                // SemVer version requirement for compatible InfluxDB 3 database
+                // versions. Parses as a Rust `semver` version requirement.
+                "database_version": ">=3.2.0,<4.0.0",
+                // Optional PEP 508 Python package requirement strings.
+                // Omitted or empty means no Python package dependencies.
+                "python": ["requests>=2.31,<3", "pydantic~=2.0"]
+            },
+            // SHA-256 hash of the published archive.
+            // Canonical form: the literal prefix `sha256:` followed by exactly
+            // 64 lowercase hexadecimal characters. Verified by consumers before
+            // extraction.
+            "hash": "sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+            // Optional flag marking the version unavailable for new resolution
+            // without deleting the entry or the artifact. Present and `true`
+            // when yanked. Omitted from on-disk JSON when not yanked; shown
+            // here as `false` for illustration only. The only entry field that
+            // can change after publication.
+            "yanked": false
+        }
+    ]
+}
+```
+
+Entries should not be modified after they are added except for the `yanked` field, whose value may change at any time.
+
+## Index Structure
+
+Every index file consists of these fields and sections:
+
+- `index_schema_version` - Root-level index schema version.
+- `artifacts_url` - Base URL where flat artifact files are hosted.
+- `plugins` - Array of per-version plugin entries.
+  - `name` - Plugin name.
+  - `version` - Plugin version.
+  - `published_at` - Original publication timestamp.
+  - `description` - One-line description.
+  - `triggers` - Trigger types implemented by the plugin.
+  - `homepage` - Optional project homepage URL.
+  - `repository` - Optional source repository URL.
+  - `documentation` - Optional documentation URL.
+  - `dependencies` - Runtime compatibility and Python package requirements.
+  - `hash` - SHA-256 hash of the published archive.
+  - `yanked` - Optional flag marking a version unavailable for new resolution.
+
+Unknown fields are ignored within a supported schema major. Do not use unknown fields for durable custom metadata: a future schema version may define them. The key `dependencies.plugins` is reserved for a future inter-plugin dependency format.
+
+## Top-Level Entries
+
+| Entry | Type | Required | Description |
 |---|---|---:|---|
 | `index_schema_version` | string | Yes | Index schema version in `<major>.<minor>` form. Parsed before field-level validation. |
 | `artifacts_url` | string | Yes | Base URL where flat artifact files are hosted. |
 | `plugins` | array | Yes | Per-version plugin entries. Empty registries use an empty array. |
 
-Unknown fields are ignored within a supported schema major.
+### `index_schema_version`
 
-## `artifacts_url`
+`index_schema_version` must be a root-level string:
 
-Artifacts are addressed with this flat naming convention:
+```json
+"index_schema_version": "2.0"
+```
+
+The value uses `<major>.<minor>` form. Consumers accept known major version `2`, including newer minor versions such as `2.1`, and reject unsupported majors instead of guessing.
+
+If `index_schema_version` is malformed or uses an unsupported major, parsing stops with that schema-version error before field-level validation.
+
+### `artifacts_url`
+
+`artifacts_url` is the base URL under which artifact files are hosted. Artifacts are addressed with this flat naming convention:
 
 ```text
 {artifacts_url}/{name}-{version}.tar.gz
@@ -102,13 +208,147 @@ Each object in `plugins[]` represents one published plugin version.
 | `hash` | string | Yes | SHA-256 hash of the published archive. |
 | `yanked` | boolean | No | Present and `true` when this version is yanked. Absence means false. |
 
+### Relationship to Manifest
+
+All entry fields except `published_at`, `hash`, and `yanked` are copied verbatim from the plugin's `manifest.toml`. The SDK does not transform or normalize manifest values during index generation; canonical lowercase-and-underscore name normalization for collision checks happens during validation, not in the stored value. See [The Manifest Format](./manifest.md) for authoring rules.
+
+### `plugins.name`
+
+`name` is the plugin name copied from the manifest's `plugin.name`:
+
+```json
+"name": "downsampler"
+```
+
+The name follows the manifest name rule: 1 to 64 ASCII characters, starts with an ASCII letter, remaining characters are ASCII letters, digits, `_`, or `-`. Windows reserved device names (`con`, `prn`, `aux`, `nul`, `com0`-`com9`, `lpt0`-`lpt9`) are rejected case-insensitively. See [Manifest: `plugin.name`](./manifest.md#pluginname) for the canonical definition and examples.
+
+Names are stored case-preserving. Registry collision checks use a canonical form: lowercase, with `-` replaced by `_`. Two different spellings that share a canonical name cannot coexist in one registry, even across versions. For example, `foo-bar` and `foo_bar` cannot both appear.
+
+### `plugins.version`
+
+`version` is the plugin version copied from the manifest's `plugin.version`:
+
+```json
+"version": "1.2.0"
+```
+
+The value must be valid SemVer 2.0.0. The SDK preserves the full version string, including any pre-release or build metadata.
+
+Version identity uses SemVer precedence, which ignores build metadata. `1.0.0` and `1.0.0+build.7` are the same version for uniqueness and ordering, and only one of them can appear in a registry. To publish changed plugin contents, bump the pre-release or release version, not the build metadata.
+
+### `plugins.published_at`
+
+`published_at` records the original publication time for this exact version. It uses the Cargo registry `pubtime` shape:
+
+```json
+"published_at": "2026-04-29T18:45:12Z"
+```
+
+The timestamp must be UTC, use uppercase `T` and `Z`, include seconds precision, and represent a real calendar time. Offsets, fractional seconds, lowercase `z`, leap seconds, and non-UTC forms are rejected.
+
+`published_at` is set on first publish and preserved verbatim when an entry is yanked or unyanked.
+
+### `plugins.description`
+
+`description` is the one-line description copied from the manifest's `plugin.description`:
+
+```json
+"description": "Downsample data on every WAL write."
+```
+
+The description must be non-empty, single-line, and no longer than 200 characters. Newline (`\n`) and carriage return (`\r`) characters are rejected. Descriptions are stored in Unicode NFC form by canonical serialization.
+
+### `plugins.triggers`
+
+`triggers` lists the trigger functions the plugin implements, copied from the manifest's `plugin.triggers`:
+
+```json
+"triggers": ["process_writes", "process_scheduled_call"]
+```
+
+The array must contain at least one value. Supported trigger values are:
+
+- `process_writes`
+- `process_scheduled_call`
+- `process_request`
+
+Unknown trigger strings are rejected.
+
+### `plugins.homepage`
+
+`homepage` is an optional URL to the plugin's home page, copied from the manifest's `plugin.homepage`:
+
+```json
+"homepage": "https://influxdata.com"
+```
+
+When present, the URL must parse and use the `http` or `https` scheme.
+
+### `plugins.repository`
+
+`repository` is an optional URL to the plugin's source repository, copied from the manifest's `plugin.repository`:
+
+```json
+"repository": "https://github.com/influxdata/plugin-downsampler"
+```
+
+When present, the URL must parse and use the `http` or `https` scheme.
+
+### `plugins.documentation`
+
+`documentation` is an optional URL to the plugin's documentation, copied from the manifest's `plugin.documentation`:
+
+```json
+"documentation": "https://github.com/influxdata/plugin-downsampler/readme.md"
+```
+
+When present, the URL must parse and use the `http` or `https` scheme.
+
+### `plugins.dependencies`
+
+`dependencies` is the dependency metadata copied from the manifest's `[dependencies]` table. It has the same shape:
+
+```json
+"dependencies": {
+  "database_version": ">=3.2.0,<4.0.0",
+  "python": ["requests>=2.31,<3", "pydantic~=2.0"]
+}
+```
+
+| Field | Type | Required | Description |
+|---|---|---:|---|
+| `database_version` | string | Yes | SemVer version requirement for compatible InfluxDB 3 database versions. |
+| `python` | array of strings | No | PEP 508 Python package requirement strings. Omitted or empty means no Python dependencies. |
+
+`database_version` parses as a Rust `semver` version requirement. Each `python` entry parses as a PEP 508 requirement. The SDK preserves the original requirement strings.
+
+There is no field for plugin-to-plugin dependencies. The key `dependencies.plugins` is reserved in the manifest for a future inter-plugin dependency format and is correspondingly absent from the index.
+
+### `plugins.hash`
+
+`hash` is the SHA-256 hash of the published archive. It uses this canonical form:
+
+```json
+"hash": "sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+```
+
+The literal prefix `sha256:` is followed by exactly 64 lowercase hexadecimal characters. The hash is calculated over the archive bytes and is verified by consumers before extraction.
+
+### `plugins.yanked`
+
+`yanked` marks a version as unavailable for new resolution without deleting the entry or the artifact:
+
+```json
+"yanked": true
+```
+
+Existing lockfiles can still resolve the exact artifact. To yank a version, the SDK writes `yanked: true`; to unyank, it removes the field. Absence of the field means the version is not yanked. `yanked` is the only entry field that can change after publication.
+
 ### Identity And Uniqueness
 
 Within one index, `(name, version)` must be unique.
 
-Version identity uses SemVer precedence, which ignores build metadata. `1.0.0` and `1.0.0+build.7` are the same version for uniqueness and ordering, and only one of them can appear in a registry. To publish changed plugin contents, bump the pre-release or release version, not the build metadata.
-
-Names are also checked by canonical form: lowercase, with `-` replaced by `_`. A registry cannot contain two different spellings with the same canonical name, even across versions. For example, `foo-bar` and `foo_bar` cannot both appear in one registry.
+Version identity uses SemVer precedence, which ignores build metadata. Canonical name form (lowercase, with `-` replaced by `_`) is checked across the registry, so `foo-bar`, `foo_bar`, and `FOO-BAR` cannot be published as separate plugins in one registry.
 
 Global registry identity is outside the index. Consumers identify a registry entry by `(index_url, name, version)`, where `index_url` is the URL configured by the registry consumer.
 
@@ -118,58 +358,22 @@ Once an entry is added to a registry, its fields are immutable. The SDK rejects 
 
 The only field that can change after publication is `yanked`. Yanking and unyanking flip that field on the existing entry; all other fields, including `published_at`, are preserved verbatim.
 
-### `published_at`
-
-`published_at` uses Cargo registry `pubtime` shape:
-
-```text
-YYYY-MM-DDTHH:MM:SSZ
-```
-
-The timestamp must be UTC, use uppercase `T` and `Z`, include seconds precision, and represent a real calendar time. Offsets, fractional seconds, lowercase `z`, leap seconds, and non-UTC forms are rejected.
-
-The value records original publication time and is preserved when an entry is yanked or unyanked.
-
-### `dependencies`
-
-The dependency object has the same shape as the manifest's `[dependencies]` table:
-
-| Field | Type | Required | Description |
-|---|---|---:|---|
-| `database_version` | string | Yes | SemVer version requirement for compatible InfluxDB 3 database versions. |
-| `python` | array of strings | No | PEP 508 Python package requirement strings. Omitted or empty means no Python dependencies. |
-
-There is no field for plugin-to-plugin dependencies. The key `dependencies.plugins` is reserved in the manifest for a future inter-plugin dependency format and is correspondingly absent from the index.
-
-### `hash`
-
-Hashes use this canonical form:
-
-```text
-sha256:<64 lowercase hex characters>
-```
-
-The hash is calculated over the archive bytes and is verified before extraction.
-
-### `yanked`
-
-Yanking marks a version as unavailable for new resolution without deleting the entry or the artifact. Existing lockfiles can still resolve the exact artifact. To yank a version, the SDK writes `yanked: true`; to unyank, it removes the field or writes false in memory and omits it during canonical serialization.
-
 ## Validation
 
-Index-entry validation mirrors manifest validation:
+Index parsing has two phases:
 
-- `name` follows the manifest name rule: 1–64 ASCII characters, starts with an ASCII letter, remaining characters are ASCII letters, digits, `_`, or `-`, and Windows reserved device names (`con`, `prn`, `aux`, `nul`, `com0`–`com9`, `lpt0`–`lpt9`) are rejected case-insensitively. See [Manifest: `plugin.name`](./manifest.md#pluginname) for the canonical definition.
-- `version` is valid SemVer 2.0.0.
-- `description` is non-empty, single-line, and no longer than 200 characters.
-- `triggers` is non-empty and contains only supported trigger values.
-- URL fields use `http` or `https` when present.
-- `dependencies.database_version` parses as a SemVer range.
-- `dependencies.python` entries parse as PEP 508 requirements.
-- `published_at` uses strict UTC seconds format.
-- `hash` uses canonical SHA-256 form.
+1. JSON structure and required fields are parsed.
+2. Field-level validation checks names, versions, descriptions, triggers, URLs, dependency ranges, Python requirements, timestamps, and hashes against the rules defined in each field's section above.
 
-If `index_schema_version` is malformed or uses an unsupported major, parsing stops with that schema-version error. Otherwise, the parser reports all field-level validation errors it can find in one pass, including duplicate entries and canonical-name collisions.
+Syntax errors, missing required fields, or wrong JSON container shape are reported as root-level JSON parse errors. If `index_schema_version` is malformed or uses an unsupported major, parsing stops with that schema-version error. Otherwise, the parser reports all field-level validation errors it can find in one pass, including duplicate entries and canonical-name collisions.
+
+## Schema Versioning
+
+`index_schema_version` uses `<major>.<minor>` form.
+
+Within a supported major version, fields may be added and unknown fields are ignored. Breaking changes require a new major version. Consumers reject unsupported majors instead of guessing.
+
+Indexes using schema `1.x` must be backfilled with a required `published_at` field on every `plugins[]` entry before they can be parsed by schema `2.0` consumers.
 
 ## Canonical Serialization
 
@@ -182,14 +386,6 @@ The SDK writes index JSON in canonical form:
 - Description strings are normalized to Unicode NFC.
 - Optional fields are omitted when absent.
 - `yanked` is omitted when false.
-
-## Schema Versioning
-
-`index_schema_version` uses `<major>.<minor>` form.
-
-Within a supported major version, fields may be added and unknown fields are ignored. Breaking changes require a new major version. Consumers reject unsupported majors instead of guessing.
-
-Indexes using schema `1.x` must be backfilled with a required `published_at` field on every `plugins[]` entry before they can be parsed by schema `2.0` consumers.
 
 Back to [Reference](./).
 

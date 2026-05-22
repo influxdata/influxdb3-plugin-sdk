@@ -2,8 +2,6 @@
 
 A plugin manifest describes one plugin version. It lives at the root of the plugin directory as `manifest.toml`, travels inside the packaged artifact, and is authored by the plugin repository maintainer or plugin author.
 
-Manifest files are TOML. The current manifest schema version is `1.1`. Consumers accept schema major version `1` and reject unsupported majors.
-
 Scaffolding a plugin with `influxdb3-plugin new <template>` writes an initial `manifest.toml` alongside the template's source files. Packaging and validation commands read the manifest, validate it, and preserve the author-written source file.
 
 ## Minimal Example
