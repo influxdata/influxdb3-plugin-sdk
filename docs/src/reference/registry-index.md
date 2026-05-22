@@ -175,4 +175,4 @@ Indexes using schema `1.x` must be backfilled with a required `published_at` fie
 
 Back to [Reference](./).
 
-Next: [Templates overview](../03-templates/).
+Next: [Templates overview](../templates/).

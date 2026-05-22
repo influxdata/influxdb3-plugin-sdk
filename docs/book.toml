@@ -1,3 +1,6 @@
+[build]
+create-missing = false
+
 [book]
 title = "InfluxDB 3 Plugin SDK"
 authors = ["InfluxData"]
