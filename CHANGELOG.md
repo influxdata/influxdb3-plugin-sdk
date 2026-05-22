@@ -6,22 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-### Added
-- **Release pipeline**: the CircleCI release workflow now force-moves a floating lightweight `latest` git tag to the commit of each newly-published stable release (prereleases are skipped). Users can now install the CLI without pinning a version: `cargo install --git https://github.com/influxdata/influxdb3-plugin-sdk --tag latest influxdb3-plugin-cli --force`. Pinning to `vX.Y.Z` is still recommended for reproducible installs.
-
-## [0.4.0] - 2026-05-26
-
-### Added
-- `influxdb3-plugin-schemas`: new `ArtifactsUrl::artifact_url(name, version)` method that returns the deterministic per-version artifact URL. Normalizes trailing slashes and preserves query string and fragment from the base.
-- `influxdb3-plugin-cli`: `info` now displays the deterministic per-version `artifact_url` in both human and JSON output. Computed from the index's `artifacts_url` and the selected `(name, version)`. Other commands are unchanged.
-
-## [0.3.1] - 2026-05-26
-
 ### Changed
 - `influxdb3-plugin-schemas`: expanded `Index` and `ArtifactHash` test coverage to pin documented invariants (hex-only hash zone, malformed-JSON short-circuit at root, per-entry `InvalidVersion` rejection, `git+ssh://` artifact URL rejection). No behavior change.
-- `influxdb3-plugin-cli`: removed internal specification identifiers (e.g. `Spec 2 § S2-12`) from user-facing error messages in `package` and `yank`. Programmatic consumers should match on the stable JSON error code `usage::input_output_overlap`.
-- `influxdb3-plugin-cli`: human-mode success output for `package`, `yank`, and `new` shortens artifact, index, and scaffold paths to CWD-relative form when the target is a descendant of the working directory; otherwise the absolute path is preserved. JSON-mode payloads continue to carry absolute paths.
-- `influxdb3-plugin-cli`: JSON error payloads for `new`, `validate`, `search`, and `info` now emit absolute paths for path fields.
 
 ## [0.3.0] - 2026-05-04
 
