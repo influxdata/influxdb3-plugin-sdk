@@ -1,0 +1,18 @@
+{
+  "index_schema_version": "2.0",
+  "artifacts_url": "https://plugins.example.com/artifacts",
+  "plugins": [
+    {
+      "name": "x",
+      "version": "not-semver",
+      "published_at": "2026-04-29T18:45:12Z",
+      "description": "Version is not valid SemVer.",
+      "triggers": ["process_writes"],
+      "dependencies": {
+        "database_version": ">=3.0.0",
+        "python": []
+      },
+      "hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  ]
+}
