@@ -14,6 +14,31 @@ For crate-specific details, see:
 - [`influxdb3-plugin-sdk`](influxdb3-plugin-sdk/README.md)
 - [`influxdb3-plugin-cli`](influxdb3-plugin-cli/README.md)
 
+## Install
+
+Download the `influxdb3-plugin` binary for your platform from the
+[GitHub Releases](https://github.com/influxdata/influxdb3-plugin-sdk/releases)
+page and place it on your `PATH`.
+
+The Rust crates in this workspace are currently not published to crates.io. The
+CLI is the supported public interface for plugin authors.
+
+## Quick start
+
+Create and validate a new plugin:
+
+```shell
+influxdb3-plugin new process_writes ./my-plugin
+influxdb3-plugin validate ./my-plugin
+```
+
+Package it against a local plugin index:
+
+```shell
+influxdb3-plugin new index ./my-registry --artifacts-url https://plugins.example.com/artifacts
+influxdb3-plugin package ./my-plugin --index ./my-registry/index.json --out ./build
+```
+
 ## Development
 
 Requires Rust version pinned in `rust-toolchain.toml`.
