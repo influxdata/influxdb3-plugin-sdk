@@ -56,7 +56,7 @@ triggers = ["process_writes"]
 database_version = ">=3.2.0,<4.0.0"
 ```
 
-See [The Manifest Format](../../reference/manifest.md) for all fields and validation rules.
+See [Manifest format](../../reference/manifest.md) for all fields and validation rules.
 
 ## Step 3: Create The Registry Release
 
@@ -83,7 +83,7 @@ influxdb3-plugin new index "${SEED_DIR}" --artifacts-url "${ARTIFACTS_URL}"
 gh release upload "${REGISTRY_TAG}" "${SEED_DIR}/index.json" --repo "${REGISTRY_REPO}"
 ```
 
-See [The Registry Index Format](../../reference/registry-index.md) for the index schema.
+See [Index format](../../reference/registry-index.md) for the index schema.
 
 ## Step 5: Add The GitHub Actions Workflow
 

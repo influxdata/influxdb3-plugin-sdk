@@ -12,28 +12,25 @@ This repository contains the public SDK for maintainers of InfluxDB 3 plugin rep
 
 ## Quickstart
 
-At public go-live, install the CLI from crates.io:
+Install the `influxdb3-plugin` CLI with the current canonical path for your environment:
+
+- [Install the CLI](docs/src/getting-started/install.md)
+
+Then check the command is available:
 
 ```bash
-cargo install influxdb3-plugin-cli --locked
 influxdb3-plugin --help
-```
-
-Until the crates are publicly published, install the pinned GitHub Release binary or build from a tagged source checkout:
-
-```bash
-cargo install --git https://github.com/influxdata/influxdb3-plugin-sdk --tag vX.Y.Z influxdb3-plugin-cli
 ```
 
 Start with the documentation when setting up a plugin repository:
 
 - [Documentation source](docs/src/introduction.md)
-- [Getting started](docs/src/01-getting-started/)
-- [Create a new private registry](docs/src/01-getting-started/recipes/github--ghactions--ghreleases--private--new.md)
-- [Migrate from `gh:`](docs/src/01-getting-started/recipes/github--ghactions--ghreleases--private--migrate.md)
-- [Manifest format](docs/src/02-reference/manifest.md)
-- [Index format](docs/src/02-reference/registry-index.md)
-- [Templates overview](docs/src/03-templates/)
+- [Getting started](docs/src/getting-started/)
+- [Create a new private registry](docs/src/getting-started/recipes/github--ghactions--ghreleases--private--new.md)
+- [Migrate from `gh:`](docs/src/getting-started/recipes/github--ghactions--ghreleases--private--migrate.md)
+- [Manifest format](docs/src/reference/manifest.md)
+- [Index format](docs/src/reference/registry-index.md)
+- [Templates overview](docs/src/templates/)
 
 The rendered documentation site will be published at <https://influxdata.github.io/influxdb3-plugin-sdk/>.
 

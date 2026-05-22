@@ -13,27 +13,11 @@ If you currently distribute plugins with the `gh:` prefix mechanism, the SDK giv
 
 ## Install The CLI
 
-At public go-live, install from crates.io:
-
-```bash
-cargo install influxdb3-plugin-cli --locked
-```
-
-For reproducible CI, pin the crate version:
-
-```bash
-cargo install influxdb3-plugin-cli --version X.Y.Z --locked
-```
-
-Until the crates are publicly published, use the current transitional path: install the pinned GitHub Release binary, or build from a tagged source checkout:
-
-```bash
-cargo install --git https://github.com/influxdata/influxdb3-plugin-sdk --tag vX.Y.Z influxdb3-plugin-cli
-```
+Use [Install the CLI](./getting-started/install.md) for the canonical install commands and current channel guidance.
 
 ## Pick A Path
 
-Start with [Getting Started](./01-getting-started/) to choose the repository setup that matches your situation.
+Start with [Getting Started](./getting-started/) to choose the repository setup that matches your situation.
 
 The v1 documentation focuses on plugin repository maintainers. Plugin-author tutorials, plugin-user guides, and full CLI reference coverage are planned for later phases.
 
@@ -41,11 +25,11 @@ The v1 documentation focuses on plugin repository maintainers. Plugin-author tut
 
 The public schema contracts are:
 
-- [`manifest.toml`](./02-reference/manifest.md), owned by each plugin version.
-- [`index.json`](./02-reference/registry-index.md), owned by each registry.
+- [`manifest.toml`](./reference/manifest.md), owned by each plugin version.
+- [`index.json`](./reference/registry-index.md), owned by each registry.
 
-The reference section is where those formats are documented as stable contracts. See the [Reference overview](./02-reference/).
+The reference section is where those formats are documented as stable contracts. See the [Reference overview](./reference/).
 
 ## Templates
 
-The templates section collects copy-pasteable CI/CD files and their walkthroughs. See the [Templates overview](./03-templates/).
+The templates section collects copy-pasteable CI/CD files and their walkthroughs. See the [Templates overview](./templates/).
