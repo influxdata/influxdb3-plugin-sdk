@@ -1,0 +1,48 @@
+name: Bug report
+description: Report a reproducible problem with the InfluxDB 3 plugin SDK.
+title: "Bug: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Describe the problem and the behavior you expected.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Include the exact command, manifest, or index input when possible.
+      placeholder: |
+        1. Run `influxdb3-plugin ...`
+        2. Observe ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output from `influxdb3-plugin --version`.
+      placeholder: "influxdb3-plugin 0.3.0, revision ..."
+    validations:
+      required: false
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Linux
+        - macOS
+        - Windows
+        - Other
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant output
+      render: shell
+    validations:
+      required: false
