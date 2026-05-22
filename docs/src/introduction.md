@@ -1,35 +1,50 @@
 # InfluxDB 3 Plugin SDK
 
-The InfluxDB 3 Plugin SDK helps plugin repository maintainers publish versioned plugin artifacts with machine-checkable metadata.
+The InfluxDB 3 Plugin SDK is a CLI tool and set of libraries to help author and manage plugins. **Plugin repository maintainers** use the SDK to publish versioned plugin registries from CI, and **plugin authors** use the SDK to create versioned plugins.
 
-If you currently distribute plugins with the `gh:` prefix mechanism, the SDK gives you an incremental path to a registry-based workflow. Existing `gh:` consumers can continue to work while you add manifests, package artifacts, and publish an index for new consumers.
+## Why Use The Plugin SDK?
 
-## What The SDK Provides
+### A Registry Solves Versioning
+There are several problems when creating triggers with the `gh:` prefix (e.g. `influxdb3 create trigger --path gh:influxdata/downsampler/downsampler.py`):
 
-- `influxdb3-plugin`, a CLI for scaffolding, validating, packaging, searching, inspecting, and yanking plugin registry entries.
-- `manifest.toml`, the public metadata format for one plugin version.
-- `index.json`, the public registry format that lists published plugin versions and artifact hashes.
-- CI-friendly commands that operate on local files and fit into GitHub Actions or another runner.
+- **No plugin versioning** 
+    - Changes to plugin source are automatically forced onto users because `gh:` plugins are fetched from the source's `main` branch.
+    - Users have no control over what code is running; they cannot specify a version, cannot pin, or roll back.
+    - Plugin authors are unable to update plugins without potentially breaking users.
+- **No dependency management** 
+    - Plugin authors cannot declare which InfluxDB version their plugin supports.
+    - Users cannot know whether a plugin is compatible with their InfluxDB version until after they install it and encounter runtime errors.
+    - There is no standardized way to communicate plugin dependencies on third-party libraries. 
+- **Multifile plugins are not supported** 
+    - Plugin authors cannot create plugins that span multiple files
 
-## Install The CLI
+Using the plugin SDK, plugin repository maintainers can solve these problems by publishing a [plugin registry](./reference/registry.md). This will result in the following benefits for plugin authors and users:
 
-Use [Install the CLI](./getting-started/install.md) for the canonical install commands and current channel guidance.
+- **Plugins are versioned**
+    - Each published plugin version is an immutable artifact with a stable `(registry, name, version)` identity.
+    - Plugin authors can publish updates without breaking or forcing changes on existing users.
+    - Users can install, pin, compare, and report the exact plugin version they are running.
+- **Plugins declare dependencies and compatibility**
+    - All dependencies declared for each plugin version. 
+    - Consumers can reject incompatible plugin versions before they fail at runtime.
+- **Multifile plugins are supported**
+    - Plugin authors can split plugin code across multiple files.
+- **No breaking changes**
+    - Both `gh:` and registry consumers can coexist in the same repository.
+- **Minimal effort to set up and maintain**
+    - Use a CI workflow to maintain the registry (templates provided to get started).
+    - No change to plugin author workflow. 
 
-## Pick A Path
+## Sections
 
-Start with [Getting Started](./getting-started/) to choose the repository setup that matches your situation.
+[Getting Started](./getting-started/)
 
-The v1 documentation focuses on plugin repository maintainers. Plugin-author tutorials, plugin-user guides, and full CLI reference coverage are planned for later phases.
+Install the CLI, choose a recipe, and publish a versioned plugin registry from CI.
 
-## Reference
+[Reference](./reference/)
 
-The public schema contracts are:
+The reference covers the registry model and the stable `manifest.toml` and `index.json` schema contracts.
 
-- [`manifest.toml`](./reference/manifest.md), owned by each plugin version.
-- [`index.json`](./reference/registry-index.md), owned by each registry.
+[Templates](./templates/)
 
-The reference section is where those formats are documented as stable contracts. See the [Reference overview](./reference/).
-
-## Templates
-
-The templates section collects copy-pasteable CI/CD files and their walkthroughs. See the [Templates overview](./templates/).
+Templates provide copy-pasteable CI/CD files and walkthroughs for registry publishing.
