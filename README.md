@@ -28,8 +28,8 @@ Start with the documentation when setting up a plugin repository:
 - [Getting started](docs/src/getting-started/)
 - [Create a new private registry](docs/src/getting-started/recipes/github--ghactions--ghreleases--private--new.md)
 - [Migrate from `gh:`](docs/src/getting-started/recipes/github--ghactions--ghreleases--private--migrate.md)
-- [Manifest format](docs/src/reference/manifest.md)
-- [Index format](docs/src/reference/registry-index.md)
+- [The Manifest Format](docs/src/reference/manifest.md)
+- [The Registry Index Format](docs/src/reference/registry-index.md)
 - [Templates overview](docs/src/templates/)
 
 The rendered documentation site will be published at <https://influxdata.github.io/influxdb3-plugin-sdk/>.

@@ -1,4 +1,4 @@
-# Index Format
+# The Registry Index Format
 
 A registry index describes the plugin versions published by one registry. It is a JSON file named `index.json`.
 
