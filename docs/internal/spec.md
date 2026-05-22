@@ -394,7 +394,9 @@ Rationale: the stability commitment is concentrated at the two boundaries that a
 
 ### Commands
 
-The v1 SDK ships four commands plus a top-level `--version` flag. All operate on local files; none make network calls (S2-1). The CLI surface is deliberately minimal in v1 — no short flag forms beyond clap's default `-V`/`-h`, no env-var bindings, no verbose/quiet modes. Exit codes follow the GNU baseline: `0` success, `1` runtime failure, `2` usage error (per [[#S2-18 Exit Code Set|S2-18]]). Every command supports `--output {human,json}` per [[#Output Modes]]; additional machine formats (`sarif`, `yaml`, `github`, `gitlab`) are reserved post-v1 and add through the same enum. These can be added later without breaking v1 behavior. `new` additionally has a `list` subcommand and per-template help surfaces; see its section for details.
+The v1 SDK ships six commands plus a top-level `--version` flag. All operate on local files; none make network calls (S2-1). The CLI surface is deliberately minimal in v1 — no short flag forms beyond clap's default `-V`/`-h`, no env-var bindings, no verbose/quiet modes. Exit codes follow the GNU baseline: `0` success, `1` runtime failure, `2` usage error (per [[#S2-18 Exit Code Set|S2-18]]). Every command supports `--output {human,json}` per [[#Output Modes]]; additional machine formats (`sarif`, `yaml`, `github`, `gitlab`) are reserved post-v1 and add through the same enum. These can be added later without breaking v1 behavior. `new` additionally has a `list` subcommand and per-template help surfaces; see its section for details.
+
+The authoring and mutation commands are `new`, `validate`, `package`, and `yank`. The read-only local-index inspection commands are `search` and `info`; they query an existing `index.json` without fetching artifacts or mutating the index. A full per-flag CLI reference is documentation-phase work, but this spec must count these commands because they are part of the released CLI surface.
 
 #### `new <template> [path]`
 
@@ -596,11 +598,23 @@ The SDK ships pre-built binaries for four targets, mirroring `influxdb_pro`'s re
 | macOS | aarch64 (Apple Silicon) | `aarch64-apple-darwin` |
 | Windows | x86_64 | `x86_64-pc-windows-gnu` |
 
-Linux binaries dynamically link glibc; macOS and Windows binaries have no non-OS runtime dependencies. Alpine Linux, Intel macOS, and Windows-on-ARM are out of scope for pre-built v1 binaries; users on those platforms install via `cargo install --git` (per [[#S2-20 v1 Distribution Channel|S2-20]]) or rebuild from source. See [[#S2-19 Platform Matrix|S2-19]].
+Linux binaries dynamically link glibc; macOS and Windows binaries have no non-OS runtime dependencies. Alpine Linux, Intel macOS, and Windows-on-ARM are out of scope for pre-built v1 binaries; users on those platforms install from crates.io with `cargo install influxdb3-plugin-cli --locked`, use `cargo install --git` while crates.io publication is not yet live, or rebuild from source. See [[#S2-19 Platform Matrix|S2-19]].
 
-#### Canonical distribution (v1)
+#### Canonical distribution (public go-live)
 
-**GitHub Releases is the sole supported distribution channel for v1.** Each tagged release publishes:
+For public go-live, crates.io is the default source-install channel and the path the end-user documentation presents first:
+
+```bash
+cargo install influxdb3-plugin-cli --locked
+```
+
+Maintainers who pin their CI should specify a version:
+
+```bash
+cargo install influxdb3-plugin-cli --version X.Y.Z --locked
+```
+
+GitHub Releases remain the prebuilt-binary channel. Each tagged release publishes:
 
 - One `influxdb3-plugin-<target-triple>.tar.gz` per target from [[#S2-19 Platform Matrix|S2-19]]. Tarball is used for all targets including Windows, mirroring `influxdb_pro`'s release artifact convention.
 - A `SHA256SUMS` file covering every asset. Consumers verify integrity via SHA-256 in v1; cryptographic signing is planned post-v1 (see [[#TODOs]]).
@@ -608,7 +622,15 @@ Linux binaries dynamically link glibc; macOS and Windows binaries have no non-OS
 
 See [[#S2-20 v1 Distribution Channel|S2-20]].
 
-**CI/CD agent consumption patterns.** Two widely-used shapes both work against GitHub Releases alone:
+**Transitional/current-state note.** Until the crates are published publicly, internal users and CI jobs use either the pinned GitHub Release binary or `cargo install --git https://github.com/influxdata/influxdb3-plugin-sdk --tag vX.Y.Z influxdb3-plugin-cli`. The public docs may show both, but must label crates.io as the go-live default and GitHub/git installation as the current/fallback path.
+
+**CI/CD agent consumption patterns.** Two widely-used shapes are supported:
+
+*Cargo install from crates.io* — portable anywhere a Rust toolchain is available:
+
+```bash
+cargo install influxdb3-plugin-cli --version X.Y.Z --locked
+```
 
 *Direct `curl` + checksum verification* — portable across every CI platform (GitHub Actions, GitLab CI, Jenkins, CircleCI, Buildkite):
 
@@ -621,23 +643,12 @@ sha256sum --check <<< "${EXPECTED_SHA256}  sdk.tar.gz"
 tar xzf sdk.tar.gz && sudo mv influxdb3-plugin /usr/local/bin/
 ```
 
-*GitHub Actions ergonomic wrapper* via `taiki-e/install-action`, which resolves the release from GitHub Releases:
-
-```yaml
-- uses: taiki-e/install-action@v2
-  with:
-    tool: influxdb3-plugin
-```
-
-Registration with `taiki-e/install-action` is a one-time upstream PR and is the canonical consumption path for Rust CLIs in GitHub Actions — `ruff`, `uv`, `cargo-nextest`, `dprint`, and hundreds of other tools are consumed this way. No additional distribution channel beyond GitHub Releases is required to enable this pattern.
-
 #### Post-v1 channels
 
-The following additional channels are planned but not part of the v1 distribution commitment. Each is additive — they layer on top of the GitHub Releases canonical path, not in place of it.
+The following additional channels are planned but not part of the v1 distribution commitment. Each is additive — they layer on top of crates.io and GitHub Releases, not in place of them.
 
 - **Homebrew tap** — `brew install influxdata/tap/influxdb3-plugin` for macOS and Linux brew users.
 - **winget** — `winget install InfluxData.InfluxDB3Plugin` for Windows users.
-- **`cargo install influxdb3-plugin-cli`** via crates.io — source install for Rust users without internal-repo access. Gated on completion of security and legal review of the crate's publication. The `cargo install --git` form is already a v1 channel for users with internal-repo access (see [[#S2-20 v1 Distribution Channel|S2-20]]).
 - **Distroless container image** — for CI workflows that prefer containerized tooling.
 - **`.deb` / `.rpm` packages** — for OS-level package management.
 - **Signed installer script** (`curl | sh` with checksum + Sigstore-verified pinned download) — lands with the broader signing/provenance work.
@@ -958,25 +969,27 @@ The SDK v1 must ship pre-built binaries for exactly four targets:
 - `aarch64-apple-darwin`
 - `x86_64-pc-windows-gnu`
 
-The matrix mirrors `influxdb_pro`'s release matrix exactly so that the SDK's release pipeline can reuse the org's existing cross-builder image (`us-east1-docker.pkg.dev/influxdata-team-edge/ci-support/ci-cross-influxdb3`) without forking or extending its toolchain set. Linux binaries dynamically link glibc; macOS and Windows binaries have no non-OS runtime dependencies. Alpine Linux, Intel macOS, and Windows-on-ARM are out of scope for pre-built v1 binaries; users on those platforms install via `cargo install --git` (per [[#S2-20 v1 Distribution Channel|S2-20]]) or rebuild from source. Dropping any target from the matrix is a major-version change of `influxdb3-plugin-cli`; adding targets is minor-version additive.
+The matrix mirrors `influxdb_pro`'s release matrix exactly so that the SDK's release pipeline can reuse the org's existing cross-builder image (`us-east1-docker.pkg.dev/influxdata-team-edge/ci-support/ci-cross-influxdb3`) without forking or extending its toolchain set. Linux binaries dynamically link glibc; macOS and Windows binaries have no non-OS runtime dependencies. Alpine Linux, Intel macOS, and Windows-on-ARM are out of scope for pre-built v1 binaries; users on those platforms install from crates.io, use `cargo install --git` while crates.io publication is not yet live, or rebuild from source. Dropping any target from the matrix is a major-version change of `influxdb3-plugin-cli`; adding targets is minor-version additive.
 
-Problems: none directly — the matrix covers the org's actual deployment footprint, and `cargo install --git` covers the long tail. Cross-builder image reuse is the explicit constraint that defines the matrix shape; widening it would either fork the image (significant maintenance burden) or split the release pipeline across multiple build environments.
+Problems: none directly — the matrix covers the org's actual deployment footprint, and source installation covers the long tail. Cross-builder image reuse is the explicit constraint that defines the matrix shape; widening it would either fork the image (significant maintenance burden) or split the release pipeline across multiple build environments.
 
 #### S2-20: v1 Distribution Channel
 
-GitHub Releases and `cargo install --git` from the SDK's source repository are the supported distribution channels for SDK v1. Each tagged release must publish, to GitHub Releases:
+Crates.io, GitHub Releases, and `cargo install --git` from the SDK's source repository are the supported distribution channels for SDK v1.
+
+For public go-live, `cargo install influxdb3-plugin-cli --locked` is the default installation path. CI workflows should pin the crate version with `--version X.Y.Z`. GitHub Releases remain the prebuilt-binary channel for users and CI jobs that do not want a Rust toolchain. Each tagged release must publish, to GitHub Releases:
 
 - One `influxdb3-plugin-<target-triple>.tar.gz` per target from [[#S2-19 Platform Matrix|S2-19]] (tarball used for all targets including Windows, mirroring `influxdb_pro`'s release artifact convention).
 - A `SHA256SUMS` file covering every asset.
 - Release notes.
 
-`cargo install` consumes the same tagged commits via `cargo install --git https://github.com/influxdata/influxdb3-plugin-sdk --tag vX.Y.Z influxdb3-plugin-cli`, building from source. The four-layer SHA precedence in [[#S2-21 --version Output Shape|S2-21]] ensures `cargo install` builds carry an authoritative revision: for `--git` installs, Cargo preserves `.git` metadata in its checkout, so the `git rev-parse HEAD` layer (layer 3) fires. For the future crates.io install path (post-Group-H, gated on security + legal review), the `.cargo_vcs_info.json` layer (layer 2) fires instead — that file is generated at `cargo publish` time and ships inside the published `.crate` tarball.
+`cargo install --git https://github.com/influxdata/influxdb3-plugin-sdk --tag vX.Y.Z influxdb3-plugin-cli` is the transitional/current-state source-install path while crates.io publication is not yet live, and remains a fallback for testing unreleased commits or tags.
 
-Publishing the SDK crates to crates.io is deferred until security and legal review of the crate's publication completes. Once approved, `cargo install influxdb3-plugin-cli` (without `--git`) becomes the third v1 distribution channel; the change is purely a `publish = false → true` flip per crate plus a one-time crates.io publication. The deferred publication does not change S2-20's contract — `cargo install --git` already satisfies the consumer use case for users with internal-repo access (the dominant audience while the SDK is internal-only).
+The four-layer SHA precedence in [[#S2-21 --version Output Shape|S2-21]] ensures source builds carry an authoritative revision where possible. For crates.io installs, `.cargo_vcs_info.json` identifies the published artifact's commit. For `--git` installs, Cargo preserves `.git` metadata, so the `git rev-parse HEAD` layer fires.
 
-Consumers verify integrity via SHA-256 in v1 for GitHub Releases binaries; `cargo install --git` integrity is anchored by Git's commit SHA at the tagged ref. Cryptographic signing and additional distribution channels (Homebrew tap, winget, container images, OS-native packages) are planned post-v1 and additive — they layer on top of the v1 channels, not in place of them.
+Consumers verify integrity via SHA-256 in v1 for GitHub Releases binaries. Crates.io installs are anchored by Cargo's registry checksum and the crate version selected by the user; `cargo install --git` integrity is anchored by Git's commit SHA at the tagged ref. Cryptographic signing and additional distribution channels (Homebrew tap, winget, container images, OS-native packages) are planned post-v1 and additive — they layer on top of the v1 channels, not in place of them.
 
-Problems: none directly — this sets the v1 canonical channels so downstream tooling has a stable target. The two v1 channels (GitHub Releases binaries, `cargo install --git`) cover both binary-consumption (CI/CD agents, dev laptops with no Rust toolchain) and source-build (Rust developers, platforms outside the [[#S2-19 Platform Matrix|S2-19]]) use cases.
+Problems: none directly — this sets the v1 canonical channels so downstream tooling has stable targets. Crates.io covers the public default source-install path, GitHub Releases cover binary consumption, and `cargo install --git` covers transitional/internal source installs and explicit tag testing.
 
 #### S2-21: `--version` Output Shape
 
@@ -1016,7 +1029,7 @@ Problems: none directly — supports bug-report attribution and CI-side reproduc
 - Contributing to someone else's plugin (fork / PR / test cycle)
 - Migrating an existing plugin (authoring side): converting `gh:` plugins to versioned manifests
 - `--allow-exists` flag for idempotent `package` replay: not in v1. Additive post-v1 if CI demand materializes. v1 position: retry concerns belong at the upload step and CI workflow level (concurrency groups, conditional-write primitives, preflight checks), not at the package step — aligning with `cargo package` / `npm pack` / `helm package` convention. See [[#Publish Model]]'s "CI retry and idempotency" discussion.
-- Additional distribution channels beyond GitHub Releases and `cargo install --git`: Homebrew tap, winget, `cargo install influxdb3-plugin-cli` via crates.io (gated on completion of security and legal review of the crate's publication), distroless container image, `.deb` / `.rpm` packages. All additive; each layers on top of the v1 channels per [[#S2-20 v1 Distribution Channel|S2-20]].
+- Additional distribution channels beyond crates.io, GitHub Releases, and `cargo install --git`: Homebrew tap, winget, distroless container image, `.deb` / `.rpm` packages. All additive; each layers on top of the v1 channels per [[#S2-20 v1 Distribution Channel|S2-20]].
 - Signed installer script (`curl | sh` with checksum + Sigstore signature verification). Lands with the broader signing/provenance work; not an independent item.
 - Self-update capability (`influxdb3-plugin self-update`). Additive post-v1; must be disabled automatically when `CI=true` to preserve reproducibility.
 - Plugin artifact signing & provenance guidance (author-facing signing workflow, `cosign` verification commands with pinned identity claims, SLSA L3 via `slsa-framework/slsa-github-generator`): part of the Operations / CI guide scope per the Item 5 scope decision; out of Spec 2.

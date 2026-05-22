@@ -1,0 +1,15 @@
+[build]
+create-missing = false
+
+[book]
+title = "InfluxDB 3 Plugin SDK"
+authors = ["InfluxData"]
+description = "Documentation for the InfluxDB 3 Processing Engine plugin SDK"
+language = "en"
+src = "src"
+
+[output.html]
+default-theme = "light"
+preferred-dark-theme = "navy"
+git-repository-url = "https://github.com/influxdata/influxdb3-plugin-sdk"
+edit-url-template = "https://github.com/influxdata/influxdb3-plugin-sdk/edit/main/docs/{path}"

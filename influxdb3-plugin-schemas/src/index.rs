@@ -787,6 +787,7 @@ mod artifacts_url_tests {
     #[case("s3://bucket/plugins")]
     #[case("git://example/plugins")]
     #[case("git+https://example/plugins")]
+    #[case("git+ssh://example/plugins")]
     #[case("ftp://example/plugins")]
     #[case("sftp://example/plugins")]
     fn rejected_schemes(#[case] input: &str) {
@@ -839,6 +840,21 @@ mod artifact_hash_tests {
             ArtifactHash::try_new(
                 "sha256:9F86D081884C7D659A2FEAA0C55AD015A3BF4F1B2B0B822CD15D6C15B0F00A08"
             ),
+            Err(SchemaError::InvalidHash { .. })
+        );
+    }
+
+    /// Doc rule: hash hex zone is exactly 64 lowercase hex chars (`0-9a-f`).
+    /// Any char outside that set — letters `g-z`, ASCII symbols, etc. — is rejected.
+    #[rstest::rstest]
+    #[case("sha256:g000000000000000000000000000000000000000000000000000000000000000")]
+    #[case("sha256:z000000000000000000000000000000000000000000000000000000000000000")]
+    #[case("sha256:!000000000000000000000000000000000000000000000000000000000000000")]
+    #[case("sha256: 000000000000000000000000000000000000000000000000000000000000000")]
+    #[case("sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00z08")]
+    fn non_hex_chars_rejected(#[case] input: &str) {
+        assert_matches!(
+            ArtifactHash::try_new(input),
             Err(SchemaError::InvalidHash { .. })
         );
     }
@@ -996,6 +1012,37 @@ mod index_tests {
         let src = MINIMAL.replace(r#""hash": "#, r#""yanked": false, "hash": "#);
         let idx = Index::parse_json(&src).unwrap();
         assert!(!idx.plugins[0].yanked);
+    }
+
+    /// Doc rule: "Syntax errors, missing required fields, or wrong JSON
+    /// container shape are reported as root-level JSON parse errors."
+    /// Each case must surface as a single `JsonParse` error at root, without
+    /// any field-level processing.
+    #[rstest::rstest]
+    #[case::not_json("not json")]
+    #[case::trailing_garbage(r#"{"index_schema_version": "2.0"} extra"#)]
+    #[case::root_is_array("[]")]
+    #[case::root_is_number("42")]
+    #[case::root_is_string(r#""hello""#)]
+    #[case::missing_artifacts_url(r#"{"index_schema_version": "2.0", "plugins": []}"#)]
+    #[case::missing_plugins(
+        r#"{"index_schema_version": "2.0", "artifacts_url": "https://example.com/a"}"#
+    )]
+    fn malformed_json_short_circuits(#[case] input: &str) {
+        let errors = Index::parse_json(input).unwrap_err();
+        assert_eq!(
+            errors.errors().len(),
+            1,
+            "expected single root-level error, got {:?}",
+            errors.errors()
+        );
+        assert_matches!(errors.errors()[0].error, SchemaError::JsonParse { .. });
+        assert_eq!(
+            errors.errors()[0].path.as_str(),
+            "",
+            "expected root path, got {:?}",
+            errors.errors()[0].path.as_str()
+        );
     }
 
     #[test]
