@@ -58,7 +58,7 @@ triggers = ["process_writes"]
 database_version = ">=3.2.0,<4.0.0"
 ```
 
-The `triggers` array must match the functions implemented by the Python file. See [Manifest format](../../reference/manifest.md) for the complete schema.
+The `triggers` array must match the functions implemented by the Python file. See [The Manifest Format](../../reference/manifest.md) for the complete schema.
 
 Validate locally before wiring CI:
 
@@ -91,7 +91,7 @@ influxdb3-plugin new index "${SEED_DIR}" --artifacts-url "${ARTIFACTS_URL}"
 gh release upload "${REGISTRY_TAG}" "${SEED_DIR}/index.json" --repo "${REGISTRY_REPO}"
 ```
 
-See [Index format](../../reference/registry-index.md) for the index schema.
+See [The Registry Index Format](../../reference/registry-index.md) for the index schema.
 
 ## Step 5: Add The GitHub Actions Workflow
 

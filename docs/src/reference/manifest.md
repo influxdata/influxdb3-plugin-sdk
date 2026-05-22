@@ -1,4 +1,4 @@
-# Manifest format
+# The Manifest Format
 
 A plugin manifest describes one plugin version. It lives at the root of the plugin directory as `manifest.toml`, travels inside the packaged artifact, and is authored by the plugin repository maintainer or plugin author.
 
@@ -254,4 +254,4 @@ Within a supported major version, fields may be added and unknown fields are ign
 
 Back to [Reference](./).
 
-Next: [Index format](./registry-index.md).
+Next: [The Registry Index Format](./registry-index.md).
