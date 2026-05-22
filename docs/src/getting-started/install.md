@@ -34,4 +34,4 @@ Use a tag that matches the SDK release you want to run.
 influxdb3-plugin --version
 ```
 
-Next: [Pick your path](./).
+Next: [Getting Started](./).
