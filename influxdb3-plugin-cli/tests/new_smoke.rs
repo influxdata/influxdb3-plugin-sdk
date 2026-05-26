@@ -399,7 +399,7 @@ fn new_conflict_error_mentions_path_once() {
     assert_eq!(
         output.status.code(),
         Some(1),
-        "conflict error should be a runtime failure per S2-18; got {:?}",
+        "conflict error should be a runtime failure (exit 1); got {:?}",
         output.status.code()
     );
 

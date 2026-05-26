@@ -90,7 +90,7 @@ fn package_self_overwrite_exits_two() {
         ])
         .assert()
         .code(2)
-        .stdout(predicates::str::contains("S2-12"));
+        .stdout(predicates::str::contains("usage::input_output_overlap"));
 }
 
 #[test]
@@ -114,7 +114,7 @@ fn yank_self_overwrite_exits_two() {
         ])
         .assert()
         .code(2)
-        .stdout(predicates::str::contains("S2-12"));
+        .stdout(predicates::str::contains("usage::input_output_overlap"));
 }
 
 #[test]

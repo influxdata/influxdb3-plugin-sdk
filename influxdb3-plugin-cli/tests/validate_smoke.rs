@@ -46,7 +46,7 @@ fn validate_happy_path_emits_empty_diagnostics_array() {
 }
 
 /// Empty plugin directory: both a Python entry point and `manifest.toml` are
-/// missing. Spec says all validation errors are collected, so both
+/// missing. All validation errors must be collected, so both
 /// `NoEntryPoint` and `MissingRequiredFile` diagnostics must surface in one run.
 #[test]
 fn validate_empty_plugin_dir_reports_both_missing_files_in_json() {

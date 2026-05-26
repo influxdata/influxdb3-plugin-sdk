@@ -395,8 +395,8 @@ fn package_rejects_out_overlapping_index_dir(#[case] mode: &str) {
         .code(2);
     let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
     assert!(
-        stdout.contains("S2-12"),
-        "output should reference the S2-12 contract by identifier, got: {stdout}"
+        stdout.contains("usage::input_output_overlap"),
+        "output should reference the usage::input_output_overlap code by identifier, got: {stdout}"
     );
 
     // Critical corollary: the input index file is unchanged.
@@ -427,8 +427,8 @@ fn package_rejects_out_via_symlink_to_index_dir() {
         .code(2);
     let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
     assert!(
-        stdout.contains("S2-12"),
-        "symlink rejection should reference S2-12, got: {stdout}"
+        stdout.contains("usage::input_output_overlap"),
+        "symlink rejection should reference usage::input_output_overlap, got: {stdout}"
     );
     assert_eq!(
         std::fs::read_to_string(&index_path).unwrap(),

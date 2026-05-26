@@ -373,8 +373,8 @@ fn yank_rejects_out_overlapping_index_dir() {
         .code(2);
     let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
     assert!(
-        stdout.contains("S2-12"),
-        "output should reference S2-12 by identifier, got: {stdout}"
+        stdout.contains("usage::input_output_overlap"),
+        "output should reference usage::input_output_overlap by identifier, got: {stdout}"
     );
     // Input index untouched.
     assert_eq!(std::fs::read_to_string(&index_path).unwrap(), SEEDED_INDEX);

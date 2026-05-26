@@ -56,7 +56,7 @@ fn index_scaffold_produces_parseable_index() {
 
 /// Scaffolded manifests must bake in the current schema version (`1.1`).
 /// The parser only checks the major, so a minor drift is cosmetic — but
-/// visible to any author diffing the scaffold against the spec.
+/// visible to any author diffing the scaffold against the expected output.
 #[test]
 fn plugin_scaffold_emits_current_manifest_schema_version() {
     let td = tempfile::tempdir().unwrap();

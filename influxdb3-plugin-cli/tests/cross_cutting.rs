@@ -44,7 +44,7 @@ fn every_env_var_binding_uses_influxdb3_plugin_prefix() {
     collect_offending_envs(&PluginConfig::command(), &mut offenders);
     assert!(
         offenders.is_empty(),
-        "S2-9: every clap `env = ...` binding must start with `{ENV_PREFIX}`. \
+        "every clap `env = ...` binding must start with `{ENV_PREFIX}`. \
          Offenders: {offenders:?}"
     );
 }
@@ -86,7 +86,7 @@ fn clap_workspace_pin_meets_floor() {
     let actual = (parts[0], parts[1], parts[2]);
     assert!(
         actual >= FLOOR,
-        "S2-6: workspace clap pin {version_str:?} ({actual:?}) is below floor {FLOOR:?}"
+        "workspace clap pin {version_str:?} ({actual:?}) is below floor {FLOOR:?}"
     );
 }
 
@@ -124,7 +124,7 @@ fn json_stdout_emits_no_ansi_under_force_color() {
     assert!(
         !stdout.windows(2).any(|w| w == [0x1b, b'[']),
         "stdout must not contain ANSI escape sequences in --output json mode \
-         (S2-17 absolute rule), got: {:?}",
+         (absolute rule), got: {:?}",
         String::from_utf8_lossy(&stdout)
     );
 }

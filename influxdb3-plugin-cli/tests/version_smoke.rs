@@ -92,7 +92,7 @@ fn version_re_accepts_full_semver_grammar() {
 
     assert!(
         !predicate.eval(&format!("influxdb3-plugin 1.2, revision {sha}\n")),
-        "two-segment version must NOT match (S2-21 requires MAJOR.MINOR.PATCH)"
+        "two-segment version must NOT match (regex requires MAJOR.MINOR.PATCH)"
     );
     assert!(
         !predicate.eval(&format!("influxdb3-plugin 1.2.3-, revision {sha}\n")),
@@ -108,19 +108,19 @@ fn version_re_accepts_full_semver_grammar() {
     // through.
     assert!(
         !predicate.eval("influxdb3-plugin 1.2.3, revision a5ed19d\n"),
-        "7-char short SHA must NOT match (S2-21 requires 40-char)"
+        "7-char short SHA must NOT match (regex requires 40-char)"
     );
     assert!(
         !predicate.eval(&format!(
             "influxdb3-plugin 1.2.3, revision {}\n",
             sha.to_uppercase()
         )),
-        "uppercase-hex SHA must NOT match (S2-21 requires lowercase)"
+        "uppercase-hex SHA must NOT match (regex requires lowercase)"
     );
 }
 
 #[test]
-fn version_output_shape_matches_spec() {
+fn version_output_shape_matches_pattern() {
     let output = Command::cargo_bin("influxdb3-plugin")
         .expect("binary builds")
         .arg("--version")
@@ -181,7 +181,7 @@ fn version_output_flag_does_not_emit_json_on_stdout() {
         assert_eq!(
             output.status.code(),
             Some(2),
-            "usage error must exit 2 (S2-18); got {:?}",
+            "usage error must exit 2; got {:?}",
             output.status.code()
         );
         let stdout = String::from_utf8(output.stdout).expect("stdout is UTF-8");

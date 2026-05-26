@@ -123,7 +123,7 @@ fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
             code: "usage::input_output_overlap".into(),
             message: format!(
                 "--out {} resolves to the directory containing --index {}; \
-                 they must be disjoint (Spec 2 § S2-12)",
+                 they must be disjoint",
                 args.out.display(),
                 args.index.display(),
             ),

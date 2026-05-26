@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 - `influxdb3-plugin-schemas`: expanded `Index` and `ArtifactHash` test coverage to pin documented invariants (hex-only hash zone, malformed-JSON short-circuit at root, per-entry `InvalidVersion` rejection, `git+ssh://` artifact URL rejection). No behavior change.
+- `influxdb3-plugin-cli`: removed internal specification identifiers (e.g. `Spec 2 § S2-12`) from user-facing error messages in `package` and `yank`. Programmatic consumers should match on the stable JSON error code `usage::input_output_overlap`.
 
 ## [0.3.0] - 2026-05-04
 
