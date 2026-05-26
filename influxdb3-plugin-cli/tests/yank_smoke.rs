@@ -235,6 +235,80 @@ fn yank_invalid_published_at_in_input_index_fails_before_output() {
     assert!(!out.join("index.json").exists(), "no output on failure");
 }
 
+#[test]
+fn yank_human_error_shortens_absolute_index_path_under_cwd() {
+    let td = tempfile::tempdir().unwrap();
+    let cwd = std::fs::canonicalize(td.path()).unwrap();
+    let missing_index = cwd.join("reg").join("missing.json");
+
+    let mut cmd = cli_cmd();
+    let assert = cmd
+        .current_dir(&cwd)
+        .arg("yank")
+        .arg("downsampler@1.2.0")
+        .arg("--index")
+        .arg(&missing_index)
+        .arg("--out")
+        .arg("build")
+        .arg("--output")
+        .arg("human")
+        .assert()
+        .failure()
+        .code(1);
+    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).into_owned();
+
+    assert!(
+        stderr.contains("reg/missing.json"),
+        "human error should print CWD-relative index path, got:\n{stderr}"
+    );
+    let cwd_str = cwd.display().to_string();
+    assert!(
+        !stderr.contains(&cwd_str),
+        "human error must not leak absolute CWD prefix {cwd_str:?}; got:\n{stderr}"
+    );
+}
+
+#[test]
+fn yank_json_error_absolutizes_relative_index_path() {
+    let td = tempfile::tempdir().unwrap();
+    let cwd = std::fs::canonicalize(td.path()).unwrap();
+
+    let mut cmd = cli_cmd();
+    let assert = cmd
+        .current_dir(&cwd)
+        .arg("yank")
+        .arg("downsampler@1.2.0")
+        .arg("--index")
+        .arg("reg/missing.json")
+        .arg("--out")
+        .arg("build")
+        .arg("--output")
+        .arg("json")
+        .assert()
+        .failure()
+        .code(1);
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
+    let doc: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|e| panic!("stdout must be JSON: {e}\n{stdout}"));
+    let field = doc
+        .pointer("/error/field")
+        .and_then(|v| v.as_str())
+        .expect("error.field missing");
+    let path = doc
+        .pointer("/error/details/path")
+        .and_then(|v| v.as_str())
+        .expect("error.details.path missing");
+
+    assert!(
+        Path::new(field).is_absolute(),
+        "JSON error.field must be absolute, got {field:?}"
+    );
+    assert!(
+        Path::new(path).is_absolute(),
+        "JSON error.details.path must be absolute, got {path:?}"
+    );
+}
+
 /// Malformed `<name>@<version>` → exit 2 (usage error). Clap's
 /// `ValueValidation` error kind surfaces the invalid
 /// value verbatim; the parser folds the `FromStr::Err` detail into the
