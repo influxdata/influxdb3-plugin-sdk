@@ -11,7 +11,7 @@
 use std::path::Path;
 
 mod common;
-use common::cli_cmd;
+use common::{assert_absolute_json_path, cli_cmd};
 
 /// Spawns `influxdb3-plugin` with `args` and an empty CWD-relative
 /// environment so per-test invocations remain isolated.
@@ -696,6 +696,66 @@ fn new_rejects_reserved_basename_with_actionable_message() {
     spawn_new(&dir, &["process_writes"])
         .code(1)
         .stdout(predicates::str::contains("pass --name"));
+}
+
+#[test]
+fn new_json_error_absolutizes_derived_name_invalid_field() {
+    let td = tempfile::tempdir().unwrap();
+    let cwd = std::fs::canonicalize(td.path()).unwrap();
+
+    let mut cmd = cli_cmd();
+    let assert = cmd
+        .current_dir(&cwd)
+        .arg("new")
+        .arg("process_writes")
+        .arg("./9bad-start")
+        .arg("--output")
+        .arg("json")
+        .assert()
+        .failure()
+        .code(1);
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
+    let doc: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|e| panic!("stdout must be JSON: {e}\n{stdout}"));
+    assert_eq!(doc["error"]["code"], "new::derived_name_invalid");
+    let field = doc
+        .pointer("/error/field")
+        .and_then(|v| v.as_str())
+        .expect("error.field missing");
+    assert_absolute_json_path(field, "error.field");
+}
+
+#[test]
+fn new_json_error_absolutizes_scaffold_failed_path() {
+    let td = tempfile::tempdir().unwrap();
+    let cwd = std::fs::canonicalize(td.path()).unwrap();
+    std::fs::write(cwd.join("file-blocker"), "blocker").unwrap();
+
+    let mut cmd = cli_cmd();
+    let assert = cmd
+        .current_dir(&cwd)
+        .arg("new")
+        .arg("process_writes")
+        .arg("./file-blocker/inside")
+        .arg("--output")
+        .arg("json")
+        .assert()
+        .failure()
+        .code(1);
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
+    let doc: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|e| panic!("stdout must be JSON: {e}\n{stdout}"));
+    assert_eq!(doc["error"]["code"], "new::scaffold_failed");
+    let field = doc
+        .pointer("/error/field")
+        .and_then(|v| v.as_str())
+        .expect("error.field missing");
+    let path = doc
+        .pointer("/error/details/path")
+        .and_then(|v| v.as_str())
+        .expect("error.details.path missing");
+    assert_absolute_json_path(field, "error.field");
+    assert_absolute_json_path(path, "error.details.path");
 }
 
 #[test]

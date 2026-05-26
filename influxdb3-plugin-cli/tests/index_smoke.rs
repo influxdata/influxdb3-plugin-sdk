@@ -10,7 +10,7 @@
 use std::path::Path;
 
 mod common;
-use common::cli_cmd;
+use common::{assert_absolute_json_path, cli_cmd};
 
 const HASH_0: &str = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
 const HASH_1: &str = "sha256:1111111111111111111111111111111111111111111111111111111111111111";
@@ -560,6 +560,55 @@ fn index_read_and_parse_failures_emit_typed_json_errors() {
             .is_empty(),
         "parse failure must include schema diagnostics: {parse_doc:#}"
     );
+}
+
+#[test]
+fn index_json_error_absolutizes_relative_index_path() {
+    let td = tempfile::tempdir().unwrap();
+    let cwd = std::fs::canonicalize(td.path()).unwrap();
+
+    let mut search = cli_cmd();
+    let search_doc = assert_json_error(
+        search
+            .current_dir(&cwd)
+            .arg("search")
+            .arg("--index")
+            .arg("./missing.json")
+            .arg("--output")
+            .arg("json")
+            .assert(),
+        1,
+        "index::index_read_failed",
+    );
+    assert_index_read_path_is_absolute(&search_doc);
+
+    let mut info = cli_cmd();
+    let info_doc = assert_json_error(
+        info.current_dir(&cwd)
+            .arg("info")
+            .arg("downsampler")
+            .arg("--index")
+            .arg("./missing.json")
+            .arg("--output")
+            .arg("json")
+            .assert(),
+        1,
+        "index::index_read_failed",
+    );
+    assert_index_read_path_is_absolute(&info_doc);
+}
+
+fn assert_index_read_path_is_absolute(doc: &serde_json::Value) {
+    let field = doc
+        .pointer("/error/field")
+        .and_then(|v| v.as_str())
+        .expect("error.field missing");
+    let path = doc
+        .pointer("/error/details/path")
+        .and_then(|v| v.as_str())
+        .expect("error.details.path missing");
+    assert_absolute_json_path(field, "error.field");
+    assert_absolute_json_path(path, "error.details.path");
 }
 
 #[test]
