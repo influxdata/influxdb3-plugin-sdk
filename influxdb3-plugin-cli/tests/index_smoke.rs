@@ -181,6 +181,19 @@ fn assert_json_success(assert: assert_cmd::assert::Assert) -> serde_json::Value 
     doc
 }
 
+fn run_info_human(index_path: &Path, name: &str, extra: &[&str]) -> String {
+    let mut full_extra = vec!["--output", "human"];
+    full_extra.extend_from_slice(extra);
+    let assert = spawn_index_info(index_path, name, &full_extra)
+        .success()
+        .stderr(predicates::str::is_empty());
+    String::from_utf8(assert.get_output().stdout.clone()).expect("utf-8 stdout")
+}
+
+fn line_index_of(haystack: &str, prefix: &str) -> Option<usize> {
+    haystack.lines().position(|line| line.starts_with(prefix))
+}
+
 fn assert_json_error(
     assert: assert_cmd::assert::Assert,
     exit_code: i32,
@@ -691,6 +704,172 @@ fn info_human_found_and_not_found_write_stdout() {
         .success()
         .stdout(predicates::str::contains("Plugin not found"))
         .stderr(predicates::str::is_empty());
+}
+
+#[test]
+fn info_human_includes_artifact_url_line_for_visible_plugin() {
+    let td = tempfile::tempdir().unwrap();
+    let path = index_path(&td);
+    write_rich_index(&path);
+
+    let stdout = run_info_human(&path, "downsampler", &[]);
+    assert!(
+        stdout.contains(
+            "artifact_url: https://plugins.example.com/artifacts/downsampler-1.2.0.tar.gz"
+        ),
+        "missing artifact_url line in human stdout:\n{stdout}"
+    );
+}
+
+#[test]
+fn info_human_artifact_url_positioned_after_optionals_before_hash() {
+    let td = tempfile::tempdir().unwrap();
+    let path = index_path(&td);
+    write_rich_index(&path);
+
+    let stdout = run_info_human(&path, "downsampler", &[]);
+
+    let artifact = line_index_of(&stdout, "artifact_url:").expect("artifact_url line");
+    let hash = line_index_of(&stdout, "hash:").expect("hash line");
+    let homepage = line_index_of(&stdout, "homepage:").expect("homepage line");
+    let repository = line_index_of(&stdout, "repository:").expect("repository line");
+    let documentation = line_index_of(&stdout, "documentation:").expect("documentation line");
+
+    assert!(
+        homepage < artifact,
+        "homepage must appear above artifact_url"
+    );
+    assert!(
+        repository < artifact,
+        "repository must appear above artifact_url"
+    );
+    assert!(
+        documentation < artifact,
+        "documentation must appear above artifact_url"
+    );
+    assert_eq!(
+        artifact + 1,
+        hash,
+        "artifact_url must appear directly before hash"
+    );
+}
+
+#[test]
+fn info_human_artifact_url_present_when_optionals_absent() {
+    let td = tempfile::tempdir().unwrap();
+    let path = index_path(&td);
+    write_rich_index(&path);
+
+    let stdout = run_info_human(&path, "alpha_writer", &[]);
+
+    assert!(
+        stdout.contains(
+            "artifact_url: https://plugins.example.com/artifacts/alpha_writer-1.0.0.tar.gz"
+        ),
+        "missing artifact_url for plugin without optionals:\n{stdout}"
+    );
+    assert!(!stdout.contains("homepage:"));
+    assert!(!stdout.contains("repository:"));
+    assert!(!stdout.contains("documentation:"));
+
+    let artifact = line_index_of(&stdout, "artifact_url:").expect("artifact_url line");
+    let hash = line_index_of(&stdout, "hash:").expect("hash line");
+    assert_eq!(
+        artifact + 1,
+        hash,
+        "artifact_url must be the line immediately before hash when no optionals exist"
+    );
+}
+
+#[test]
+fn info_human_artifact_url_uses_selected_version() {
+    let td = tempfile::tempdir().unwrap();
+    let path = index_path(&td);
+    write_rich_index(&path);
+
+    let stdout = run_info_human(&path, "downsampler", &["--version", "1.0.0"]);
+    assert!(
+        stdout.contains(
+            "artifact_url: https://plugins.example.com/artifacts/downsampler-1.0.0.tar.gz"
+        ),
+        "human output must use selected version, not latest:\n{stdout}"
+    );
+}
+
+#[test]
+fn info_human_artifact_url_present_for_yanked_when_included() {
+    let td = tempfile::tempdir().unwrap();
+    let path = index_path(&td);
+    write_rich_index(&path);
+
+    let stdout = run_info_human(&path, "legacy_rollup", &["--include-yanked"]);
+    assert!(
+        stdout.contains(
+            "artifact_url: https://plugins.example.com/artifacts/legacy_rollup-0.9.0.tar.gz"
+        ),
+        "missing artifact_url for yanked-and-included entry:\n{stdout}"
+    );
+}
+
+#[test]
+fn info_human_artifact_url_present_for_incompatible_when_included() {
+    let td = tempfile::tempdir().unwrap();
+    let path = index_path(&td);
+    write_rich_index(&path);
+
+    let stdout = run_info_human(
+        &path,
+        "future_writer",
+        &["--database-version", "3.2.0", "--include-incompatible"],
+    );
+    assert!(
+        stdout.contains(
+            "artifact_url: https://plugins.example.com/artifacts/future_writer-2.0.0.tar.gz"
+        ),
+        "missing artifact_url for incompatible-and-included entry:\n{stdout}"
+    );
+}
+
+#[test]
+fn info_human_no_artifact_url_when_not_found() {
+    let td = tempfile::tempdir().unwrap();
+    let path = index_path(&td);
+    write_rich_index(&path);
+
+    let stdout = run_info_human(&path, "no_such_plugin", &[]);
+    assert!(
+        !stdout.contains("artifact_url"),
+        "not-found human stdout must not contain artifact_url:\n{stdout}"
+    );
+}
+
+#[test]
+fn info_human_no_artifact_url_when_filtered_out() {
+    let td = tempfile::tempdir().unwrap();
+    let path = index_path(&td);
+    write_rich_index(&path);
+
+    let stdout = run_info_human(&path, "legacy_rollup", &[]);
+    assert!(
+        !stdout.contains("artifact_url"),
+        "filtered-out human stdout must not contain artifact_url:\n{stdout}"
+    );
+}
+
+#[test]
+fn search_human_output_does_not_contain_artifact_url() {
+    let td = tempfile::tempdir().unwrap();
+    let path = index_path(&td);
+    write_rich_index(&path);
+
+    let assert = spawn_index_search(&path, None, &["--output", "human"])
+        .success()
+        .stderr(predicates::str::is_empty());
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    assert!(
+        !stdout.contains("artifact_url"),
+        "search human output must remain scan-friendly; no artifact_url:\n{stdout}"
+    );
 }
 
 #[test]

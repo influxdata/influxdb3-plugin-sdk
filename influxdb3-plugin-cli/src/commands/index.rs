@@ -429,6 +429,7 @@ fn render_info_human(
             if let Some(documentation) = &plugin.documentation {
                 writeln!(writer, "documentation: {documentation}")?;
             }
+            writeln!(writer, "artifact_url: {}", plugin.artifact_url)?;
             writeln!(writer, "hash: {}", plugin.hash)?;
             writeln!(
                 writer,
