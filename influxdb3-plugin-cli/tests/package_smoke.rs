@@ -619,3 +619,93 @@ fn package_single_file_plugin() {
         "archive must NOT contain __init__.py, got: {paths:?}"
     );
 }
+
+/// Human-mode success output shortens paths to CWD-relative form when
+/// the artifact + derived index live under the working directory. Keeps
+/// terminal output readable and avoids leaking absolute machine paths.
+#[test]
+fn package_human_mode_emits_cwd_relative_paths() {
+    let td = tempfile::tempdir().unwrap();
+    let cwd = std::fs::canonicalize(td.path()).unwrap();
+    let plugin_dir = cwd.join("p");
+    write_valid_plugin(&plugin_dir);
+    let index_dir = cwd.join("reg");
+    std::fs::create_dir_all(&index_dir).unwrap();
+    let index_path = index_dir.join("index.json");
+    write_empty_index(&index_path);
+
+    let mut cmd = cli_cmd();
+    cmd.current_dir(&cwd)
+        .arg("package")
+        .arg("--output")
+        .arg("human")
+        .arg("p")
+        .arg("--index")
+        .arg("reg/index.json")
+        .arg("--out")
+        .arg("build");
+    let assert = cmd.assert().success();
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
+
+    let expected_artifact = PathBuf::from("build").join("downsampler-1.2.0.tar.gz");
+    let expected_index = PathBuf::from("build").join("index.json");
+    assert!(
+        stdout.contains(&format!("artifact: {}", expected_artifact.display())),
+        "human output should print relative artifact path, got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains(&format!("index:    {}", expected_index.display())),
+        "human output should print relative index path, got:\n{stdout}"
+    );
+    let cwd_str = cwd.display().to_string();
+    assert!(
+        !stdout.contains(&cwd_str),
+        "human output must not leak the absolute CWD prefix {cwd_str:?}; got:\n{stdout}"
+    );
+}
+
+/// JSON-mode success payload keeps absolute artifact + index paths so
+/// programmatic consumers (CI scripts, registry publishers) get
+/// unambiguous filesystem targets regardless of caller CWD.
+#[test]
+fn package_json_mode_keeps_absolute_paths() {
+    let td = tempfile::tempdir().unwrap();
+    let cwd = std::fs::canonicalize(td.path()).unwrap();
+    let plugin_dir = cwd.join("p");
+    write_valid_plugin(&plugin_dir);
+    let index_dir = cwd.join("reg");
+    std::fs::create_dir_all(&index_dir).unwrap();
+    let index_path = index_dir.join("index.json");
+    write_empty_index(&index_path);
+
+    let mut cmd = cli_cmd();
+    cmd.current_dir(&cwd)
+        .arg("package")
+        .arg("--output")
+        .arg("json")
+        .arg("p")
+        .arg("--index")
+        .arg("reg/index.json")
+        .arg("--out")
+        .arg("build");
+    let assert = cmd.assert().success();
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
+    let doc: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|e| panic!("stdout must be valid JSON: {e}\n{stdout}"));
+    let artifact = doc
+        .pointer("/result/artifact_path")
+        .and_then(|v| v.as_str())
+        .expect("result.artifact_path missing");
+    let index = doc
+        .pointer("/result/index_path")
+        .and_then(|v| v.as_str())
+        .expect("result.index_path missing");
+    assert!(
+        Path::new(artifact).is_absolute(),
+        "json artifact_path must be absolute, got {artifact:?}"
+    );
+    assert!(
+        Path::new(index).is_absolute(),
+        "json index_path must be absolute, got {index:?}"
+    );
+}

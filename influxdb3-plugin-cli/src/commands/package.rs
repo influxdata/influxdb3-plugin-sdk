@@ -24,6 +24,7 @@ use crate::color::Stream;
 use crate::output::error_mapping::{ErrorContext, json_error_from_sdk, json_error_from_validation};
 use crate::output::json::{JsonError, PackageOutput, write_envelope_ok};
 use crate::output::{Env, OutputMode, RealEnv, resolve_output_mode};
+use crate::path_display::display_relative_to_cwd;
 use crate::style::Palette;
 
 /// Parsed `package` arguments.
@@ -284,8 +285,16 @@ fn render_human(
     )?;
     // Info lines remain plain — conventional tool output emphasizes only
     // the status header, so the paths/hash stay unstyled for readability.
-    writeln!(writer, "  artifact: {}", payload.artifact_path.display())?;
-    writeln!(writer, "  index:    {}", payload.index_path.display())?;
+    writeln!(
+        writer,
+        "  artifact: {}",
+        display_relative_to_cwd(&payload.artifact_path)
+    )?;
+    writeln!(
+        writer,
+        "  index:    {}",
+        display_relative_to_cwd(&payload.index_path)
+    )?;
     writeln!(writer, "  hash:     {}", payload.hash)?;
     Ok(())
 }
