@@ -20,6 +20,7 @@ use crate::output::json::{
     write_envelope_ok,
 };
 use crate::output::{Env, OutputMode, RealEnv, resolve_output_mode};
+use crate::path_display::absolutize_for_json;
 
 #[derive(Debug, ClapArgs)]
 pub(crate) struct SearchArgs {
@@ -220,13 +221,15 @@ fn parse_plugin_name(raw: String) -> anyhow::Result<PluginName> {
 }
 
 fn read_index(path: &Path) -> anyhow::Result<Index> {
+    let index_path = absolutize_for_json(path)?;
+    let index_display = index_path.display().to_string();
     let raw = std::fs::read_to_string(path).map_err(|e| {
         CliError::runtime(JsonError {
             code: "index::index_read_failed".into(),
-            message: format!("failed to read --index {}: {e}", path.display()),
-            field: Some(path.display().to_string()),
+            message: format!("failed to read --index {index_display}: {e}"),
+            field: Some(index_display.clone()),
             details: Some(serde_json::json!({
-                "path": path.display().to_string(),
+                "path": index_display,
                 "io_kind": format!("{:?}", e.kind()),
             })),
             diagnostics: vec![],
@@ -242,11 +245,8 @@ fn read_index(path: &Path) -> anyhow::Result<Index> {
 
         CliError::runtime(JsonError {
             code: "index::index_parse_failed".into(),
-            message: format!(
-                "failed to parse --index {} as a registry index",
-                path.display()
-            ),
-            field: Some(path.display().to_string()),
+            message: format!("failed to parse --index {index_display} as a registry index"),
+            field: Some(index_display),
             details: None,
             diagnostics,
             cause: vec![],

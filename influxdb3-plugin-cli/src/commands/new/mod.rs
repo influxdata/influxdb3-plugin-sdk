@@ -148,7 +148,7 @@ fn run_plugin_with_env(
     let target_dir = absolutize_for_json(&path)?;
 
     scaffold::plugin(
-        &path,
+        &target_dir,
         &name,
         trigger,
         database_version.as_deref(),
@@ -198,7 +198,7 @@ fn run_index_with_env(
 
     let target_dir = absolutize_for_json(&path)?;
 
-    scaffold::index(&path, artifacts_url.as_deref(), global.force)
+    scaffold::index(&target_dir, artifacts_url.as_deref(), global.force)
         .map_err(|e| CliError::runtime(json_error_from_sdk(&e, ErrorContext::NewIndex)))?;
 
     let summary = Summary {
@@ -281,28 +281,34 @@ fn resolve_plugin_name(dir: &Path, name_arg: Option<String>) -> anyhow::Result<S
             diagnostics: vec![],
             cause: vec![],
         })),
-        Err(SchemaError::ReservedPluginName { .. }) => Err(CliError::runtime(JsonError {
-            code: "new::derived_name_invalid".into(),
-            message: format!(
-                "derived plugin name {candidate:?} (from path basename) is a \
-                 Windows reserved device name; pass --name <name> explicitly"
-            ),
-            field: Some(dir.display().to_string()),
-            details: None,
-            diagnostics: vec![],
-            cause: vec![],
-        })),
-        Err(_) => Err(CliError::runtime(JsonError {
-            code: "new::derived_name_invalid".into(),
-            message: format!(
-                "derived plugin name {candidate:?} (from path basename) is not a valid \
-                 plugin name; pass --name <name> explicitly. {PLUGIN_NAME_RULE}"
-            ),
-            field: Some(dir.display().to_string()),
-            details: None,
-            diagnostics: vec![],
-            cause: vec![],
-        })),
+        Err(SchemaError::ReservedPluginName { .. }) => {
+            let dir_display = absolutize_for_json(dir)?.display().to_string();
+            Err(CliError::runtime(JsonError {
+                code: "new::derived_name_invalid".into(),
+                message: format!(
+                    "derived plugin name {candidate:?} (from path basename) is a \
+                     Windows reserved device name; pass --name <name> explicitly"
+                ),
+                field: Some(dir_display),
+                details: None,
+                diagnostics: vec![],
+                cause: vec![],
+            }))
+        }
+        Err(_) => {
+            let dir_display = absolutize_for_json(dir)?.display().to_string();
+            Err(CliError::runtime(JsonError {
+                code: "new::derived_name_invalid".into(),
+                message: format!(
+                    "derived plugin name {candidate:?} (from path basename) is not a valid \
+                     plugin name; pass --name <name> explicitly. {PLUGIN_NAME_RULE}"
+                ),
+                field: Some(dir_display),
+                details: None,
+                diagnostics: vec![],
+                cause: vec![],
+            }))
+        }
     }
 }
 
