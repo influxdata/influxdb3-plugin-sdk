@@ -471,6 +471,84 @@ fn package_failure_in_json_mode_emits_error_envelope() {
 }
 
 #[test]
+fn package_human_error_shortens_absolute_index_path_under_cwd() {
+    let td = tempfile::tempdir().unwrap();
+    let cwd = std::fs::canonicalize(td.path()).unwrap();
+    let plugin_dir = cwd.join("p");
+    write_valid_plugin(&plugin_dir);
+    let missing_index = cwd.join("reg").join("missing.json");
+
+    let mut cmd = cli_cmd();
+    let assert = cmd
+        .current_dir(&cwd)
+        .arg("package")
+        .arg("p")
+        .arg("--index")
+        .arg(&missing_index)
+        .arg("--out")
+        .arg("build")
+        .arg("--output")
+        .arg("human")
+        .assert()
+        .failure()
+        .code(1);
+    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).into_owned();
+
+    assert!(
+        stderr.contains("reg/missing.json"),
+        "human error should print CWD-relative index path, got:\n{stderr}"
+    );
+    let cwd_str = cwd.display().to_string();
+    assert!(
+        !stderr.contains(&cwd_str),
+        "human error must not leak absolute CWD prefix {cwd_str:?}; got:\n{stderr}"
+    );
+}
+
+#[test]
+fn package_json_error_absolutizes_relative_index_path() {
+    let td = tempfile::tempdir().unwrap();
+    let cwd = std::fs::canonicalize(td.path()).unwrap();
+    let plugin_dir = cwd.join("p");
+    write_valid_plugin(&plugin_dir);
+
+    let mut cmd = cli_cmd();
+    let assert = cmd
+        .current_dir(&cwd)
+        .arg("package")
+        .arg("p")
+        .arg("--index")
+        .arg("reg/missing.json")
+        .arg("--out")
+        .arg("build")
+        .arg("--output")
+        .arg("json")
+        .assert()
+        .failure()
+        .code(1);
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
+    let doc: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|e| panic!("stdout must be JSON: {e}\n{stdout}"));
+    let field = doc
+        .pointer("/error/field")
+        .and_then(|v| v.as_str())
+        .expect("error.field missing");
+    let path = doc
+        .pointer("/error/details/path")
+        .and_then(|v| v.as_str())
+        .expect("error.details.path missing");
+
+    assert!(
+        Path::new(field).is_absolute(),
+        "JSON error.field must be absolute, got {field:?}"
+    );
+    assert!(
+        Path::new(path).is_absolute(),
+        "JSON error.details.path must be absolute, got {path:?}"
+    );
+}
+
+#[test]
 fn package_invalid_published_at_in_input_index_fails_before_outputs() {
     let td = tempfile::tempdir().unwrap();
     let plugin_dir = td.path().join("p");
