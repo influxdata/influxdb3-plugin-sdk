@@ -18,7 +18,7 @@ use crate::color::Stream;
 use crate::output::error_mapping::{ErrorContext, json_error_from_sdk};
 use crate::output::json::{JsonError, NewOutput, write_envelope_ok};
 use crate::output::{Env, OutputMode, RealEnv, resolve_output_mode};
-use crate::path_display::display_relative_to_cwd;
+use crate::path_display::{absolutize_for_json, display_relative_to_cwd};
 use crate::style::Palette;
 use templates::TemplateMetadata;
 
@@ -145,6 +145,8 @@ fn run_plugin_with_env(
     let parent = path.parent().unwrap_or_else(|| Path::new("."));
     check_sibling_canonical_collision(parent, &name)?;
 
+    let target_dir = absolutize_for_json(&path)?;
+
     scaffold::plugin(
         &path,
         &name,
@@ -157,7 +159,7 @@ fn run_plugin_with_env(
     let summary = Summary {
         kind: SummaryKind::Plugin,
         template: metadata,
-        target_dir: path,
+        target_dir,
         name: Some(name),
         files_written: vec![
             PathBuf::from("manifest.toml"),
@@ -194,13 +196,15 @@ fn run_index_with_env(
         }));
     }
 
+    let target_dir = absolutize_for_json(&path)?;
+
     scaffold::index(&path, artifacts_url.as_deref(), global.force)
         .map_err(|e| CliError::runtime(json_error_from_sdk(&e, ErrorContext::NewIndex)))?;
 
     let summary = Summary {
         kind: SummaryKind::Index,
         template: metadata,
-        target_dir: path,
+        target_dir,
         name: None,
         files_written: vec![PathBuf::from("index.json")],
     };

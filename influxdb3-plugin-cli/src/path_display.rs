@@ -1,16 +1,48 @@
-//! Path shortening for human-mode CLI output.
+//! Path helpers for CLI output.
 //!
-//! Absolute paths in success output (`/Users/<name>/.../build/foo.tar.gz`)
-//! are noisy in terminals, demos, screenshots, and CI logs. This module
-//! shortens a path for display when it is a descendant of the current
-//! working directory; otherwise it falls back to the absolute form so
-//! the output is never ambiguous or polluted with `../../..` traversal.
-//!
-//! JSON-mode output is unaffected by this helper — programmatic
-//! consumers continue to receive the canonical absolute paths from the
-//! command payload.
+//! - Human mode: [`display_relative_to_cwd`] shortens an absolute path
+//!   to CWD-relative form when the path is a descendant of the working
+//!   directory; otherwise it falls back to the absolute form so the
+//!   output is never ambiguous or polluted with `../../..` traversal.
+//! - JSON mode: [`absolutize_for_json`] returns the lexical absolute
+//!   form of a path (via [`std::path::absolute`]). No FS access, no
+//!   symlink resolution — the emitted path mirrors the caller-supplied
+//!   structure. Failure surfaces as a structured [`CliError`] rather
+//!   than a silent fallback that could leak a relative path.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+use crate::cli_error::CliError;
+use crate::output::json::JsonError;
+
+/// Lexical absolute form of `path` for emission as a JSON path field.
+///
+/// **Policy:** lexical display, not canonical identity.
+/// - Joins relative input onto the process CWD.
+/// - Does not resolve symlinks (`/repo/link/foo` stays
+///   `/repo/link/foo`, never collapses to the link target).
+/// - Does not collapse `..` components (on Unix; see
+///   [`std::path::absolute`] for platform notes). A caller-supplied
+///   `..` segment is preserved so OS-level path resolution at write
+///   time matches the user's intent in the presence of symlinks.
+/// - Does not touch the filesystem; safe to call before any write.
+///
+/// The only failure mode is an unreadable process CWD; that surfaces
+/// as a structured [`CliError::Runtime`] so the JSON contract
+/// ("`target_dir` / `index_path` / `artifact_path` are absolute")
+/// cannot quietly degrade to a relative path.
+pub(crate) fn absolutize_for_json(path: &Path) -> Result<PathBuf, anyhow::Error> {
+    std::path::absolute(path).map_err(|source| {
+        CliError::runtime(JsonError {
+            code: "path::resolution_failed".into(),
+            message: format!("could not resolve path {path:?}: {source}"),
+            field: None,
+            details: None,
+            diagnostics: vec![],
+            cause: vec![],
+        })
+    })
+}
 
 /// Returns a display string for `path` shortened to a CWD-relative form
 /// when possible. Reads the process CWD via [`std::env::current_dir`].

@@ -1131,30 +1131,157 @@ fn new_human_mode_emits_cwd_relative_paths() {
 
 /// JSON-mode payload keeps the absolute target directory so
 /// programmatic consumers get unambiguous filesystem targets
-/// regardless of caller CWD.
+/// regardless of caller CWD. The path the caller passed may be
+/// absolute, bare-relative (`name`), dot-prefixed (`./name`), or
+/// parent-relative (`../name`); all four must serialize as
+/// absolute in JSON.
 #[test]
-fn new_json_mode_keeps_absolute_paths() {
+fn new_json_mode_target_dir_absolute_for_all_input_forms() {
+    let outer = tempfile::tempdir().unwrap();
+    let outer_canon = std::fs::canonicalize(outer.path()).unwrap();
+    let work = outer_canon.join("work");
+    std::fs::create_dir(&work).unwrap();
+
+    let absolute_target = work.join("p_abs");
+    let cases: &[(&str, String)] = &[
+        ("bare", "p_bare".to_owned()),
+        ("dot", "./p_dot".to_owned()),
+        ("dotdot", "../p_dotdot".to_owned()),
+        ("absolute", absolute_target.display().to_string()),
+    ];
+
+    for (label, arg) in cases {
+        let mut cmd = cli_cmd();
+        let assert = cmd
+            .current_dir(&work)
+            .arg("new")
+            .arg("process_writes")
+            .arg(arg)
+            .arg("--output")
+            .arg("json")
+            .assert()
+            .success();
+        let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
+        let doc: serde_json::Value = serde_json::from_str(&stdout)
+            .unwrap_or_else(|e| panic!("[{label}] stdout must be JSON: {e}\n{stdout}"));
+        let target_dir = doc
+            .pointer("/result/target_dir")
+            .and_then(|v| v.as_str())
+            .unwrap_or_else(|| panic!("[{label}] result.target_dir missing\n{stdout}"));
+        assert!(
+            Path::new(target_dir).is_absolute(),
+            "[{label}] JSON target_dir must be absolute, got {target_dir:?}"
+        );
+    }
+}
+
+/// Index template uses a separate code path from plugin templates;
+/// the absolute-target_dir contract must hold there too.
+#[test]
+fn new_index_json_mode_target_dir_absolute_for_relative_input() {
     let td = tempfile::tempdir().unwrap();
     let cwd = std::fs::canonicalize(td.path()).unwrap();
-    let target = cwd.join("hp");
 
     let mut cmd = cli_cmd();
-    cmd.current_dir(&cwd)
+    let assert = cmd
+        .current_dir(&cwd)
         .arg("new")
-        .arg("process_writes")
-        .arg(&target)
+        .arg("index")
+        .arg("rel_idx")
         .arg("--output")
-        .arg("json");
-    let assert = cmd.assert().success();
+        .arg("json")
+        .assert()
+        .success();
     let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
     let doc: serde_json::Value = serde_json::from_str(&stdout)
-        .unwrap_or_else(|e| panic!("stdout must be valid JSON: {e}\n{stdout}"));
+        .unwrap_or_else(|e| panic!("stdout must be JSON: {e}\n{stdout}"));
     let target_dir = doc
         .pointer("/result/target_dir")
         .and_then(|v| v.as_str())
         .expect("result.target_dir missing");
     assert!(
         Path::new(target_dir).is_absolute(),
-        "json target_dir must be absolute, got {target_dir:?}"
+        "index JSON target_dir must be absolute, got {target_dir:?}"
+    );
+}
+
+/// JSON schema contract: `target_dir` is absolute and
+/// `files_written` entries are relative paths such that
+/// `target_dir.join(entry)` exists on disk. Locks the documented
+/// shape at `output/json.rs` so a future "make every path
+/// absolute" change is an explicit schema decision, not a drift.
+#[test]
+fn new_json_mode_files_written_relative_to_target_dir() {
+    let td = tempfile::tempdir().unwrap();
+    let cwd = std::fs::canonicalize(td.path()).unwrap();
+
+    let mut cmd = cli_cmd();
+    let assert = cmd
+        .current_dir(&cwd)
+        .arg("new")
+        .arg("process_writes")
+        .arg("rel_plugin")
+        .arg("--output")
+        .arg("json")
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
+    let doc: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|e| panic!("stdout must be JSON: {e}\n{stdout}"));
+    let target_dir = doc
+        .pointer("/result/target_dir")
+        .and_then(|v| v.as_str())
+        .expect("result.target_dir missing");
+    let target_path = Path::new(target_dir);
+    assert!(
+        target_path.is_absolute(),
+        "target_dir must be absolute, got {target_dir:?}"
+    );
+    let files = doc
+        .pointer("/result/files_written")
+        .and_then(|v| v.as_array())
+        .expect("result.files_written missing");
+    assert!(!files.is_empty(), "files_written must not be empty");
+    for f in files {
+        let s = f.as_str().expect("files_written entry must be string");
+        let p = Path::new(s);
+        assert!(
+            p.is_relative(),
+            "files_written entry {s:?} must be relative (per documented schema)"
+        );
+        assert!(
+            target_path.join(p).exists(),
+            "target_dir.join({s:?}) must exist on disk; consumer reconstruction contract"
+        );
+    }
+}
+
+/// Regression guard: storing an absolute path in `Summary` must not
+/// break the human renderer's CWD-relative shortening when the
+/// caller passed a relative path.
+#[test]
+fn new_human_mode_keeps_relative_input_short() {
+    let td = tempfile::tempdir().unwrap();
+    let cwd = std::fs::canonicalize(td.path()).unwrap();
+
+    let mut cmd = cli_cmd();
+    let assert = cmd
+        .current_dir(&cwd)
+        .arg("new")
+        .arg("process_writes")
+        .arg("hp_rel")
+        .arg("--output")
+        .arg("human")
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
+    assert!(
+        stdout.contains("Scaffolded plugin (process_writes template) at hp_rel"),
+        "human output must shorten path for relative input, got:\n{stdout}"
+    );
+    let cwd_str = cwd.display().to_string();
+    assert!(
+        !stdout.contains(&cwd_str),
+        "human output must not leak absolute CWD prefix {cwd_str:?}; got:\n{stdout}"
     );
 }

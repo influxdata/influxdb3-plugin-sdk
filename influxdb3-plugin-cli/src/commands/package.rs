@@ -24,7 +24,7 @@ use crate::color::Stream;
 use crate::output::error_mapping::{ErrorContext, json_error_from_sdk, json_error_from_validation};
 use crate::output::json::{JsonError, PackageOutput, write_envelope_ok};
 use crate::output::{Env, OutputMode, RealEnv, resolve_output_mode};
-use crate::path_display::display_relative_to_cwd;
+use crate::path_display::{absolutize_for_json, display_relative_to_cwd};
 use crate::style::Palette;
 
 /// Parsed `package` arguments.
@@ -165,8 +165,9 @@ fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
         outcome.new_entry.name.as_str(),
         outcome.new_entry.version,
     );
-    let artifact_path = args.out.join(&artifact_filename);
-    let derived_index_path = args.out.join("index.json");
+    let out_abs = absolutize_for_json(&args.out)?;
+    let artifact_path = out_abs.join(&artifact_filename);
+    let derived_index_path = out_abs.join("index.json");
 
     // Canonical JSON serialization failure.
     let derived_index_json = outcome.derived_index.to_canonical_json().map_err(|e| {
@@ -208,8 +209,8 @@ fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
     })?;
 
     let payload = PackageOutput {
-        artifact_path: canonicalize_or_keep(&artifact_path),
-        index_path: canonicalize_or_keep(&derived_index_path),
+        artifact_path,
+        index_path: derived_index_path,
         hash: outcome.hash.as_str().to_owned(),
         new_entry_name: outcome.new_entry.name.as_str().to_owned(),
         new_entry_version: outcome.new_entry.version.to_string(),
@@ -262,13 +263,6 @@ fn paths_overlap(index_path: &Path, out_dir: &Path) -> anyhow::Result<bool> {
     })?;
     let idx_parent = idx.parent().unwrap_or_else(|| Path::new("/"));
     Ok(idx_parent == out)
-}
-
-/// `canonicalize` for display purposes — falls back to the input path
-/// when canonicalization fails (e.g., the file existed during the call
-/// but rotated away under us). Used only on outputs we just wrote.
-fn canonicalize_or_keep(p: &Path) -> PathBuf {
-    std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf())
 }
 
 fn render_human(

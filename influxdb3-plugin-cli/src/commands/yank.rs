@@ -29,7 +29,7 @@ use crate::color::Stream;
 use crate::output::error_mapping::{ErrorContext, json_error_from_sdk, json_error_from_validation};
 use crate::output::json::{JsonError, YankOutcomeWire, YankOutput, write_envelope_ok};
 use crate::output::{Env, OutputMode, RealEnv, resolve_output_mode};
-use crate::path_display::display_relative_to_cwd;
+use crate::path_display::{absolutize_for_json, display_relative_to_cwd};
 use crate::style::Palette;
 
 /// Parsed `yank` arguments.
@@ -153,7 +153,8 @@ fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
         CliError::runtime(json_error_from_sdk(&sdk_err, ErrorContext::Yank))
     })?;
 
-    let derived_index_path = args.out.join("index.json");
+    let out_abs = absolutize_for_json(&args.out)?;
+    let derived_index_path = out_abs.join("index.json");
 
     // Write derived index.
     std::fs::write(&derived_index_path, &derived_index_json).map_err(|e| {
@@ -186,7 +187,7 @@ fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
         version: version.to_string(),
         published_at,
         outcome: outcome_wire(sdk_outcome, args.undo),
-        index_path: canonicalize_or_keep(&derived_index_path),
+        index_path: derived_index_path,
     };
 
     match mode {
@@ -313,10 +314,6 @@ fn paths_overlap(index_path: &Path, out_dir: &Path) -> anyhow::Result<bool> {
     })?;
     let idx_parent = idx.parent().unwrap_or_else(|| Path::new("/"));
     Ok(idx_parent == out)
-}
-
-fn canonicalize_or_keep(p: &Path) -> PathBuf {
-    std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf())
 }
 
 fn render_human(
