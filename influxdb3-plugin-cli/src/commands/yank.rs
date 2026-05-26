@@ -29,6 +29,7 @@ use crate::color::Stream;
 use crate::output::error_mapping::{ErrorContext, json_error_from_sdk, json_error_from_validation};
 use crate::output::json::{JsonError, YankOutcomeWire, YankOutput, write_envelope_ok};
 use crate::output::{Env, OutputMode, RealEnv, resolve_output_mode};
+use crate::path_display::display_relative_to_cwd;
 use crate::style::Palette;
 
 /// Parsed `yank` arguments.
@@ -346,6 +347,10 @@ fn render_human(
             )?;
         }
     }
-    writeln!(writer, "  index: {}", payload.index_path.display())?;
+    writeln!(
+        writer,
+        "  index: {}",
+        display_relative_to_cwd(&payload.index_path)
+    )?;
     Ok(())
 }

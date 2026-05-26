@@ -8,7 +8,7 @@
 
 #![allow(unused_crate_dependencies)]
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 mod common;
 use common::{SEEDED_INDEX, cli_cmd};
@@ -378,4 +378,78 @@ fn yank_rejects_out_overlapping_index_dir() {
     );
     // Input index untouched.
     assert_eq!(std::fs::read_to_string(&index_path).unwrap(), SEEDED_INDEX);
+}
+
+/// Human-mode success output shortens the derived-index path to
+/// CWD-relative form when the destination lives under the working
+/// directory. Avoids leaking absolute machine paths in terminals,
+/// demos, and CI logs.
+#[test]
+fn yank_human_mode_emits_cwd_relative_paths() {
+    let td = tempfile::tempdir().unwrap();
+    let cwd = std::fs::canonicalize(td.path()).unwrap();
+    let index_dir = cwd.join("reg");
+    std::fs::create_dir_all(&index_dir).unwrap();
+    let index_path = index_dir.join("index.json");
+    write_index(&index_path, SEEDED_INDEX);
+
+    let mut cmd = cli_cmd();
+    cmd.current_dir(&cwd)
+        .arg("yank")
+        .arg("downsampler@1.2.0")
+        .arg("--output")
+        .arg("human")
+        .arg("--index")
+        .arg("reg/index.json")
+        .arg("--out")
+        .arg("build");
+    let assert = cmd.assert().success();
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
+
+    let expected = PathBuf::from("build").join("index.json");
+    assert!(
+        stdout.contains(&format!("index: {}", expected.display())),
+        "human output should print relative index path, got:\n{stdout}"
+    );
+    let cwd_str = cwd.display().to_string();
+    assert!(
+        !stdout.contains(&cwd_str),
+        "human output must not leak the absolute CWD prefix {cwd_str:?}; got:\n{stdout}"
+    );
+}
+
+/// JSON-mode payload keeps the absolute derived-index path so
+/// programmatic consumers get unambiguous filesystem targets
+/// regardless of caller CWD.
+#[test]
+fn yank_json_mode_keeps_absolute_paths() {
+    let td = tempfile::tempdir().unwrap();
+    let cwd = std::fs::canonicalize(td.path()).unwrap();
+    let index_dir = cwd.join("reg");
+    std::fs::create_dir_all(&index_dir).unwrap();
+    let index_path = index_dir.join("index.json");
+    write_index(&index_path, SEEDED_INDEX);
+
+    let mut cmd = cli_cmd();
+    cmd.current_dir(&cwd)
+        .arg("yank")
+        .arg("downsampler@1.2.0")
+        .arg("--output")
+        .arg("json")
+        .arg("--index")
+        .arg("reg/index.json")
+        .arg("--out")
+        .arg("build");
+    let assert = cmd.assert().success();
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
+    let doc: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|e| panic!("stdout must be valid JSON: {e}\n{stdout}"));
+    let index = doc
+        .pointer("/result/index_path")
+        .and_then(|v| v.as_str())
+        .expect("result.index_path missing");
+    assert!(
+        Path::new(index).is_absolute(),
+        "json index_path must be absolute, got {index:?}"
+    );
 }
