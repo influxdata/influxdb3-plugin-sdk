@@ -281,6 +281,21 @@ jobs:
             JSON
             gcloud auth login --cred-file="$CRED_FILE"
       - run:
+          # Wires gcloud's WIF-issued access token into the docker
+          # daemon's credential helper for us-east1-docker.pkg.dev. The
+          # self-hosted runner fleet has some instances whose
+          # ~/.docker/config.json lacks the credHelpers entry for this
+          # registry; without configure-docker, those runners fall back
+          # to anonymous pulls and fail with
+          # `Unauthenticated request ... artifactregistry.repositories.downloadArtifacts`
+          # at docker pull time even though `gcloud auth login`
+          # succeeded. Running configure-docker here makes the job
+          # independent of per-runner baked state.
+          name: Configure docker credential helper for Artifact Registry
+          command: |
+            source "$BASH_ENV"
+            gcloud auth configure-docker us-east1-docker.pkg.dev --quiet
+      - run:
           name: Pull cross-builder image
           no_output_timeout: 15m
           command: |
