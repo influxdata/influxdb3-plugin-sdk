@@ -285,7 +285,7 @@ mod tests {
     }
 
     #[test]
-    fn render_human_error_ignores_non_path_detail_values() {
+    fn render_human_error_ignores_unknown_detail_keys() {
         let cwd = std::env::current_dir().unwrap();
         let value = cwd.join("not-a-path-detail").display().to_string();
         let err = JsonError {
