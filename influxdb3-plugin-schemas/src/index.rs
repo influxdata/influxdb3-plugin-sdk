@@ -105,6 +105,25 @@ impl ArtifactsUrl {
     pub fn as_url(&self) -> &url::Url {
         &self.0
     }
+
+    /// Computes the fully-resolved artifact URL for `(name, version)` under
+    /// this `ArtifactsUrl`. Normalizes the base's trailing slash and preserves
+    /// query string and fragment verbatim. The artifact filename is always
+    /// `{name}-{version}.tar.gz` per the flat-layout registry index rule.
+    ///
+    /// Infallible by construction: name/version characters are restricted by
+    /// their respective validators to RFC 3986 path-safe ASCII, and the scheme
+    /// set accepted by `try_new` (`http`, `https`, `file`) never satisfies
+    /// `Url::cannot_be_a_base`.
+    pub fn artifact_url(&self, name: &PluginName, version: &semver::Version) -> url::Url {
+        let filename = format!("{}-{}.tar.gz", name.as_str(), version);
+        let mut url = self.0.clone();
+        url.path_segments_mut()
+            .expect("ArtifactsUrl schemes (http/https/file) are always base-able")
+            .pop_if_empty()
+            .push(&filename);
+        url
+    }
 }
 
 impl fmt::Display for ArtifactsUrl {
@@ -799,6 +818,141 @@ mod artifacts_url_tests {
     fn malformed_url_rejected() {
         let err = ArtifactsUrl::try_new("not a url").unwrap_err();
         assert_matches!(err, SchemaError::InvalidUrl { .. });
+    }
+
+    fn name(input: &str) -> PluginName {
+        use std::str::FromStr;
+        PluginName::from_str(input).expect("valid plugin name in test")
+    }
+
+    fn version(input: &str) -> semver::Version {
+        semver::Version::parse(input).expect("valid semver in test")
+    }
+
+    #[rstest]
+    // A1 / A2: trailing-slash variants on https base
+    #[case(
+        "https://example.com/artifacts",
+        "n",
+        "1.2.3",
+        "https://example.com/artifacts/n-1.2.3.tar.gz"
+    )]
+    #[case(
+        "https://example.com/artifacts/",
+        "n",
+        "1.2.3",
+        "https://example.com/artifacts/n-1.2.3.tar.gz"
+    )]
+    // A3 / A4: file:// no host
+    #[case(
+        "file:///path/to/registry",
+        "n",
+        "1.2.3",
+        "file:///path/to/registry/n-1.2.3.tar.gz"
+    )]
+    #[case(
+        "file:///path/to/registry/",
+        "n",
+        "1.2.3",
+        "file:///path/to/registry/n-1.2.3.tar.gz"
+    )]
+    // A5 / A6: nested base path
+    #[case(
+        "https://host/a/b/c",
+        "n",
+        "1.2.3",
+        "https://host/a/b/c/n-1.2.3.tar.gz"
+    )]
+    #[case(
+        "https://host/a/b/c/",
+        "n",
+        "1.2.3",
+        "https://host/a/b/c/n-1.2.3.tar.gz"
+    )]
+    // A7 / A8: plugin name with hyphen / underscore
+    #[case(
+        "https://example.com/artifacts",
+        "foo-bar",
+        "1.2.3",
+        "https://example.com/artifacts/foo-bar-1.2.3.tar.gz"
+    )]
+    #[case(
+        "https://example.com/artifacts",
+        "foo_bar",
+        "1.2.3",
+        "https://example.com/artifacts/foo_bar-1.2.3.tar.gz"
+    )]
+    // A9 / A10: semver prerelease and build metadata
+    #[case(
+        "https://example.com/artifacts",
+        "n",
+        "1.2.3-alpha.1",
+        "https://example.com/artifacts/n-1.2.3-alpha.1.tar.gz"
+    )]
+    #[case(
+        "https://example.com/artifacts",
+        "n",
+        "1.2.3+build.7",
+        "https://example.com/artifacts/n-1.2.3+build.7.tar.gz"
+    )]
+    // A11 / A12 / A13: query and fragment preservation
+    #[case(
+        "https://example.com/artifacts?channel=stable",
+        "n",
+        "1.2.3",
+        "https://example.com/artifacts/n-1.2.3.tar.gz?channel=stable"
+    )]
+    #[case(
+        "https://example.com/artifacts#deploy",
+        "n",
+        "1.2.3",
+        "https://example.com/artifacts/n-1.2.3.tar.gz#deploy"
+    )]
+    #[case(
+        "https://example.com/artifacts?t=1#x",
+        "n",
+        "1.2.3",
+        "https://example.com/artifacts/n-1.2.3.tar.gz?t=1#x"
+    )]
+    // A14: port
+    #[case(
+        "http://localhost:8080/artifacts",
+        "n",
+        "1.2.3",
+        "http://localhost:8080/artifacts/n-1.2.3.tar.gz"
+    )]
+    // A15: userinfo
+    #[case(
+        "https://u:p@host/path",
+        "n",
+        "1.2.3",
+        "https://u:p@host/path/n-1.2.3.tar.gz"
+    )]
+    // A16: file:// with host (UNC-style)
+    #[case(
+        "file://server/share/plugins",
+        "n",
+        "1.2.3",
+        "file://server/share/plugins/n-1.2.3.tar.gz"
+    )]
+    // A17: IDNA host
+    #[case(
+        "https://xn--n3h.example/a",
+        "n",
+        "1.2.3",
+        "https://xn--n3h.example/a/n-1.2.3.tar.gz"
+    )]
+    // A18: host-only, no path (parser normalizes to "/")
+    #[case("https://host", "n", "1.2.3", "https://host/n-1.2.3.tar.gz")]
+    fn artifact_url_composition(
+        #[case] base: &str,
+        #[case] name_input: &str,
+        #[case] version_input: &str,
+        #[case] expected: &str,
+    ) {
+        let base = ArtifactsUrl::try_new(base).expect("valid base URL in test");
+        let url = base.artifact_url(&name(name_input), &version(version_input));
+        assert_eq!(url.as_str(), expected);
     }
 }
 

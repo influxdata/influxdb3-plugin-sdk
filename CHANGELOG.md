@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+- `influxdb3-plugin-schemas`: new `ArtifactsUrl::artifact_url(name, version)` method that returns the deterministic per-version artifact URL. Normalizes trailing slashes and preserves query string and fragment from the base.
+
 ## [0.3.1] - 2026-05-26
 
 ### Changed
