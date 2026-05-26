@@ -6,6 +6,7 @@ expression: doc
   "result": {
     "outcome": "found",
     "plugin": {
+      "artifact_url": "https://plugins.example.com/artifacts/downsampler-1.2.0.tar.gz",
       "dependencies": {
         "database_version": ">=3.0.0",
         "python": [

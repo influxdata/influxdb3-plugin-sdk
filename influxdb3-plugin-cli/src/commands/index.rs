@@ -6,7 +6,7 @@
 
 use clap::{Args as ClapArgs, ValueEnum};
 use influxdb3_plugin_schemas::{
-    Dependencies, Index, IndexInfo, IndexInfoQuery, IndexInfoResult, IndexSearchHit,
+    ArtifactsUrl, Dependencies, Index, IndexInfo, IndexInfoQuery, IndexInfoResult, IndexSearchHit,
     IndexSearchQuery, IndexVersionVisibility, IndexVisibilityReason, PluginName, TriggerType,
 };
 use influxdb3_plugin_sdk::ValidationError;
@@ -156,7 +156,7 @@ fn run_info(args: InfoArgs, env: &dyn Env) -> anyhow::Result<()> {
         include_incompatible: args.include_incompatible,
     };
     let result = index.info(&query);
-    let payload = info_output(result);
+    let payload = info_output(result, &index.artifacts_url);
 
     match mode {
         OutputMode::Human => render_info_human(&payload, &mut std::io::stdout())?,
@@ -271,10 +271,10 @@ fn search_hit_output(hit: IndexSearchHit) -> IndexSearchHitOutput {
     }
 }
 
-fn info_output(result: IndexInfoResult) -> IndexInfoOutput {
+fn info_output(result: IndexInfoResult, artifacts_url: &ArtifactsUrl) -> IndexInfoOutput {
     match result {
         IndexInfoResult::Found(info) => IndexInfoOutput::Found {
-            plugin: Box::new(info_plugin_output(*info)),
+            plugin: Box::new(info_plugin_output(*info, artifacts_url)),
         },
         IndexInfoResult::NotFound { name, version } => IndexInfoOutput::NotFound {
             name: name.as_str().to_owned(),
@@ -292,7 +292,11 @@ fn info_output(result: IndexInfoResult) -> IndexInfoOutput {
     }
 }
 
-fn info_plugin_output(info: IndexInfo) -> IndexInfoPluginOutput {
+fn info_plugin_output(info: IndexInfo, artifacts_url: &ArtifactsUrl) -> IndexInfoPluginOutput {
+    let artifact_url = artifacts_url
+        .artifact_url(&info.name, &info.version)
+        .to_string();
+
     IndexInfoPluginOutput {
         name: info.name.as_str().to_owned(),
         version: info.version.to_string(),
@@ -302,6 +306,7 @@ fn info_plugin_output(info: IndexInfo) -> IndexInfoPluginOutput {
         homepage: info.homepage.map(|url| url.to_string()),
         repository: info.repository.map(|url| url.to_string()),
         documentation: info.documentation.map(|url| url.to_string()),
+        artifact_url,
         dependencies: dependencies_output(info.dependencies),
         hash: info.hash.as_str().to_owned(),
         visibility: visibility_output(info.visibility),
