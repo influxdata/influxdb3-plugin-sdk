@@ -1097,3 +1097,64 @@ fn new_template_unknown_flag_usage_line_matches_help() {
         );
     }
 }
+
+/// Human-mode success output shortens the scaffold's target directory
+/// to CWD-relative form when the target lives under the working
+/// directory. Avoids leaking absolute machine paths in terminals,
+/// demos, and CI logs.
+#[test]
+fn new_human_mode_emits_cwd_relative_paths() {
+    let td = tempfile::tempdir().unwrap();
+    let cwd = std::fs::canonicalize(td.path()).unwrap();
+    let target = cwd.join("hp");
+
+    let mut cmd = cli_cmd();
+    cmd.current_dir(&cwd)
+        .arg("new")
+        .arg("process_writes")
+        .arg(&target)
+        .arg("--output")
+        .arg("human");
+    let assert = cmd.assert().success();
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
+
+    assert!(
+        stdout.contains("Scaffolded plugin (process_writes template) at hp"),
+        "human output should print relative target dir, got:\n{stdout}"
+    );
+    let cwd_str = cwd.display().to_string();
+    assert!(
+        !stdout.contains(&cwd_str),
+        "human output must not leak the absolute CWD prefix {cwd_str:?}; got:\n{stdout}"
+    );
+}
+
+/// JSON-mode payload keeps the absolute target directory so
+/// programmatic consumers get unambiguous filesystem targets
+/// regardless of caller CWD.
+#[test]
+fn new_json_mode_keeps_absolute_paths() {
+    let td = tempfile::tempdir().unwrap();
+    let cwd = std::fs::canonicalize(td.path()).unwrap();
+    let target = cwd.join("hp");
+
+    let mut cmd = cli_cmd();
+    cmd.current_dir(&cwd)
+        .arg("new")
+        .arg("process_writes")
+        .arg(&target)
+        .arg("--output")
+        .arg("json");
+    let assert = cmd.assert().success();
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
+    let doc: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|e| panic!("stdout must be valid JSON: {e}\n{stdout}"));
+    let target_dir = doc
+        .pointer("/result/target_dir")
+        .and_then(|v| v.as_str())
+        .expect("result.target_dir missing");
+    assert!(
+        Path::new(target_dir).is_absolute(),
+        "json target_dir must be absolute, got {target_dir:?}"
+    );
+}

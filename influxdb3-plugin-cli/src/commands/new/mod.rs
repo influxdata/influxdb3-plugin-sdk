@@ -18,6 +18,7 @@ use crate::color::Stream;
 use crate::output::error_mapping::{ErrorContext, json_error_from_sdk};
 use crate::output::json::{JsonError, NewOutput, write_envelope_ok};
 use crate::output::{Env, OutputMode, RealEnv, resolve_output_mode};
+use crate::path_display::display_relative_to_cwd;
 use crate::style::Palette;
 use templates::TemplateMetadata;
 
@@ -415,14 +416,14 @@ fn render_human(
     writeln!(
         writer,
         "{ok}Scaffolded {kind} ({template} template) at {}{ok_reset}",
-        summary.target_dir.display()
+        display_relative_to_cwd(&summary.target_dir)
     )?;
     if let Some(name) = &summary.name {
         writeln!(writer, "  name: {name}")?;
     }
     writeln!(writer, "  files written:")?;
     for file in &summary.files_written {
-        writeln!(writer, "    {}", file.display())?;
+        writeln!(writer, "    {}", display_relative_to_cwd(file))?;
     }
     Ok(())
 }

@@ -9,7 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Changed
 - `influxdb3-plugin-schemas`: expanded `Index` and `ArtifactHash` test coverage to pin documented invariants (hex-only hash zone, malformed-JSON short-circuit at root, per-entry `InvalidVersion` rejection, `git+ssh://` artifact URL rejection). No behavior change.
 - `influxdb3-plugin-cli`: removed internal specification identifiers (e.g. `Spec 2 § S2-12`) from user-facing error messages in `package` and `yank`. Programmatic consumers should match on the stable JSON error code `usage::input_output_overlap`.
-- `influxdb3-plugin-cli`: human-mode `package` and `yank` success output shortens artifact and derived-index paths to CWD-relative form when the target is a descendant of the working directory; otherwise the absolute path is preserved. JSON-mode payloads continue to carry absolute paths.
+- `influxdb3-plugin-cli`: human-mode success output for `package`, `yank`, and `new` shortens artifact, index, and scaffold paths to CWD-relative form when the target is a descendant of the working directory; otherwise the absolute path is preserved. JSON-mode payloads continue to carry absolute paths.
 
 ## [0.3.0] - 2026-05-04
 
