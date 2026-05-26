@@ -119,8 +119,10 @@ fn path_replacements(err: &JsonError) -> Vec<(String, String)> {
         push_path_replacement(field, &mut replacements);
     }
     if let Some(details) = err.details.as_ref().and_then(|v| v.as_object()) {
-        for key in ["path", "index", "out"] {
-            if let Some(value) = details.get(key).and_then(|v| v.as_str()) {
+        for (key, value) in details {
+            if path_detail_key(key)
+                && let Some(value) = value.as_str()
+            {
                 push_path_replacement(value, &mut replacements);
             }
         }
@@ -139,6 +141,12 @@ fn push_path_replacement(value: &str, replacements: &mut Vec<(String, String)>) 
     if display != value {
         replacements.push((value.to_owned(), display));
     }
+}
+
+fn path_detail_key(key: &str) -> bool {
+    matches!(key, "path" | "index" | "out" | "target_dir")
+        || key.ends_with("_path")
+        || key.ends_with("_dir")
 }
 
 #[cfg(test)]
@@ -249,5 +257,51 @@ mod tests {
         render_human_error(&err, plain(), &mut buf).unwrap();
         let s = String::from_utf8(buf).unwrap();
         assert_eq!(s.matches("plugin.name:").count(), 1);
+    }
+
+    #[test]
+    fn render_human_error_replaces_path_like_detail_values() {
+        let cwd = std::env::current_dir().unwrap();
+        let target = cwd.join("target-dir-detail-test");
+        let target = target.display().to_string();
+        let err = JsonError {
+            code: "new::scaffold_failed".into(),
+            message: format!("failed to create {target}"),
+            field: None,
+            details: Some(serde_json::json!({ "target_dir": target })),
+            diagnostics: vec![],
+            cause: vec![],
+        };
+
+        let mut buf = Vec::new();
+        render_human_error(&err, plain(), &mut buf).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+
+        assert!(s.contains("target-dir-detail-test"));
+        assert!(
+            !s.contains(&cwd.display().to_string()),
+            "path-like detail value should be shortened, got: {s}"
+        );
+    }
+
+    #[test]
+    fn render_human_error_ignores_non_path_detail_values() {
+        let cwd = std::env::current_dir().unwrap();
+        let value = cwd.join("not-a-path-detail").display().to_string();
+        let err = JsonError {
+            code: "usage::invalid_value".into(),
+            message: format!("invalid value {value}"),
+            field: Some("plugin.name".into()),
+            details: Some(serde_json::json!({ "value": value })),
+            diagnostics: vec![],
+            cause: vec![],
+        };
+
+        let mut buf = Vec::new();
+        render_human_error(&err, plain(), &mut buf).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+
+        assert!(s.contains(&cwd.display().to_string()));
+        assert!(s.contains("plugin.name:"));
     }
 }
