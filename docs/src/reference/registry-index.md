@@ -178,6 +178,10 @@ If `index_schema_version` is malformed or uses an unsupported major, parsing sto
 
 The artifact URL shape is fixed. There are no templating markers in `artifacts_url` and no per-entry artifact URL override; the path is always `{name}-{version}.tar.gz` directly under the base. Consumers can compute the URL for any entry from `(artifacts_url, name, version)` alone.
 
+The CLI's `info` command displays the resolved per-version URL computed by this rule. Query strings and fragments on `artifacts_url` are preserved verbatim on every computed artifact URL. For example, `https://plugins.example.com/artifacts?channel=stable` resolves to `https://plugins.example.com/artifacts/downsampler-1.2.0.tar.gz?channel=stable`.
+
+> **Security note:** `artifacts_url` is stored in the public `index.json` and `info` prints the fully resolved URL. Do not embed secrets, bearer tokens, signed URLs, passwords, or other credentials in `artifacts_url`, including in its query string or fragment. Credentials for private registries belong in consumer-side registry configuration and must be applied at fetch time.
+
 Supported schemes:
 
 | Scheme | Use |
