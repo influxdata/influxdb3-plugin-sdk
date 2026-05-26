@@ -21,7 +21,7 @@ use influxdb3_plugin_schemas::{Index, PluginName};
 use influxdb3_plugin_sdk::{SdkError, ValidationError, mutate_index};
 use semver::Version;
 use std::ffi::OsStr;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::str::FromStr;
 
 use crate::cli_error::CliError;
@@ -29,7 +29,7 @@ use crate::color::Stream;
 use crate::output::error_mapping::{ErrorContext, json_error_from_sdk, json_error_from_validation};
 use crate::output::json::{JsonError, YankOutcomeWire, YankOutput, write_envelope_ok};
 use crate::output::{Env, OutputMode, RealEnv, resolve_output_mode};
-use crate::path_display::{absolutize_for_json, display_relative_to_cwd};
+use crate::path_display::{absolutize_for_json, display_relative_to_cwd, paths_overlap};
 use crate::style::Palette;
 
 /// Parsed `yank` arguments.
@@ -278,43 +278,6 @@ impl TypedValueParser for NameAtVersionParser {
             err
         })
     }
-}
-
-// Same shape as the helper in `commands::package`.
-fn paths_overlap(
-    index_path: &Path,
-    out_dir: &Path,
-    index_display: &str,
-    out_display: &str,
-) -> anyhow::Result<bool> {
-    let idx = std::fs::canonicalize(index_path).map_err(|e| {
-        CliError::runtime(JsonError {
-            code: "io::canonicalize_failed".into(),
-            message: format!("failed to canonicalize --index {index_display}: {e}"),
-            field: Some(index_display.to_owned()),
-            details: Some(serde_json::json!({
-                "path": index_display,
-                "io_kind": format!("{:?}", e.kind()),
-            })),
-            diagnostics: vec![],
-            cause: vec![e.to_string()],
-        })
-    })?;
-    let out = std::fs::canonicalize(out_dir).map_err(|e| {
-        CliError::runtime(JsonError {
-            code: "io::canonicalize_failed".into(),
-            message: format!("failed to canonicalize --out {out_display}: {e}"),
-            field: Some(out_display.to_owned()),
-            details: Some(serde_json::json!({
-                "path": out_display,
-                "io_kind": format!("{:?}", e.kind()),
-            })),
-            diagnostics: vec![],
-            cause: vec![e.to_string()],
-        })
-    })?;
-    let idx_parent = idx.parent().unwrap_or_else(|| Path::new("/"));
-    Ok(idx_parent == out)
 }
 
 fn render_human(

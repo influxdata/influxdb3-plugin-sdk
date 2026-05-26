@@ -44,6 +44,47 @@ pub(crate) fn absolutize_for_json(path: &Path) -> Result<PathBuf, anyhow::Error>
     })
 }
 
+/// Returns `true` when `out_dir` (canonical) equals the directory
+/// containing `index_path` (canonical). Symlinks, trailing slashes,
+/// `.` segments, and `..` segments collapse to the same result.
+pub(crate) fn paths_overlap(
+    index_path: &Path,
+    out_dir: &Path,
+    index_display: &str,
+    out_display: &str,
+) -> anyhow::Result<bool> {
+    let idx = std::fs::canonicalize(index_path).map_err(|e| {
+        CliError::runtime(JsonError {
+            code: "io::canonicalize_failed".into(),
+            message: format!("failed to canonicalize --index {index_display}: {e}"),
+            field: Some(index_display.to_owned()),
+            details: Some(serde_json::json!({
+                "path": index_display,
+                "io_kind": format!("{:?}", e.kind()),
+            })),
+            diagnostics: vec![],
+            cause: vec![e.to_string()],
+        })
+    })?;
+    let out = std::fs::canonicalize(out_dir).map_err(|e| {
+        CliError::runtime(JsonError {
+            code: "io::canonicalize_failed".into(),
+            message: format!("failed to canonicalize --out {out_display}: {e}"),
+            field: Some(out_display.to_owned()),
+            details: Some(serde_json::json!({
+                "path": out_display,
+                "io_kind": format!("{:?}", e.kind()),
+            })),
+            diagnostics: vec![],
+            cause: vec![e.to_string()],
+        })
+    })?;
+    let Some(idx_parent) = idx.parent() else {
+        return Ok(false);
+    };
+    Ok(idx_parent == out)
+}
+
 /// Returns a display string for `path` shortened to a CWD-relative form
 /// when possible. Reads the process CWD via [`std::env::current_dir`].
 pub(crate) fn display_relative_to_cwd(path: &Path) -> String {
