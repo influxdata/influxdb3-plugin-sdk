@@ -454,6 +454,42 @@ fn yank_rejects_out_overlapping_index_dir() {
     assert_eq!(std::fs::read_to_string(&index_path).unwrap(), SEEDED_INDEX);
 }
 
+#[test]
+fn yank_human_overlap_error_shortens_paths_under_cwd() {
+    let td = tempfile::tempdir().unwrap();
+    let cwd = std::fs::canonicalize(td.path()).unwrap();
+    let index_dir = cwd.join("reg");
+    std::fs::create_dir_all(&index_dir).unwrap();
+    let index_path = index_dir.join("index.json");
+    write_index(&index_path, SEEDED_INDEX);
+
+    let mut cmd = cli_cmd();
+    let assert = cmd
+        .current_dir(&cwd)
+        .arg("yank")
+        .arg("downsampler@1.2.0")
+        .arg("--index")
+        .arg(&index_path)
+        .arg("--out")
+        .arg(&index_dir)
+        .arg("--output")
+        .arg("human")
+        .assert()
+        .failure()
+        .code(2);
+    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).into_owned();
+
+    assert!(
+        stderr.contains("--out reg resolves to the directory containing --index reg/index.json"),
+        "human overlap error should print relative paths, got:\n{stderr}"
+    );
+    let cwd_str = cwd.display().to_string();
+    assert!(
+        !stderr.contains(&cwd_str),
+        "human overlap error must not leak absolute CWD prefix {cwd_str:?}; got:\n{stderr}"
+    );
+}
+
 /// Human-mode success output shortens the derived-index path to
 /// CWD-relative form when the destination lives under the working
 /// directory. Avoids leaking absolute machine paths in terminals,

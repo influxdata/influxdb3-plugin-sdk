@@ -437,6 +437,91 @@ fn package_rejects_out_via_symlink_to_index_dir() {
     );
 }
 
+#[test]
+fn package_human_overlap_error_shortens_paths_under_cwd() {
+    let td = tempfile::tempdir().unwrap();
+    let cwd = std::fs::canonicalize(td.path()).unwrap();
+    let plugin_dir = cwd.join("p");
+    write_valid_plugin(&plugin_dir);
+    let index_dir = cwd.join("reg");
+    std::fs::create_dir_all(&index_dir).unwrap();
+    let index_path = index_dir.join("index.json");
+    write_empty_index(&index_path);
+
+    let mut cmd = cli_cmd();
+    let assert = cmd
+        .current_dir(&cwd)
+        .arg("package")
+        .arg("p")
+        .arg("--index")
+        .arg(&index_path)
+        .arg("--out")
+        .arg(&index_dir)
+        .arg("--output")
+        .arg("human")
+        .assert()
+        .failure()
+        .code(2);
+    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).into_owned();
+
+    assert!(
+        stderr.contains("--out reg resolves to the directory containing --index reg/index.json"),
+        "human overlap error should print relative paths, got:\n{stderr}"
+    );
+    let cwd_str = cwd.display().to_string();
+    assert!(
+        !stderr.contains(&cwd_str),
+        "human overlap error must not leak absolute CWD prefix {cwd_str:?}; got:\n{stderr}"
+    );
+}
+
+#[test]
+fn package_json_overlap_error_absolutizes_relative_paths() {
+    let td = tempfile::tempdir().unwrap();
+    let cwd = std::fs::canonicalize(td.path()).unwrap();
+    let plugin_dir = cwd.join("p");
+    write_valid_plugin(&plugin_dir);
+    let index_dir = cwd.join("reg");
+    std::fs::create_dir_all(&index_dir).unwrap();
+    let index_path = index_dir.join("index.json");
+    write_empty_index(&index_path);
+
+    let mut cmd = cli_cmd();
+    let assert = cmd
+        .current_dir(&cwd)
+        .arg("package")
+        .arg("p")
+        .arg("--index")
+        .arg("reg/index.json")
+        .arg("--out")
+        .arg("reg")
+        .arg("--output")
+        .arg("json")
+        .assert()
+        .failure()
+        .code(2);
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
+    let doc: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|e| panic!("stdout must be JSON: {e}\n{stdout}"));
+    let index = doc
+        .pointer("/error/details/index")
+        .and_then(|v| v.as_str())
+        .expect("error.details.index missing");
+    let out = doc
+        .pointer("/error/details/out")
+        .and_then(|v| v.as_str())
+        .expect("error.details.out missing");
+
+    assert!(
+        Path::new(index).is_absolute(),
+        "JSON error.details.index must be absolute, got {index:?}"
+    );
+    assert!(
+        Path::new(out).is_absolute(),
+        "JSON error.details.out must be absolute, got {out:?}"
+    );
+}
+
 /// JSON-mode failure path: errors render as JSON envelope on stdout;
 /// stderr empty.
 #[test]
