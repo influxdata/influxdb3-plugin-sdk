@@ -20,6 +20,7 @@ use crate::color::Stream;
 use crate::output::error_mapping::{ErrorContext, json_error_from_sdk, json_error_from_validation};
 use crate::output::json::{JsonError, ValidateResult, write_envelope_ok};
 use crate::output::{Env, OutputMode, RealEnv, resolve_output_mode};
+use crate::path_display::absolutize_for_json;
 use crate::style::Palette;
 
 /// Parsed `validate` arguments.
@@ -65,16 +66,13 @@ fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
                 }
             },
             Err(io_err) => {
+                let index_display = absolutize_for_json(index_path)?.display().to_string();
                 let diag = JsonError {
                     code: "validate::index_read_failed".into(),
-                    message: format!(
-                        "failed to read --index {}: {}",
-                        index_path.display(),
-                        io_err
-                    ),
-                    field: Some(index_path.display().to_string()),
+                    message: format!("failed to read --index {index_display}: {io_err}"),
+                    field: Some(index_display.clone()),
                     details: Some(serde_json::json!({
-                        "path": index_path.display().to_string(),
+                        "path": index_display,
                         "io_message": io_err.to_string(),
                     })),
                     diagnostics: vec![],

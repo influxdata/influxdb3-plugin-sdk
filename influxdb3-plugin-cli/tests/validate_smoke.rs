@@ -14,7 +14,10 @@
 use std::path::Path;
 
 mod common;
-use common::{SEEDED_INDEX, VALID_INIT, VALID_MANIFEST, cli_cmd, write_valid_plugin};
+use common::{
+    SEEDED_INDEX, VALID_INIT, VALID_MANIFEST, assert_absolute_json_path, cli_cmd,
+    write_valid_plugin,
+};
 
 fn spawn_validate<P: AsRef<Path>>(target: P, extra: &[&str]) -> assert_cmd::assert::Assert {
     let mut cmd = cli_cmd();
@@ -46,7 +49,7 @@ fn validate_happy_path_emits_empty_diagnostics_array() {
 }
 
 /// Empty plugin directory: both a Python entry point and `manifest.toml` are
-/// missing. Spec says all validation errors are collected, so both
+/// missing. All validation errors must be collected, so both
 /// `NoEntryPoint` and `MissingRequiredFile` diagnostics must surface in one run.
 #[test]
 fn validate_empty_plugin_dir_reports_both_missing_files_in_json() {
@@ -461,6 +464,37 @@ fn validate_with_unreadable_index_emits_json_diagnostic() {
     assert_eq!(diags.len(), 1);
     assert_eq!(diags[0]["code"], "validate::index_read_failed");
     assert_eq!(diags[0]["field"], missing.display().to_string());
+}
+
+#[test]
+fn validate_json_error_absolutizes_relative_index_path() {
+    let td = tempfile::tempdir().unwrap();
+    let cwd = std::fs::canonicalize(td.path()).unwrap();
+    write_valid_plugin(&cwd.join("p"));
+
+    let mut cmd = cli_cmd();
+    let assert = cmd
+        .current_dir(&cwd)
+        .arg("validate")
+        .arg("p")
+        .arg("--index")
+        .arg("./missing.json")
+        .arg("--output")
+        .arg("json")
+        .assert()
+        .failure()
+        .code(1);
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
+    let payload: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|e| panic!("stdout must be JSON: {e}\n{stdout}"));
+    let diag = &payload["error"]["diagnostics"][0];
+    assert_eq!(diag["code"], "validate::index_read_failed");
+    let field = diag["field"].as_str().expect("diagnostic field missing");
+    let path = diag["details"]["path"]
+        .as_str()
+        .expect("diagnostic details.path missing");
+    assert_absolute_json_path(field, "diagnostic field");
+    assert_absolute_json_path(path, "diagnostic details.path");
 }
 
 // ---------------------------------------------------------------------------

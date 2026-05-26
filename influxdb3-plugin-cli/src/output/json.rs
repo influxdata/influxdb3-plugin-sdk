@@ -282,6 +282,7 @@ mod envelope_tests {
         "io::read_failed",
         "io::write_failed",
         "io::canonicalize_failed",
+        "path::resolution_failed",
         "usage::missing_required_argument",
         "usage::invalid_value",
         "usage::value_validation",

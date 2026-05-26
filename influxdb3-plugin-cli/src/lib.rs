@@ -68,4 +68,5 @@ mod config;
 mod diag_render;
 mod exit;
 mod output;
+mod path_display;
 mod style;

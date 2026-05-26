@@ -42,7 +42,7 @@ fn main() {
     let cmd = PluginConfig::command();
     let _version: &str = cmd
         .get_version()
-        .expect("PluginConfig must declare a version attribute (S2-5)");
+        .expect("PluginConfig must declare a version attribute");
 
     // Schemas types reach consumers through `cli` re-exports. The fn
     // signatures below would fail to type-check if the re-exports

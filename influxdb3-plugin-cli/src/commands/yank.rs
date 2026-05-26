@@ -21,7 +21,7 @@ use influxdb3_plugin_schemas::{Index, PluginName};
 use influxdb3_plugin_sdk::{SdkError, ValidationError, mutate_index};
 use semver::Version;
 use std::ffi::OsStr;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::str::FromStr;
 
 use crate::cli_error::CliError;
@@ -29,6 +29,7 @@ use crate::color::Stream;
 use crate::output::error_mapping::{ErrorContext, json_error_from_sdk, json_error_from_validation};
 use crate::output::json::{JsonError, YankOutcomeWire, YankOutput, write_envelope_ok};
 use crate::output::{Env, OutputMode, RealEnv, resolve_output_mode};
+use crate::path_display::{absolutize_for_json, display_relative_to_cwd, paths_overlap};
 use crate::style::Palette;
 
 /// Parsed `yank` arguments.
@@ -66,16 +67,20 @@ impl Args {
 fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
     let mode = resolve_output_mode(args.output, env);
     let stdout_palette = Palette::for_stream(Stream::Stdout, mode, env, env.stdout_is_terminal());
+    let index_path = absolutize_for_json(&args.index)?;
+    let out_path = absolutize_for_json(&args.out)?;
+    let index_display = index_path.display().to_string();
+    let out_display = out_path.display().to_string();
     let NameAtVersion { name, version } = args.target;
 
     // Read input index.
     let index_raw = std::fs::read_to_string(&args.index).map_err(|e| {
         CliError::runtime(JsonError {
             code: "io::read_failed".into(),
-            message: format!("failed to read --index {}: {e}", args.index.display()),
-            field: Some(args.index.display().to_string()),
+            message: format!("failed to read --index {index_display}: {e}"),
+            field: Some(index_display.clone()),
             details: Some(serde_json::json!({
-                "path": args.index.display().to_string(),
+                "path": index_display,
                 "io_kind": format!("{:?}", e.kind()),
             })),
             diagnostics: vec![],
@@ -91,11 +96,8 @@ fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
             .collect();
         CliError::runtime(JsonError {
             code: "yank::index_parse_failed".into(),
-            message: format!(
-                "failed to parse --index {} as a registry index",
-                args.index.display()
-            ),
-            field: Some(args.index.display().to_string()),
+            message: format!("failed to parse --index {index_display} as a registry index"),
+            field: Some(index_display.clone()),
             details: None,
             diagnostics,
             cause: vec![],
@@ -106,10 +108,10 @@ fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
     std::fs::create_dir_all(&args.out).map_err(|e| {
         CliError::runtime(JsonError {
             code: "io::write_failed".into(),
-            message: format!("failed to create --out {}: {e}", args.out.display()),
-            field: Some(args.out.display().to_string()),
+            message: format!("failed to create --out {out_display}: {e}"),
+            field: Some(out_display.clone()),
             details: Some(serde_json::json!({
-                "path": args.out.display().to_string(),
+                "path": out_display,
                 "io_kind": format!("{:?}", e.kind()),
             })),
             diagnostics: vec![],
@@ -118,19 +120,18 @@ fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
     })?;
 
     // Path-equivalence check.
-    if paths_overlap(&args.index, &args.out)? {
+    if paths_overlap(&args.index, &args.out, &index_display, &out_display)? {
         return Err(CliError::usage(JsonError {
             code: "usage::input_output_overlap".into(),
             message: format!(
                 "--out {} resolves to the directory containing --index {}; \
-                 they must be disjoint (Spec 2 § S2-12)",
-                args.out.display(),
-                args.index.display(),
+                 this would overwrite the input index. Use a different --out directory.",
+                out_display, index_display,
             ),
             field: None,
             details: Some(serde_json::json!({
-                "index": args.index.display().to_string(),
-                "out": args.out.display().to_string(),
+                "index": index_display,
+                "out": out_display,
             })),
             diagnostics: vec![],
             cause: vec![],
@@ -152,7 +153,7 @@ fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
         CliError::runtime(json_error_from_sdk(&sdk_err, ErrorContext::Yank))
     })?;
 
-    let derived_index_path = args.out.join("index.json");
+    let derived_index_path = out_path.join("index.json");
 
     // Write derived index.
     std::fs::write(&derived_index_path, &derived_index_json).map_err(|e| {
@@ -185,7 +186,7 @@ fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
         version: version.to_string(),
         published_at,
         outcome: outcome_wire(sdk_outcome, args.undo),
-        index_path: canonicalize_or_keep(&derived_index_path),
+        index_path: derived_index_path,
     };
 
     match mode {
@@ -279,45 +280,6 @@ impl TypedValueParser for NameAtVersionParser {
     }
 }
 
-// Same shape as the helper in `commands::package`.
-fn paths_overlap(index_path: &Path, out_dir: &Path) -> anyhow::Result<bool> {
-    let idx = std::fs::canonicalize(index_path).map_err(|e| {
-        CliError::runtime(JsonError {
-            code: "io::canonicalize_failed".into(),
-            message: format!(
-                "failed to canonicalize --index {}: {e}",
-                index_path.display()
-            ),
-            field: Some(index_path.display().to_string()),
-            details: Some(serde_json::json!({
-                "path": index_path.display().to_string(),
-                "io_kind": format!("{:?}", e.kind()),
-            })),
-            diagnostics: vec![],
-            cause: vec![e.to_string()],
-        })
-    })?;
-    let out = std::fs::canonicalize(out_dir).map_err(|e| {
-        CliError::runtime(JsonError {
-            code: "io::canonicalize_failed".into(),
-            message: format!("failed to canonicalize --out {}: {e}", out_dir.display()),
-            field: Some(out_dir.display().to_string()),
-            details: Some(serde_json::json!({
-                "path": out_dir.display().to_string(),
-                "io_kind": format!("{:?}", e.kind()),
-            })),
-            diagnostics: vec![],
-            cause: vec![e.to_string()],
-        })
-    })?;
-    let idx_parent = idx.parent().unwrap_or_else(|| Path::new("/"));
-    Ok(idx_parent == out)
-}
-
-fn canonicalize_or_keep(p: &Path) -> PathBuf {
-    std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf())
-}
-
 fn render_human(
     payload: &YankOutput,
     palette: Palette,
@@ -346,6 +308,10 @@ fn render_human(
             )?;
         }
     }
-    writeln!(writer, "  index: {}", payload.index_path.display())?;
+    writeln!(
+        writer,
+        "  index: {}",
+        display_relative_to_cwd(&payload.index_path)
+    )?;
     Ok(())
 }

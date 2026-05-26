@@ -1,5 +1,6 @@
 ---
 source: influxdb3-plugin-cli/src/output/json.rs
+assertion_line: 458
 expression: ALL_WIRE_CODES
 ---
 - "validate::failed"
@@ -38,6 +39,7 @@ expression: ALL_WIRE_CODES
 - "io::read_failed"
 - "io::write_failed"
 - "io::canonicalize_failed"
+- "path::resolution_failed"
 - "usage::missing_required_argument"
 - "usage::invalid_value"
 - "usage::value_validation"

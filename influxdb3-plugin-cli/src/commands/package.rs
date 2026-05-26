@@ -17,13 +17,14 @@
 use clap::Args as ClapArgs;
 use influxdb3_plugin_schemas::Index;
 use influxdb3_plugin_sdk::{SdkError, ValidationError, package};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use crate::cli_error::CliError;
 use crate::color::Stream;
 use crate::output::error_mapping::{ErrorContext, json_error_from_sdk, json_error_from_validation};
 use crate::output::json::{JsonError, PackageOutput, write_envelope_ok};
 use crate::output::{Env, OutputMode, RealEnv, resolve_output_mode};
+use crate::path_display::{absolutize_for_json, display_relative_to_cwd, paths_overlap};
 use crate::style::Palette;
 
 /// Parsed `package` arguments.
@@ -60,16 +61,20 @@ impl Args {
 fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
     let mode = resolve_output_mode(args.output, env);
     let stdout_palette = Palette::for_stream(Stream::Stdout, mode, env, env.stdout_is_terminal());
+    let index_path = absolutize_for_json(&args.index)?;
+    let out_path = absolutize_for_json(&args.out)?;
+    let index_display = index_path.display().to_string();
+    let out_display = out_path.display().to_string();
 
     // Read + parse the input index before creating --out so we don't
     // leave an empty scratch dir on parse failure.
     let index_raw = std::fs::read_to_string(&args.index).map_err(|e| {
         CliError::runtime(JsonError {
             code: "io::read_failed".into(),
-            message: format!("failed to read --index {}: {e}", args.index.display()),
-            field: Some(args.index.display().to_string()),
+            message: format!("failed to read --index {index_display}: {e}"),
+            field: Some(index_display.clone()),
             details: Some(serde_json::json!({
-                "path": args.index.display().to_string(),
+                "path": index_display,
                 "io_kind": format!("{:?}", e.kind()),
             })),
             diagnostics: vec![],
@@ -85,11 +90,8 @@ fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
             .collect();
         CliError::runtime(JsonError {
             code: "package::index_parse_failed".into(),
-            message: format!(
-                "failed to parse --index {} as a registry index",
-                args.index.display()
-            ),
-            field: Some(args.index.display().to_string()),
+            message: format!("failed to parse --index {index_display} as a registry index"),
+            field: Some(index_display.clone()),
             details: None,
             diagnostics,
             cause: vec![],
@@ -101,10 +103,10 @@ fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
     std::fs::create_dir_all(&args.out).map_err(|e| {
         CliError::runtime(JsonError {
             code: "io::write_failed".into(),
-            message: format!("failed to create --out {}: {e}", args.out.display()),
-            field: Some(args.out.display().to_string()),
+            message: format!("failed to create --out {out_display}: {e}"),
+            field: Some(out_display.clone()),
             details: Some(serde_json::json!({
-                "path": args.out.display().to_string(),
+                "path": out_display,
                 "io_kind": format!("{:?}", e.kind()),
             })),
             diagnostics: vec![],
@@ -113,19 +115,18 @@ fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
     })?;
 
     // Path-equivalence check.
-    if paths_overlap(&args.index, &args.out)? {
+    if paths_overlap(&args.index, &args.out, &index_display, &out_display)? {
         return Err(CliError::usage(JsonError {
             code: "usage::input_output_overlap".into(),
             message: format!(
                 "--out {} resolves to the directory containing --index {}; \
-                 they must be disjoint (Spec 2 § S2-12)",
-                args.out.display(),
-                args.index.display(),
+                 this would overwrite the input index. Use a different --out directory.",
+                out_display, index_display,
             ),
             field: None,
             details: Some(serde_json::json!({
-                "index": args.index.display().to_string(),
-                "out": args.out.display().to_string(),
+                "index": index_display,
+                "out": out_display,
             })),
             diagnostics: vec![],
             cause: vec![],
@@ -164,8 +165,8 @@ fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
         outcome.new_entry.name.as_str(),
         outcome.new_entry.version,
     );
-    let artifact_path = args.out.join(&artifact_filename);
-    let derived_index_path = args.out.join("index.json");
+    let artifact_path = out_path.join(&artifact_filename);
+    let derived_index_path = out_path.join("index.json");
 
     // Canonical JSON serialization failure.
     let derived_index_json = outcome.derived_index.to_canonical_json().map_err(|e| {
@@ -207,8 +208,8 @@ fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
     })?;
 
     let payload = PackageOutput {
-        artifact_path: canonicalize_or_keep(&artifact_path),
-        index_path: canonicalize_or_keep(&derived_index_path),
+        artifact_path,
+        index_path: derived_index_path,
         hash: outcome.hash.as_str().to_owned(),
         new_entry_name: outcome.new_entry.name.as_str().to_owned(),
         new_entry_version: outcome.new_entry.version.to_string(),
@@ -226,50 +227,6 @@ fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Returns `true` when `out_dir` (canonical) equals the directory
-/// containing `index_path` (canonical). Symlinks, trailing slashes,
-/// `.` segments, and `..` segments collapse to the same result.
-fn paths_overlap(index_path: &Path, out_dir: &Path) -> anyhow::Result<bool> {
-    let idx = std::fs::canonicalize(index_path).map_err(|e| {
-        CliError::runtime(JsonError {
-            code: "io::canonicalize_failed".into(),
-            message: format!(
-                "failed to canonicalize --index {}: {e}",
-                index_path.display()
-            ),
-            field: Some(index_path.display().to_string()),
-            details: Some(serde_json::json!({
-                "path": index_path.display().to_string(),
-                "io_kind": format!("{:?}", e.kind()),
-            })),
-            diagnostics: vec![],
-            cause: vec![e.to_string()],
-        })
-    })?;
-    let out = std::fs::canonicalize(out_dir).map_err(|e| {
-        CliError::runtime(JsonError {
-            code: "io::canonicalize_failed".into(),
-            message: format!("failed to canonicalize --out {}: {e}", out_dir.display()),
-            field: Some(out_dir.display().to_string()),
-            details: Some(serde_json::json!({
-                "path": out_dir.display().to_string(),
-                "io_kind": format!("{:?}", e.kind()),
-            })),
-            diagnostics: vec![],
-            cause: vec![e.to_string()],
-        })
-    })?;
-    let idx_parent = idx.parent().unwrap_or_else(|| Path::new("/"));
-    Ok(idx_parent == out)
-}
-
-/// `canonicalize` for display purposes — falls back to the input path
-/// when canonicalization fails (e.g., the file existed during the call
-/// but rotated away under us). Used only on outputs we just wrote.
-fn canonicalize_or_keep(p: &Path) -> PathBuf {
-    std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf())
-}
-
 fn render_human(
     payload: &PackageOutput,
     palette: Palette,
@@ -284,8 +241,16 @@ fn render_human(
     )?;
     // Info lines remain plain — conventional tool output emphasizes only
     // the status header, so the paths/hash stay unstyled for readability.
-    writeln!(writer, "  artifact: {}", payload.artifact_path.display())?;
-    writeln!(writer, "  index:    {}", payload.index_path.display())?;
+    writeln!(
+        writer,
+        "  artifact: {}",
+        display_relative_to_cwd(&payload.artifact_path)
+    )?;
+    writeln!(
+        writer,
+        "  index:    {}",
+        display_relative_to_cwd(&payload.index_path)
+    )?;
     writeln!(writer, "  hash:     {}", payload.hash)?;
     Ok(())
 }

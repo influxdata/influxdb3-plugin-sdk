@@ -403,7 +403,7 @@ mod tests {
     // --- Search tests ---
 
     #[test]
-    fn search_empty_query_matches_all(/* spec 1 */) {
+    fn search_empty_query_matches_all() {
         let index = make_index(vec![
             make_entry("alpha", "1.0.0"),
             make_entry("beta", "2.0.0"),
@@ -413,7 +413,7 @@ mod tests {
     }
 
     #[test]
-    fn search_whitespace_query_matches_all(/* spec 2 */) {
+    fn search_whitespace_query_matches_all() {
         let index = make_index(vec![
             make_entry("alpha", "1.0.0"),
             make_entry("beta", "2.0.0"),
@@ -426,7 +426,7 @@ mod tests {
     }
 
     #[test]
-    fn search_name_substring_match(/* spec 3 */) {
+    fn search_name_substring_match() {
         let index = make_index(vec![
             make_entry("downsampler", "1.0.0"),
             make_entry("alerter", "1.0.0"),
@@ -440,7 +440,7 @@ mod tests {
     }
 
     #[test]
-    fn search_description_substring_match(/* spec 4 */) {
+    fn search_description_substring_match() {
         let mut entry = make_entry("notifier", "1.0.0");
         entry.description = Description::try_new("Fires on every WAL commit").unwrap();
         let index = make_index(vec![entry, make_entry("other", "1.0.0")]);
@@ -453,7 +453,7 @@ mod tests {
     }
 
     #[test]
-    fn search_case_insensitive(/* spec 5 */) {
+    fn search_case_insensitive() {
         let index = make_index(vec![make_entry("downsampler", "1.0.0")]);
         let result = index.search(&IndexSearchQuery {
             query: Some("DOWNSAMPLE".into()),
@@ -464,7 +464,7 @@ mod tests {
     }
 
     #[test]
-    fn search_canonical_name_matching(/* spec 6 */) {
+    fn search_canonical_name_matching() {
         // Hyphens in name, underscores in query
         let index = make_index(vec![make_entry("my-plugin", "1.0.0")]);
         let result = index.search(&IndexSearchQuery {
@@ -485,7 +485,7 @@ mod tests {
     }
 
     #[test]
-    fn search_no_dependency_text_search(/* spec 7 */) {
+    fn search_no_dependency_text_search() {
         let mut entry = make_entry("downsampler", "1.0.0");
         entry.dependencies.python = vec![PythonRequirement::try_new("requests>=2.31").unwrap()];
         let index = make_index(vec![entry]);
@@ -497,7 +497,7 @@ mod tests {
     }
 
     #[test]
-    fn search_no_url_hash_trigger_text_search(/* spec 8 */) {
+    fn search_no_url_hash_trigger_text_search() {
         let mut entry = make_entry("downsampler", "1.0.0");
         entry.documentation = Some("https://docs.example.com/searchable".parse().unwrap());
         let index = make_index(vec![entry]);
@@ -511,7 +511,7 @@ mod tests {
     // --- Search filtering tests ---
 
     #[test]
-    fn search_trigger_type_filter_includes(/* spec 9 */) {
+    fn search_trigger_type_filter_includes() {
         let index = make_index(vec![make_entry("writer", "1.0.0")]);
         let result = index.search(&IndexSearchQuery {
             trigger_type: Some(TriggerType::ProcessWrites),
@@ -521,7 +521,7 @@ mod tests {
     }
 
     #[test]
-    fn search_trigger_type_filter_excludes(/* spec 10 */) {
+    fn search_trigger_type_filter_excludes() {
         let mut entry = make_entry("requester", "1.0.0");
         entry.triggers = vec![TriggerType::ProcessRequest];
         let index = make_index(vec![entry]);
@@ -533,7 +533,7 @@ mod tests {
     }
 
     #[test]
-    fn search_yanked_hidden_by_default(/* spec 11 */) {
+    fn search_yanked_hidden_by_default() {
         let mut entry = make_entry("obsolete", "1.0.0");
         entry.yanked = true;
         let index = make_index(vec![entry]);
@@ -542,7 +542,7 @@ mod tests {
     }
 
     #[test]
-    fn search_yanked_included_when_requested(/* spec 12 */) {
+    fn search_yanked_included_when_requested() {
         let mut entry = make_entry("obsolete", "1.0.0");
         entry.yanked = true;
         let index = make_index(vec![entry]);
@@ -560,7 +560,7 @@ mod tests {
     }
 
     #[test]
-    fn search_incompatible_hidden_with_db_version(/* spec 13 */) {
+    fn search_incompatible_hidden_with_db_version() {
         let mut entry = make_entry("future", "1.0.0");
         entry.dependencies.database_version = ">=4.0.0".parse().unwrap();
         let index = make_index(vec![entry]);
@@ -572,7 +572,7 @@ mod tests {
     }
 
     #[test]
-    fn search_incompatible_included_when_requested(/* spec 14 */) {
+    fn search_incompatible_included_when_requested() {
         let mut entry = make_entry("future", "1.0.0");
         entry.dependencies.database_version = ">=4.0.0".parse().unwrap();
         let index = make_index(vec![entry]);
@@ -591,7 +591,7 @@ mod tests {
     }
 
     #[test]
-    fn search_no_compat_filter_without_db_version(/* spec 15 */) {
+    fn search_no_compat_filter_without_db_version() {
         let mut entry = make_entry("future", "1.0.0");
         entry.dependencies.database_version = ">=99.0.0".parse().unwrap();
         let index = make_index(vec![entry]);
@@ -601,7 +601,7 @@ mod tests {
     }
 
     #[test]
-    fn search_yanked_and_incompatible_reasons_accumulate(/* spec 16 */) {
+    fn search_yanked_and_incompatible_reasons_accumulate() {
         let mut entry = make_entry("doomed", "1.0.0");
         entry.yanked = true;
         entry.dependencies.database_version = ">=4.0.0".parse().unwrap();
@@ -626,7 +626,7 @@ mod tests {
     // --- Search version selection + ordering tests ---
 
     #[test]
-    fn search_one_hit_per_plugin(/* spec 17 */) {
+    fn search_one_hit_per_plugin() {
         let index = make_index(vec![
             make_entry("alpha", "1.0.0"),
             make_entry("alpha", "2.0.0"),
@@ -637,7 +637,7 @@ mod tests {
     }
 
     #[test]
-    fn search_latest_visible_version_selected(/* spec 18 */) {
+    fn search_latest_visible_version_selected() {
         let index = make_index(vec![
             make_entry("alpha", "1.0.0"),
             make_entry("alpha", "1.2.0"),
@@ -652,7 +652,7 @@ mod tests {
     }
 
     #[test]
-    fn search_latest_yanked_skipped(/* spec 19 */) {
+    fn search_latest_yanked_skipped() {
         let mut v2 = make_entry("alpha", "2.0.0");
         v2.yanked = true;
         let index = make_index(vec![make_entry("alpha", "1.2.0"), v2]);
@@ -665,7 +665,7 @@ mod tests {
     }
 
     #[test]
-    fn search_latest_incompatible_skipped(/* spec 20 */) {
+    fn search_latest_incompatible_skipped() {
         let mut v2 = make_entry("alpha", "2.0.0");
         v2.dependencies.database_version = ">=4.0.0".parse().unwrap();
         let index = make_index(vec![make_entry("alpha", "1.2.0"), v2]);
@@ -681,7 +681,7 @@ mod tests {
     }
 
     #[test]
-    fn search_hidden_selected_when_included(/* spec 21 */) {
+    fn search_hidden_selected_when_included() {
         let mut v2 = make_entry("alpha", "2.0.0");
         v2.yanked = true;
         let index = make_index(vec![make_entry("alpha", "1.2.0"), v2]);
@@ -703,7 +703,7 @@ mod tests {
     }
 
     #[test]
-    fn search_summary_from_selected_version(/* spec 22 */) {
+    fn search_summary_from_selected_version() {
         let mut v1 = make_entry("alpha", "1.0.0");
         v1.description = Description::try_new("old description").unwrap();
         v1.triggers = vec![TriggerType::ProcessRequest];
@@ -733,7 +733,7 @@ mod tests {
     }
 
     #[test]
-    fn search_hits_sorted_by_canonical_name(/* spec 24 */) {
+    fn search_hits_sorted_by_canonical_name() {
         let index = make_index(vec![
             make_entry("zebra", "1.0.0"),
             make_entry("alpha", "1.0.0"),
@@ -745,7 +745,7 @@ mod tests {
     }
 
     #[test]
-    fn search_semver_precedence_for_selection(/* spec 25 */) {
+    fn search_semver_precedence_for_selection() {
         let index = make_index(vec![
             make_entry("alpha", "1.0.0-alpha"),
             make_entry("alpha", "1.0.0"),
@@ -759,7 +759,7 @@ mod tests {
     }
 
     #[test]
-    fn search_build_metadata_deterministic(/* spec 26 */) {
+    fn search_build_metadata_deterministic() {
         let index_a = make_index(vec![
             make_entry("alpha", "1.0.0+build.1"),
             make_entry("alpha", "1.0.0+build.2"),
@@ -776,7 +776,7 @@ mod tests {
     // --- Info tests ---
 
     #[test]
-    fn info_selects_latest_visible(/* spec 27 */) {
+    fn info_selects_latest_visible() {
         let index = make_index(vec![
             make_entry("alpha", "1.0.0"),
             make_entry("alpha", "1.2.0"),
@@ -795,7 +795,7 @@ mod tests {
     }
 
     #[test]
-    fn info_returns_single_version(/* spec 28 */) {
+    fn info_returns_single_version() {
         let index = make_index(vec![
             make_entry("alpha", "1.0.0"),
             make_entry("alpha", "2.0.0"),
@@ -811,7 +811,7 @@ mod tests {
     }
 
     #[test]
-    fn info_skips_yanked_by_default(/* spec 29 */) {
+    fn info_skips_yanked_by_default() {
         let mut v2 = make_entry("alpha", "2.0.0");
         v2.yanked = true;
         let index = make_index(vec![make_entry("alpha", "1.0.0"), v2]);
@@ -828,7 +828,7 @@ mod tests {
     }
 
     #[test]
-    fn info_skips_incompatible_by_default(/* spec 30 */) {
+    fn info_skips_incompatible_by_default() {
         let mut v2 = make_entry("alpha", "2.0.0");
         v2.dependencies.database_version = ">=4.0.0".parse().unwrap();
         let index = make_index(vec![make_entry("alpha", "1.0.0"), v2]);
@@ -845,7 +845,7 @@ mod tests {
     }
 
     #[test]
-    fn info_includes_yanked_when_requested(/* spec 31 */) {
+    fn info_includes_yanked_when_requested() {
         let mut v2 = make_entry("alpha", "2.0.0");
         v2.yanked = true;
         let index = make_index(vec![make_entry("alpha", "1.0.0"), v2]);
@@ -866,7 +866,7 @@ mod tests {
     }
 
     #[test]
-    fn info_includes_incompatible_when_requested(/* spec 32 */) {
+    fn info_includes_incompatible_when_requested() {
         let mut v2 = make_entry("alpha", "2.0.0");
         v2.dependencies.database_version = ">=4.0.0".parse().unwrap();
         let index = make_index(vec![make_entry("alpha", "1.0.0"), v2]);
@@ -887,7 +887,7 @@ mod tests {
     }
 
     #[test]
-    fn info_no_compat_filter_without_db_version(/* spec 33 */) {
+    fn info_no_compat_filter_without_db_version() {
         let mut entry = make_entry("alpha", "1.0.0");
         entry.dependencies.database_version = ">=99.0.0".parse().unwrap();
         let index = make_index(vec![entry]);
@@ -904,7 +904,7 @@ mod tests {
     }
 
     #[test]
-    fn info_missing_name(/* spec 34 */) {
+    fn info_missing_name() {
         let index = make_index(vec![make_entry("alpha", "1.0.0")]);
         let result = index.info(&IndexInfoQuery {
             name: "nonexistent".parse().unwrap(),
@@ -920,7 +920,7 @@ mod tests {
     }
 
     #[test]
-    fn info_all_yanked(/* spec 35 */) {
+    fn info_all_yanked() {
         let mut v1 = make_entry("alpha", "1.0.0");
         v1.yanked = true;
         let mut v2 = make_entry("alpha", "2.0.0");
@@ -942,7 +942,7 @@ mod tests {
     }
 
     #[test]
-    fn info_all_incompatible(/* spec 36 */) {
+    fn info_all_incompatible() {
         let mut v1 = make_entry("alpha", "1.0.0");
         v1.dependencies.database_version = ">=4.0.0".parse().unwrap();
         let index = make_index(vec![v1]);
@@ -962,7 +962,7 @@ mod tests {
     }
 
     #[test]
-    fn info_all_hidden_mixed_reasons(/* spec 37 */) {
+    fn info_all_hidden_mixed_reasons() {
         let mut v1 = make_entry("alpha", "1.0.0");
         v1.yanked = true;
         let mut v2 = make_entry("alpha", "2.0.0");
@@ -985,7 +985,7 @@ mod tests {
     // --- Exact version info tests ---
 
     #[test]
-    fn info_exact_version_visible(/* spec 38 */) {
+    fn info_exact_version_visible() {
         let index = make_index(vec![
             make_entry("alpha", "1.0.0"),
             make_entry("alpha", "2.0.0"),
@@ -1004,7 +1004,7 @@ mod tests {
     }
 
     #[test]
-    fn info_exact_version_yanked(/* spec 39 */) {
+    fn info_exact_version_yanked() {
         let mut entry = make_entry("alpha", "1.0.0");
         entry.yanked = true;
         let index = make_index(vec![entry]);
@@ -1024,7 +1024,7 @@ mod tests {
     }
 
     #[test]
-    fn info_exact_version_incompatible(/* spec 40 */) {
+    fn info_exact_version_incompatible() {
         let mut entry = make_entry("alpha", "1.0.0");
         entry.dependencies.database_version = ">=4.0.0".parse().unwrap();
         let index = make_index(vec![entry]);
@@ -1048,7 +1048,7 @@ mod tests {
     }
 
     #[test]
-    fn info_exact_version_yanked_and_incompatible(/* spec 41 */) {
+    fn info_exact_version_yanked_and_incompatible() {
         let mut entry = make_entry("alpha", "1.0.0");
         entry.yanked = true;
         entry.dependencies.database_version = ">=4.0.0".parse().unwrap();
@@ -1070,7 +1070,7 @@ mod tests {
     }
 
     #[test]
-    fn info_exact_version_missing(/* spec 42 */) {
+    fn info_exact_version_missing() {
         let index = make_index(vec![make_entry("alpha", "1.0.0")]);
         let result = index.info(&IndexInfoQuery {
             name: "alpha".parse().unwrap(),
@@ -1086,7 +1086,7 @@ mod tests {
     }
 
     #[test]
-    fn info_exact_version_missing_plugin(/* spec 43 */) {
+    fn info_exact_version_missing_plugin() {
         let index = make_index(vec![make_entry("alpha", "1.0.0")]);
         let result = index.info(&IndexInfoQuery {
             name: "nonexistent".parse().unwrap(),
@@ -1104,7 +1104,7 @@ mod tests {
     // --- Result content tests ---
 
     #[test]
-    fn info_full_metadata(/* spec 45, also covers spec 46 */) {
+    fn info_full_metadata() {
         let mut entry = make_entry("downsampler", "1.2.0");
         entry.description = Description::try_new("Downsamples WAL data").unwrap();
         entry.triggers = vec![
@@ -1165,7 +1165,7 @@ mod tests {
     }
 
     #[test]
-    fn info_incompatible_reason_includes_versions(/* spec 47 */) {
+    fn info_incompatible_reason_includes_versions() {
         let mut entry = make_entry("alpha", "1.0.0");
         entry.dependencies.database_version = ">=4.0.0".parse().unwrap();
         let index = make_index(vec![entry]);
@@ -1191,7 +1191,7 @@ mod tests {
     // --- Serialization tests ---
 
     #[test]
-    fn search_result_serializes(/* spec 49 */) {
+    fn search_result_serializes() {
         let index = make_index(vec![make_entry("alpha", "1.0.0")]);
         let result = index.search(&IndexSearchQuery::default());
         let json = serde_json::to_value(&result).unwrap();
@@ -1205,7 +1205,7 @@ mod tests {
     }
 
     #[test]
-    fn info_found_serializes(/* spec 50 */) {
+    fn info_found_serializes() {
         let index = make_index(vec![make_entry("alpha", "1.0.0")]);
         let result = index.info(&IndexInfoQuery {
             name: "alpha".parse().unwrap(),
@@ -1227,7 +1227,7 @@ mod tests {
     }
 
     #[test]
-    fn info_not_found_serializes(/* spec 51 */) {
+    fn info_not_found_serializes() {
         let index = make_index(vec![]);
         let result = index.info(&IndexInfoQuery {
             name: "missing".parse().unwrap(),
@@ -1243,7 +1243,7 @@ mod tests {
     }
 
     #[test]
-    fn info_filtered_out_serializes(/* spec 52 */) {
+    fn info_filtered_out_serializes() {
         let mut entry = make_entry("alpha", "1.0.0");
         entry.yanked = true;
         let index = make_index(vec![entry]);
@@ -1262,7 +1262,7 @@ mod tests {
     }
 
     #[test]
-    fn visibility_reasons_serialize(/* spec 53 */) {
+    fn visibility_reasons_serialize() {
         let yanked = IndexVisibilityReason::Yanked;
         let incompat = IndexVisibilityReason::IncompatibleDatabaseVersion {
             required: ">=4.0.0".parse().unwrap(),
@@ -1285,14 +1285,14 @@ mod tests {
     // --- Edge case tests ---
 
     #[test]
-    fn search_empty_index(/* spec 54 */) {
+    fn search_empty_index() {
         let index = make_index(vec![]);
         let result = index.search(&IndexSearchQuery::default());
         assert_eq!(result.hits.len(), 0);
     }
 
     #[test]
-    fn info_empty_index(/* spec 55 */) {
+    fn info_empty_index() {
         let index = make_index(vec![]);
         let result = index.info(&IndexInfoQuery {
             name: "alpha".parse().unwrap(),
@@ -1305,7 +1305,7 @@ mod tests {
     }
 
     #[test]
-    fn search_only_hidden_not_shown(/* spec 56 */) {
+    fn search_only_hidden_not_shown() {
         let mut entry = make_entry("alpha", "1.0.0");
         entry.yanked = true;
         let index = make_index(vec![entry]);
@@ -1314,7 +1314,7 @@ mod tests {
     }
 
     #[test]
-    fn search_mixed_visible_hidden_uses_visible(/* spec 57 */) {
+    fn search_mixed_visible_hidden_uses_visible() {
         let mut v2 = make_entry("alpha", "2.0.0");
         v2.yanked = true;
         let index = make_index(vec![make_entry("alpha", "1.0.0"), v2]);
@@ -1328,7 +1328,7 @@ mod tests {
     }
 
     #[test]
-    fn search_mixed_with_include_flags(/* spec 58 */) {
+    fn search_mixed_with_include_flags() {
         let mut v2 = make_entry("alpha", "2.0.0");
         v2.yanked = true;
         let index = make_index(vec![make_entry("alpha", "1.0.0"), v2]);
@@ -1344,7 +1344,7 @@ mod tests {
     }
 
     #[test]
-    fn search_text_match_on_hidden_visible_older_matches(/* spec 59 */) {
+    fn search_text_match_on_hidden_visible_older_matches() {
         let mut v2 = make_entry("alpha", "2.0.0");
         v2.yanked = true;
         v2.description = Description::try_new("common in both versions").unwrap();
@@ -1365,7 +1365,7 @@ mod tests {
     }
 
     #[test]
-    fn search_trigger_filter_before_grouping(/* spec 60 */) {
+    fn search_trigger_filter_before_grouping() {
         let mut v2 = make_entry("alpha", "2.0.0");
         v2.triggers = vec![TriggerType::ProcessRequest];
         let mut v1 = make_entry("alpha", "1.0.0");

@@ -52,3 +52,14 @@ pub(crate) fn write_valid_plugin(dir: &Path) {
 pub(crate) fn cli_cmd() -> Command {
     Command::cargo_bin("influxdb3-plugin").expect("binary builds")
 }
+
+pub(crate) fn assert_absolute_json_path(value: &str, label: &str) {
+    assert!(
+        Path::new(value).is_absolute(),
+        "{label} must be absolute, got {value:?}"
+    );
+    assert!(
+        !value.contains("/./") && !value.ends_with("/."),
+        "{label} must not contain `./` segments, got {value:?}"
+    );
+}

@@ -8,7 +8,7 @@
 
 #![allow(unused_crate_dependencies)]
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 mod common;
 use common::{SEEDED_INDEX, cli_cmd};
@@ -235,6 +235,80 @@ fn yank_invalid_published_at_in_input_index_fails_before_output() {
     assert!(!out.join("index.json").exists(), "no output on failure");
 }
 
+#[test]
+fn yank_human_error_shortens_absolute_index_path_under_cwd() {
+    let td = tempfile::tempdir().unwrap();
+    let cwd = std::fs::canonicalize(td.path()).unwrap();
+    let missing_index = cwd.join("reg").join("missing.json");
+
+    let mut cmd = cli_cmd();
+    let assert = cmd
+        .current_dir(&cwd)
+        .arg("yank")
+        .arg("downsampler@1.2.0")
+        .arg("--index")
+        .arg(&missing_index)
+        .arg("--out")
+        .arg("build")
+        .arg("--output")
+        .arg("human")
+        .assert()
+        .failure()
+        .code(1);
+    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).into_owned();
+
+    assert!(
+        stderr.contains("reg/missing.json"),
+        "human error should print CWD-relative index path, got:\n{stderr}"
+    );
+    let cwd_str = cwd.display().to_string();
+    assert!(
+        !stderr.contains(&cwd_str),
+        "human error must not leak absolute CWD prefix {cwd_str:?}; got:\n{stderr}"
+    );
+}
+
+#[test]
+fn yank_json_error_absolutizes_relative_index_path() {
+    let td = tempfile::tempdir().unwrap();
+    let cwd = std::fs::canonicalize(td.path()).unwrap();
+
+    let mut cmd = cli_cmd();
+    let assert = cmd
+        .current_dir(&cwd)
+        .arg("yank")
+        .arg("downsampler@1.2.0")
+        .arg("--index")
+        .arg("reg/missing.json")
+        .arg("--out")
+        .arg("build")
+        .arg("--output")
+        .arg("json")
+        .assert()
+        .failure()
+        .code(1);
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
+    let doc: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|e| panic!("stdout must be JSON: {e}\n{stdout}"));
+    let field = doc
+        .pointer("/error/field")
+        .and_then(|v| v.as_str())
+        .expect("error.field missing");
+    let path = doc
+        .pointer("/error/details/path")
+        .and_then(|v| v.as_str())
+        .expect("error.details.path missing");
+
+    assert!(
+        Path::new(field).is_absolute(),
+        "JSON error.field must be absolute, got {field:?}"
+    );
+    assert!(
+        Path::new(path).is_absolute(),
+        "JSON error.details.path must be absolute, got {path:?}"
+    );
+}
+
 /// Malformed `<name>@<version>` → exit 2 (usage error). Clap's
 /// `ValueValidation` error kind surfaces the invalid
 /// value verbatim; the parser folds the `FromStr::Err` detail into the
@@ -373,9 +447,269 @@ fn yank_rejects_out_overlapping_index_dir() {
         .code(2);
     let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
     assert!(
-        stdout.contains("S2-12"),
-        "output should reference S2-12 by identifier, got: {stdout}"
+        stdout.contains("usage::input_output_overlap"),
+        "output should reference usage::input_output_overlap by identifier, got: {stdout}"
     );
     // Input index untouched.
     assert_eq!(std::fs::read_to_string(&index_path).unwrap(), SEEDED_INDEX);
+}
+
+#[test]
+fn yank_human_overlap_error_shortens_paths_under_cwd() {
+    let td = tempfile::tempdir().unwrap();
+    let cwd = std::fs::canonicalize(td.path()).unwrap();
+    let index_dir = cwd.join("reg");
+    std::fs::create_dir_all(&index_dir).unwrap();
+    let index_path = index_dir.join("index.json");
+    write_index(&index_path, SEEDED_INDEX);
+
+    let mut cmd = cli_cmd();
+    let assert = cmd
+        .current_dir(&cwd)
+        .arg("yank")
+        .arg("downsampler@1.2.0")
+        .arg("--index")
+        .arg(&index_path)
+        .arg("--out")
+        .arg(&index_dir)
+        .arg("--output")
+        .arg("human")
+        .assert()
+        .failure()
+        .code(2);
+    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).into_owned();
+
+    assert!(
+        stderr.contains("--out reg resolves to the directory containing --index reg/index.json"),
+        "human overlap error should print relative paths, got:\n{stderr}"
+    );
+    let cwd_str = cwd.display().to_string();
+    assert!(
+        !stderr.contains(&cwd_str),
+        "human overlap error must not leak absolute CWD prefix {cwd_str:?}; got:\n{stderr}"
+    );
+}
+
+/// Human-mode success output shortens the derived-index path to
+/// CWD-relative form when the destination lives under the working
+/// directory. Avoids leaking absolute machine paths in terminals,
+/// demos, and CI logs.
+#[test]
+fn yank_human_mode_emits_cwd_relative_paths() {
+    let td = tempfile::tempdir().unwrap();
+    let cwd = std::fs::canonicalize(td.path()).unwrap();
+    let index_dir = cwd.join("reg");
+    std::fs::create_dir_all(&index_dir).unwrap();
+    let index_path = index_dir.join("index.json");
+    write_index(&index_path, SEEDED_INDEX);
+
+    let mut cmd = cli_cmd();
+    cmd.current_dir(&cwd)
+        .arg("yank")
+        .arg("downsampler@1.2.0")
+        .arg("--output")
+        .arg("human")
+        .arg("--index")
+        .arg("reg/index.json")
+        .arg("--out")
+        .arg("build");
+    let assert = cmd.assert().success();
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
+
+    let expected = PathBuf::from("build").join("index.json");
+    assert!(
+        stdout.contains(&format!("index: {}", expected.display())),
+        "human output should print relative index path, got:\n{stdout}"
+    );
+    let cwd_str = cwd.display().to_string();
+    assert!(
+        !stdout.contains(&cwd_str),
+        "human output must not leak the absolute CWD prefix {cwd_str:?}; got:\n{stdout}"
+    );
+}
+
+/// JSON-mode payload keeps the absolute derived-index path so
+/// programmatic consumers get unambiguous filesystem targets
+/// regardless of caller CWD.
+#[test]
+fn yank_json_mode_keeps_absolute_paths() {
+    let td = tempfile::tempdir().unwrap();
+    let cwd = std::fs::canonicalize(td.path()).unwrap();
+    let index_dir = cwd.join("reg");
+    std::fs::create_dir_all(&index_dir).unwrap();
+    let index_path = index_dir.join("index.json");
+    write_index(&index_path, SEEDED_INDEX);
+
+    let mut cmd = cli_cmd();
+    cmd.current_dir(&cwd)
+        .arg("yank")
+        .arg("downsampler@1.2.0")
+        .arg("--output")
+        .arg("json")
+        .arg("--index")
+        .arg("reg/index.json")
+        .arg("--out")
+        .arg("build");
+    let assert = cmd.assert().success();
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
+    let doc: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|e| panic!("stdout must be valid JSON: {e}\n{stdout}"));
+    let index = doc
+        .pointer("/result/index_path")
+        .and_then(|v| v.as_str())
+        .expect("result.index_path missing");
+    assert!(
+        Path::new(index).is_absolute(),
+        "json index_path must be absolute, got {index:?}"
+    );
+}
+
+/// JSON-mode preserves the caller-supplied symlink segment in
+/// `--out` rather than resolving through it. Locks the lexical
+/// path semantics (`std::path::absolute`) used to emit JSON paths
+/// — a switch back to `fs::canonicalize` would resolve the symlink
+/// and fail this test.
+#[test]
+#[cfg(unix)]
+fn yank_json_preserves_explicit_symlink_out_path() {
+    use std::os::unix::fs::symlink;
+
+    let td = tempfile::tempdir().unwrap();
+    let cwd = std::fs::canonicalize(td.path()).unwrap();
+    let index_dir = cwd.join("reg");
+    std::fs::create_dir_all(&index_dir).unwrap();
+    let index_path = index_dir.join("index.json");
+    write_index(&index_path, SEEDED_INDEX);
+    let real_out = cwd.join("real_out");
+    std::fs::create_dir_all(&real_out).unwrap();
+    let link_out = cwd.join("link_out");
+    symlink(&real_out, &link_out).unwrap();
+
+    let mut cmd = cli_cmd();
+    let assert = cmd
+        .current_dir(&cwd)
+        .arg("yank")
+        .arg("downsampler@1.2.0")
+        .arg("--output")
+        .arg("json")
+        .arg("--index")
+        .arg("reg/index.json")
+        .arg("--out")
+        .arg("link_out")
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
+    let doc: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|e| panic!("stdout must be valid JSON: {e}\n{stdout}"));
+    let index = doc
+        .pointer("/result/index_path")
+        .and_then(|v| v.as_str())
+        .expect("result.index_path missing");
+    assert!(
+        index.contains("link_out"),
+        "index_path should preserve symlink segment 'link_out', got {index:?}"
+    );
+    assert!(
+        !index.contains("real_out"),
+        "index_path should NOT resolve through symlink to 'real_out', got {index:?}"
+    );
+}
+
+/// Locks the "lexical, not canonical" policy for human output:
+/// when the caller supplies an absolute `--out` path that is *not*
+/// lexically under the process CWD, the human renderer must print
+/// it verbatim rather than canonicalize through symlinks to find a
+/// shorter form.
+#[test]
+#[cfg(unix)]
+fn yank_human_mode_keeps_symlink_path_when_not_under_cwd() {
+    use std::os::unix::fs::symlink;
+
+    let outer = tempfile::tempdir().unwrap();
+    let outer_canon = std::fs::canonicalize(outer.path()).unwrap();
+    let work = outer_canon.join("work");
+    std::fs::create_dir_all(&work).unwrap();
+    let index_dir = work.join("reg");
+    std::fs::create_dir_all(&index_dir).unwrap();
+    let index_path = index_dir.join("index.json");
+    write_index(&index_path, SEEDED_INDEX);
+    let outside_real = outer_canon.join("outside_real");
+    std::fs::create_dir_all(&outside_real).unwrap();
+    let outside_link = outer_canon.join("outside_link");
+    symlink(&outside_real, &outside_link).unwrap();
+
+    let mut cmd = cli_cmd();
+    let assert = cmd
+        .current_dir(&work)
+        .arg("yank")
+        .arg("downsampler@1.2.0")
+        .arg("--output")
+        .arg("human")
+        .arg("--index")
+        .arg("reg/index.json")
+        .arg("--out")
+        .arg(&outside_link)
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
+
+    assert!(
+        stdout.contains("outside_link"),
+        "human output should preserve 'outside_link' segment, got:\n{stdout}"
+    );
+    assert!(
+        !stdout.contains("outside_real"),
+        "human output should NOT resolve through symlink to 'outside_real', got:\n{stdout}"
+    );
+}
+
+/// JSON-mode emits an absolute `index_path` for every relative
+/// form of `--out` (bare basename, `./prefix`, `../prefix`).
+/// Existing `yank_json_mode_keeps_absolute_paths` covers only the
+/// bare form; this test broadens the contract.
+#[test]
+fn yank_json_relative_out_is_absolute() {
+    let outer = tempfile::tempdir().unwrap();
+    let outer_canon = std::fs::canonicalize(outer.path()).unwrap();
+    let work = outer_canon.join("work");
+    std::fs::create_dir_all(&work).unwrap();
+
+    let cases = &[
+        ("bare", "build"),
+        ("dot", "./build_dot"),
+        ("dotdot", "../build_parent"),
+    ];
+
+    for (label, out_arg) in cases {
+        let index_dir = work.join(format!("reg_{label}"));
+        std::fs::create_dir_all(&index_dir).unwrap();
+        let index_path = index_dir.join("index.json");
+        write_index(&index_path, SEEDED_INDEX);
+        let index_rel = format!("reg_{label}/index.json");
+
+        let mut cmd = cli_cmd();
+        let assert = cmd
+            .current_dir(&work)
+            .arg("yank")
+            .arg("downsampler@1.2.0")
+            .arg("--output")
+            .arg("json")
+            .arg("--index")
+            .arg(&index_rel)
+            .arg("--out")
+            .arg(out_arg)
+            .assert()
+            .success();
+        let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
+        let doc: serde_json::Value = serde_json::from_str(&stdout)
+            .unwrap_or_else(|e| panic!("[{label}] stdout must be JSON: {e}\n{stdout}"));
+        let index = doc
+            .pointer("/result/index_path")
+            .and_then(|v| v.as_str())
+            .unwrap_or_else(|| panic!("[{label}] result.index_path missing\n{stdout}"));
+        assert!(
+            Path::new(index).is_absolute(),
+            "[{label}] JSON index_path must be absolute, got {index:?}"
+        );
+    }
 }

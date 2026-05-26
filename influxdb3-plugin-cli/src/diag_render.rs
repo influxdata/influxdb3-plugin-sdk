@@ -6,8 +6,10 @@
 //! chain.
 
 use crate::output::json::JsonError;
+use crate::path_display::display_relative_to_cwd;
 use crate::style::Palette;
 use std::io;
+use std::path::Path;
 
 /// Top-level entry point for human-mode error rendering. Dispatches on
 /// the `JsonError` shape: if `diagnostics[]` is non-empty we render the
@@ -32,13 +34,17 @@ fn render_single_issue(
 ) -> io::Result<()> {
     let tag = palette.tag.render();
     let tag_reset = palette.tag.render_reset();
+    let message = human_message(err);
     match err.field.as_deref() {
-        Some(f) => writeln!(
-            writer,
-            "{tag}[{}]{tag_reset} {}: {}",
-            err.code, f, err.message
-        )?,
-        None => writeln!(writer, "{tag}[{}]{tag_reset} {}", err.code, err.message)?,
+        Some(f) => {
+            let field = human_field(f);
+            writeln!(
+                writer,
+                "{tag}[{}]{tag_reset} {}: {}",
+                err.code, field, message
+            )?
+        }
+        None => writeln!(writer, "{tag}[{}]{tag_reset} {}", err.code, message)?,
     }
     let dim = palette.dim.render();
     let dim_reset = palette.dim.render_reset();
@@ -65,24 +71,82 @@ fn render_multi_issue(
     let tag = palette.tag.render();
     let tag_reset = palette.tag.render_reset();
     for (i, d) in err.diagnostics.iter().enumerate() {
+        let message = human_message(d);
         match d.field.as_deref() {
-            Some(f) => writeln!(
-                writer,
-                "  {dim}{}.{dim_reset} {tag}[{}]{tag_reset} {f}: {}",
-                i + 1,
-                d.code,
-                d.message,
-            )?,
+            Some(f) => {
+                let field = human_field(f);
+                writeln!(
+                    writer,
+                    "  {dim}{}.{dim_reset} {tag}[{}]{tag_reset} {}: {}",
+                    i + 1,
+                    d.code,
+                    field,
+                    message,
+                )?
+            }
             None => writeln!(
                 writer,
                 "  {dim}{}.{dim_reset} {tag}[{}]{tag_reset} {}",
                 i + 1,
                 d.code,
-                d.message,
+                message,
             )?,
         }
     }
     Ok(())
+}
+
+fn human_field(field: &str) -> String {
+    let path = Path::new(field);
+    if path.is_absolute() {
+        display_relative_to_cwd(path)
+    } else {
+        field.to_owned()
+    }
+}
+
+fn human_message(err: &JsonError) -> String {
+    let mut message = err.message.clone();
+    for (absolute, display) in path_replacements(err) {
+        message = message.replace(&absolute, &display);
+    }
+    message
+}
+
+fn path_replacements(err: &JsonError) -> Vec<(String, String)> {
+    let mut replacements = Vec::new();
+    if let Some(field) = err.field.as_deref() {
+        push_path_replacement(field, &mut replacements);
+    }
+    if let Some(details) = err.details.as_ref().and_then(|v| v.as_object()) {
+        for (key, value) in details {
+            if path_detail_key(key)
+                && let Some(value) = value.as_str()
+            {
+                push_path_replacement(value, &mut replacements);
+            }
+        }
+    }
+    replacements.sort_by(|a, b| b.0.len().cmp(&a.0.len()).then_with(|| a.0.cmp(&b.0)));
+    replacements.dedup_by(|a, b| a.0 == b.0);
+    replacements
+}
+
+fn push_path_replacement(value: &str, replacements: &mut Vec<(String, String)>) {
+    let path = Path::new(value);
+    if !path.is_absolute() {
+        return;
+    }
+    let display = display_relative_to_cwd(path);
+    if display != value {
+        replacements.push((value.to_owned(), display));
+    }
+}
+
+fn path_detail_key(key: &str) -> bool {
+    matches!(key, "path" | "index" | "out" | "target_dir")
+        || key.ends_with("_path")
+        || key.ends_with("_dir")
 }
 
 #[cfg(test)]
@@ -193,5 +257,51 @@ mod tests {
         render_human_error(&err, plain(), &mut buf).unwrap();
         let s = String::from_utf8(buf).unwrap();
         assert_eq!(s.matches("plugin.name:").count(), 1);
+    }
+
+    #[test]
+    fn render_human_error_replaces_path_like_detail_values() {
+        let cwd = std::env::current_dir().unwrap();
+        let target = cwd.join("target-dir-detail-test");
+        let target = target.display().to_string();
+        let err = JsonError {
+            code: "new::scaffold_failed".into(),
+            message: format!("failed to create {target}"),
+            field: None,
+            details: Some(serde_json::json!({ "target_dir": target })),
+            diagnostics: vec![],
+            cause: vec![],
+        };
+
+        let mut buf = Vec::new();
+        render_human_error(&err, plain(), &mut buf).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+
+        assert!(s.contains("target-dir-detail-test"));
+        assert!(
+            !s.contains(&cwd.display().to_string()),
+            "path-like detail value should be shortened, got: {s}"
+        );
+    }
+
+    #[test]
+    fn render_human_error_ignores_unknown_detail_keys() {
+        let cwd = std::env::current_dir().unwrap();
+        let value = cwd.join("not-a-path-detail").display().to_string();
+        let err = JsonError {
+            code: "usage::invalid_value".into(),
+            message: format!("invalid value {value}"),
+            field: Some("plugin.name".into()),
+            details: Some(serde_json::json!({ "value": value })),
+            diagnostics: vec![],
+            cause: vec![],
+        };
+
+        let mut buf = Vec::new();
+        render_human_error(&err, plain(), &mut buf).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+
+        assert!(s.contains(&cwd.display().to_string()));
+        assert!(s.contains("plugin.name:"));
     }
 }
