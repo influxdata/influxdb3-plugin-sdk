@@ -108,6 +108,24 @@ fn empty_index() -> serde_json::Value {
     })
 }
 
+fn file_base_index() -> serde_json::Value {
+    serde_json::json!({
+        "index_schema_version": "2.0",
+        "artifacts_url": "file:///tmp/reg",
+        "plugins": [
+            {
+                "name": "alpha_writer",
+                "version": "1.0.0",
+                "published_at": "2026-04-29T18:45:12Z",
+                "description": "Alpha writer plugin",
+                "triggers": ["process_writes"],
+                "dependencies": { "database_version": ">=3.0.0", "python": [] },
+                "hash": HASH_0
+            }
+        ]
+    })
+}
+
 fn write_index(path: &Path, value: serde_json::Value) {
     std::fs::write(path, serde_json::to_string_pretty(&value).unwrap()).unwrap();
 }
@@ -161,6 +179,19 @@ fn assert_json_success(assert: assert_cmd::assert::Assert) -> serde_json::Value 
     let doc = parse_stdout(assert.get_output());
     assert_eq!(doc["status"], "ok");
     doc
+}
+
+fn run_info_human(index_path: &Path, name: &str, extra: &[&str]) -> String {
+    let mut full_extra = vec!["--output", "human"];
+    full_extra.extend_from_slice(extra);
+    let assert = spawn_index_info(index_path, name, &full_extra)
+        .success()
+        .stderr(predicates::str::is_empty());
+    String::from_utf8(assert.get_output().stdout.clone()).expect("utf-8 stdout")
+}
+
+fn line_index_of(haystack: &str, prefix: &str) -> Option<usize> {
+    haystack.lines().position(|line| line.starts_with(prefix))
 }
 
 fn assert_json_error(
@@ -385,6 +416,12 @@ fn info_by_name_selects_latest_visible_version_json() {
         doc["result"]["plugin"]["homepage"],
         "https://example.com/downsampler"
     );
+    assert_eq!(
+        doc["result"]["plugin"]["artifact_url"]
+            .as_str()
+            .expect("artifact_url string"),
+        "https://plugins.example.com/artifacts/downsampler-1.2.0.tar.gz"
+    );
 
     insta::assert_json_snapshot!("index_info_found_json", doc);
 }
@@ -500,6 +537,140 @@ fn info_filtered_out_is_successful_json() {
 }
 
 #[test]
+fn info_json_artifact_url_uses_exact_version_selection() {
+    let td = tempfile::tempdir().unwrap();
+    let path = index_path(&td);
+    write_rich_index(&path);
+
+    let doc = assert_json_success(spawn_index_info(
+        &path,
+        "downsampler",
+        &["--version", "1.0.0", "--output", "json"],
+    ));
+
+    assert_eq!(
+        doc["result"]["plugin"]["artifact_url"]
+            .as_str()
+            .expect("artifact_url string"),
+        "https://plugins.example.com/artifacts/downsampler-1.0.0.tar.gz"
+    );
+}
+
+#[test]
+fn info_json_artifact_url_present_for_yanked_when_included() {
+    let td = tempfile::tempdir().unwrap();
+    let path = index_path(&td);
+    write_rich_index(&path);
+
+    let doc = assert_json_success(spawn_index_info(
+        &path,
+        "legacy_rollup",
+        &["--include-yanked", "--output", "json"],
+    ));
+
+    assert_eq!(doc["result"]["outcome"], "found");
+    assert_eq!(
+        doc["result"]["plugin"]["artifact_url"]
+            .as_str()
+            .expect("artifact_url string"),
+        "https://plugins.example.com/artifacts/legacy_rollup-0.9.0.tar.gz"
+    );
+}
+
+#[test]
+fn info_json_artifact_url_present_for_incompatible_when_included() {
+    let td = tempfile::tempdir().unwrap();
+    let path = index_path(&td);
+    write_rich_index(&path);
+
+    let doc = assert_json_success(spawn_index_info(
+        &path,
+        "future_writer",
+        &[
+            "--database-version",
+            "3.2.0",
+            "--include-incompatible",
+            "--output",
+            "json",
+        ],
+    ));
+
+    assert_eq!(doc["result"]["outcome"], "found");
+    assert_eq!(
+        doc["result"]["plugin"]["artifact_url"]
+            .as_str()
+            .expect("artifact_url string"),
+        "https://plugins.example.com/artifacts/future_writer-2.0.0.tar.gz"
+    );
+}
+
+#[test]
+fn info_json_no_artifact_url_when_not_found() {
+    let td = tempfile::tempdir().unwrap();
+    let path = index_path(&td);
+    write_rich_index(&path);
+
+    let doc = assert_json_success(spawn_index_info(
+        &path,
+        "no_such_plugin",
+        &["--output", "json"],
+    ));
+
+    assert_eq!(doc["result"]["outcome"], "not_found");
+    assert!(
+        doc["result"].get("plugin").is_none(),
+        "result.plugin must be absent for not_found"
+    );
+    assert!(
+        doc["result"].get("artifact_url").is_none(),
+        "no top-level artifact_url for not_found"
+    );
+}
+
+#[test]
+fn info_json_no_artifact_url_when_filtered_out() {
+    let td = tempfile::tempdir().unwrap();
+    let path = index_path(&td);
+    write_rich_index(&path);
+
+    let doc = assert_json_success(spawn_index_info(
+        &path,
+        "legacy_rollup",
+        &["--output", "json"],
+    ));
+
+    assert_eq!(doc["result"]["outcome"], "filtered_out");
+    assert!(
+        doc["result"].get("plugin").is_none(),
+        "result.plugin must be absent for filtered_out"
+    );
+    assert!(
+        doc["result"].get("artifact_url").is_none(),
+        "no top-level artifact_url for filtered_out"
+    );
+}
+
+#[test]
+fn info_json_artifact_url_uses_index_base_url_for_file_scheme() {
+    let td = tempfile::tempdir().unwrap();
+    let path = index_path(&td);
+    write_index(&path, file_base_index());
+
+    let doc = assert_json_success(spawn_index_info(
+        &path,
+        "alpha_writer",
+        &["--output", "json"],
+    ));
+
+    assert_eq!(
+        doc["result"]["plugin"]["artifact_url"]
+            .as_str()
+            .expect("artifact_url string"),
+        "file:///tmp/reg/alpha_writer-1.0.0.tar.gz"
+    );
+}
+
+#[test]
 fn info_human_found_and_not_found_write_stdout() {
     let td = tempfile::tempdir().unwrap();
     let path = index_path(&td);
@@ -533,6 +704,172 @@ fn info_human_found_and_not_found_write_stdout() {
         .success()
         .stdout(predicates::str::contains("Plugin not found"))
         .stderr(predicates::str::is_empty());
+}
+
+#[test]
+fn info_human_includes_artifact_url_line_for_visible_plugin() {
+    let td = tempfile::tempdir().unwrap();
+    let path = index_path(&td);
+    write_rich_index(&path);
+
+    let stdout = run_info_human(&path, "downsampler", &[]);
+    assert!(
+        stdout.contains(
+            "artifact_url: https://plugins.example.com/artifacts/downsampler-1.2.0.tar.gz"
+        ),
+        "missing artifact_url line in human stdout:\n{stdout}"
+    );
+}
+
+#[test]
+fn info_human_artifact_url_positioned_after_optionals_before_hash() {
+    let td = tempfile::tempdir().unwrap();
+    let path = index_path(&td);
+    write_rich_index(&path);
+
+    let stdout = run_info_human(&path, "downsampler", &[]);
+
+    let artifact = line_index_of(&stdout, "artifact_url:").expect("artifact_url line");
+    let hash = line_index_of(&stdout, "hash:").expect("hash line");
+    let homepage = line_index_of(&stdout, "homepage:").expect("homepage line");
+    let repository = line_index_of(&stdout, "repository:").expect("repository line");
+    let documentation = line_index_of(&stdout, "documentation:").expect("documentation line");
+
+    assert!(
+        homepage < artifact,
+        "homepage must appear above artifact_url"
+    );
+    assert!(
+        repository < artifact,
+        "repository must appear above artifact_url"
+    );
+    assert!(
+        documentation < artifact,
+        "documentation must appear above artifact_url"
+    );
+    assert_eq!(
+        artifact + 1,
+        hash,
+        "artifact_url must appear directly before hash"
+    );
+}
+
+#[test]
+fn info_human_artifact_url_present_when_optionals_absent() {
+    let td = tempfile::tempdir().unwrap();
+    let path = index_path(&td);
+    write_rich_index(&path);
+
+    let stdout = run_info_human(&path, "alpha_writer", &[]);
+
+    assert!(
+        stdout.contains(
+            "artifact_url: https://plugins.example.com/artifacts/alpha_writer-1.0.0.tar.gz"
+        ),
+        "missing artifact_url for plugin without optionals:\n{stdout}"
+    );
+    assert!(!stdout.contains("homepage:"));
+    assert!(!stdout.contains("repository:"));
+    assert!(!stdout.contains("documentation:"));
+
+    let artifact = line_index_of(&stdout, "artifact_url:").expect("artifact_url line");
+    let hash = line_index_of(&stdout, "hash:").expect("hash line");
+    assert_eq!(
+        artifact + 1,
+        hash,
+        "artifact_url must be the line immediately before hash when no optionals exist"
+    );
+}
+
+#[test]
+fn info_human_artifact_url_uses_selected_version() {
+    let td = tempfile::tempdir().unwrap();
+    let path = index_path(&td);
+    write_rich_index(&path);
+
+    let stdout = run_info_human(&path, "downsampler", &["--version", "1.0.0"]);
+    assert!(
+        stdout.contains(
+            "artifact_url: https://plugins.example.com/artifacts/downsampler-1.0.0.tar.gz"
+        ),
+        "human output must use selected version, not latest:\n{stdout}"
+    );
+}
+
+#[test]
+fn info_human_artifact_url_present_for_yanked_when_included() {
+    let td = tempfile::tempdir().unwrap();
+    let path = index_path(&td);
+    write_rich_index(&path);
+
+    let stdout = run_info_human(&path, "legacy_rollup", &["--include-yanked"]);
+    assert!(
+        stdout.contains(
+            "artifact_url: https://plugins.example.com/artifacts/legacy_rollup-0.9.0.tar.gz"
+        ),
+        "missing artifact_url for yanked-and-included entry:\n{stdout}"
+    );
+}
+
+#[test]
+fn info_human_artifact_url_present_for_incompatible_when_included() {
+    let td = tempfile::tempdir().unwrap();
+    let path = index_path(&td);
+    write_rich_index(&path);
+
+    let stdout = run_info_human(
+        &path,
+        "future_writer",
+        &["--database-version", "3.2.0", "--include-incompatible"],
+    );
+    assert!(
+        stdout.contains(
+            "artifact_url: https://plugins.example.com/artifacts/future_writer-2.0.0.tar.gz"
+        ),
+        "missing artifact_url for incompatible-and-included entry:\n{stdout}"
+    );
+}
+
+#[test]
+fn info_human_no_artifact_url_when_not_found() {
+    let td = tempfile::tempdir().unwrap();
+    let path = index_path(&td);
+    write_rich_index(&path);
+
+    let stdout = run_info_human(&path, "no_such_plugin", &[]);
+    assert!(
+        !stdout.contains("artifact_url"),
+        "not-found human stdout must not contain artifact_url:\n{stdout}"
+    );
+}
+
+#[test]
+fn info_human_no_artifact_url_when_filtered_out() {
+    let td = tempfile::tempdir().unwrap();
+    let path = index_path(&td);
+    write_rich_index(&path);
+
+    let stdout = run_info_human(&path, "legacy_rollup", &[]);
+    assert!(
+        !stdout.contains("artifact_url"),
+        "filtered-out human stdout must not contain artifact_url:\n{stdout}"
+    );
+}
+
+#[test]
+fn search_human_output_does_not_contain_artifact_url() {
+    let td = tempfile::tempdir().unwrap();
+    let path = index_path(&td);
+    write_rich_index(&path);
+
+    let assert = spawn_index_search(&path, None, &["--output", "human"])
+        .success()
+        .stderr(predicates::str::is_empty());
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    assert!(
+        !stdout.contains("artifact_url"),
+        "search human output must remain scan-friendly; no artifact_url:\n{stdout}"
+    );
 }
 
 #[test]

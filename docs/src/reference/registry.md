@@ -28,6 +28,8 @@ The index file and the artifacts do not need to live at the same location, on th
 {artifacts_url}/{name}-{version}.tar.gz
 ```
 
+The CLI's `info` command displays this computed URL for a selected plugin version. Query strings and fragments on `artifacts_url` are preserved; see [The Registry Index Format](./registry-index.md#artifacts_url) for the exact rule and credential-safety warning.
+
 Valid topologies include:
 
 - Index and artifacts hosted together (for example, both under one S3 bucket prefix or one GitHub Release).

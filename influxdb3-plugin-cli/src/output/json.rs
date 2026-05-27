@@ -121,6 +121,7 @@ pub(crate) struct IndexInfoPluginOutput {
     pub repository: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub documentation: Option<String>,
+    pub artifact_url: String,
     pub dependencies: IndexDependenciesOutput,
     pub hash: String,
     pub visibility: IndexVisibilityOutput,

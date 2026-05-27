@@ -1,8 +1,9 @@
 version: 2.1
 
 # Self-hosted CircleCI runner executors (org-supplied; see admin's snippet).
-# Working directory namespaced per pipeline.id because the runners are
-# non-ephemeral — without namespacing, concurrent pipelines collide.
+# Default working directory is namespaced per pipeline.id because the runners
+# are non-ephemeral. Self-hosted jobs override this with job-specific
+# subdirectories so current-job cleanup cannot touch another job's checkout.
 executors:
   self-hosted-amd:
     machine: true
@@ -30,37 +31,81 @@ commands:
             source "$BASH_ENV"
             rustup show
             rustc --version
+            CARGO_HOME_PROJECT="$HOME/.cargo/influxdb3-plugin-sdk"
+            TOOL_BIN="$(pwd)/.tools/bin"
+            mkdir -p "$CARGO_HOME_PROJECT"
+            mkdir -p "$TOOL_BIN"
             # sccache (prebuilt binary; org pattern, fast).
             SCCACHE_VERSION="0.8.2"
             curl -LsSf "https://github.com/mozilla/sccache/releases/download/v${SCCACHE_VERSION}/sccache-v${SCCACHE_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
-              | tar zxf - -C "$HOME/.cargo/bin" --strip-components=1 \
+              | tar zxf - -C "$TOOL_BIN" --strip-components=1 \
                 "sccache-v${SCCACHE_VERSION}-x86_64-unknown-linux-musl/sccache"
-            sccache --version
-            echo 'export RUSTC_WRAPPER=sccache' >> "$BASH_ENV"
-            echo 'export SCCACHE_DIR=$HOME/.cache/sccache' >> "$BASH_ENV"
+            "$TOOL_BIN/sccache" --version
+            SCCACHE_ROOT="$(pwd)/.sccache"
+            mkdir -p "$SCCACHE_ROOT"
+            echo "export CARGO_HOME=$CARGO_HOME_PROJECT" >> "$BASH_ENV"
+            echo "export PATH=$TOOL_BIN:\$PATH" >> "$BASH_ENV"
+            echo "export RUSTC_WRAPPER=$TOOL_BIN/sccache" >> "$BASH_ENV"
+            echo "export SCCACHE_DIR=$SCCACHE_ROOT" >> "$BASH_ENV"
+            echo "export SCCACHE_SERVER_UDS=$SCCACHE_ROOT/server.sock" >> "$BASH_ENV"
+            echo 'export SCCACHE_CACHE_SIZE=2G' >> "$BASH_ENV"
 
   restore-cargo-cache:
-    description: "Restore cargo registry/git/target caches keyed on Cargo.lock checksum."
+    description: "Restore repo-scoped cargo registry cache keyed on Cargo.lock checksum."
     steps:
       - restore_cache:
           keys:
-            - cargo-v2-x86_64-unknown-linux-gnu-{{ checksum "Cargo.lock" }}
-            - cargo-v2-x86_64-unknown-linux-gnu-
+            - cargo-v4-registry-x86_64-unknown-linux-gnu-{{ checksum "Cargo.lock" }}
+            - cargo-v4-registry-x86_64-unknown-linux-gnu-
 
   save-cargo-cache:
-    description: "Persist cargo registry/git/target/sccache caches keyed on Cargo.lock checksum."
+    description: "Persist repo-scoped cargo registry cache keyed on Cargo.lock checksum."
     steps:
       - save_cache:
-          key: cargo-v2-x86_64-unknown-linux-gnu-{{ checksum "Cargo.lock" }}
+          key: cargo-v4-registry-x86_64-unknown-linux-gnu-{{ checksum "Cargo.lock" }}
           paths:
-            - ~/.cargo/registry
-            - ~/.cargo/git
-            - ~/.cache/sccache
-            - target
+            - ~/.cargo/influxdb3-plugin-sdk/registry
+
+  cleanup-current-workspace:
+    description: "Remove this job's per-pipeline workspace after cache/workspace persistence."
+    steps:
+      - run:
+          name: Cleanup current workspace
+          when: always
+          command: |
+            set -euo pipefail
+            pipeline_root="/tmp/workspace/${CIRCLE_PIPELINE_ID:?CIRCLE_PIPELINE_ID is required for cleanup}"
+            workdir="$(pwd)"
+            cleanup_root="${CI_CLEANUP_ROOT:-$workdir}"
+            if [ -n "${SCCACHE_SERVER_UDS:-}" ] && command -v sccache >/dev/null 2>&1; then
+              sccache --stop-server || true
+            fi
+            if [ ! -d "$cleanup_root" ]; then
+              echo "Skipping cleanup for missing directory: $cleanup_root"
+              exit 0
+            fi
+            pipeline_root="$(cd "$pipeline_root" && pwd -P)"
+            cleanup_root="$(cd "$cleanup_root" && pwd -P)"
+            if [ "$cleanup_root" = "$pipeline_root" ]; then
+              echo "Skipping cleanup for pipeline root: $cleanup_root"
+              exit 0
+            fi
+            case "$cleanup_root" in
+              "$pipeline_root"/*)
+                parent="$(dirname "$cleanup_root")"
+                cd /
+                rm -rf "$cleanup_root"
+                rmdir "$parent" 2>/dev/null || true
+                ;;
+              *)
+                echo "Skipping cleanup for unexpected cleanup root: $cleanup_root"
+                ;;
+            esac
 
 jobs:
   cargo-build:
     executor: self-hosted-amd
+    working_directory: /tmp/workspace/<< pipeline.id >>/cargo-build
     steps:
       - checkout
       - restore-cargo-cache
@@ -69,9 +114,11 @@ jobs:
           name: cargo build --workspace
           command: cargo build --workspace --locked
       - save-cargo-cache
+      - cleanup-current-workspace
 
   cargo-test:
     executor: self-hosted-amd
+    working_directory: /tmp/workspace/<< pipeline.id >>/cargo-test
     steps:
       - checkout
       - restore-cargo-cache
@@ -81,17 +128,18 @@ jobs:
           command: |
             NEXTEST_VERSION="0.9.133"
             curl -LsSf "https://get.nexte.st/${NEXTEST_VERSION}/linux" \
-              | tar zxf - -C "$HOME/.cargo/bin"
+              | tar zxf - -C "$(pwd)/.tools/bin"
             cargo nextest --version
       - run:
           name: cargo nextest run --workspace
           environment:
             INSTA_UPDATE: "no"
           command: cargo nextest run --workspace --no-fail-fast --locked
-      - save-cargo-cache
+      - cleanup-current-workspace
 
   cargo-clippy:
     executor: self-hosted-amd
+    working_directory: /tmp/workspace/<< pipeline.id >>/cargo-clippy
     steps:
       - checkout
       - restore-cargo-cache
@@ -102,10 +150,11 @@ jobs:
       - run:
           name: cargo clippy --workspace --all-targets -- -D warnings
           command: cargo clippy --workspace --all-targets --locked -- -D warnings
-      - save-cargo-cache
+      - cleanup-current-workspace
 
   cargo-fmt:
     executor: self-hosted-amd
+    working_directory: /tmp/workspace/<< pipeline.id >>/cargo-fmt
     steps:
       - checkout
       - restore-cargo-cache
@@ -116,10 +165,11 @@ jobs:
       - run:
           name: cargo fmt --all -- --check
           command: cargo fmt --all -- --check
-      - save-cargo-cache
+      - cleanup-current-workspace
 
   cargo-deny:
     executor: self-hosted-amd
+    working_directory: /tmp/workspace/<< pipeline.id >>/cargo-deny
     steps:
       - checkout
       - restore-cargo-cache
@@ -129,16 +179,17 @@ jobs:
           command: |
             CARGO_DENY_VERSION="0.19.4"
             curl -LsSf "https://github.com/EmbarkStudios/cargo-deny/releases/download/${CARGO_DENY_VERSION}/cargo-deny-${CARGO_DENY_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
-              | tar zxf - -C "$HOME/.cargo/bin" --strip-components=1 \
+              | tar zxf - -C "$(pwd)/.tools/bin" --strip-components=1 \
                 "cargo-deny-${CARGO_DENY_VERSION}-x86_64-unknown-linux-musl/cargo-deny"
             cargo deny --version
       - run:
           name: cargo deny check all
           command: cargo deny check all
-      - save-cargo-cache
+      - cleanup-current-workspace
 
   cargo-doc:
     executor: self-hosted-amd
+    working_directory: /tmp/workspace/<< pipeline.id >>/cargo-doc
     environment:
       RUSTDOCFLAGS: "-D warnings"
     steps:
@@ -148,10 +199,11 @@ jobs:
       - run:
           name: cargo doc --workspace --no-deps
           command: cargo doc --workspace --no-deps --locked
-      - save-cargo-cache
+      - cleanup-current-workspace
 
   manifest-invariants:
     executor: self-hosted-amd
+    working_directory: /tmp/workspace/<< pipeline.id >>/manifest-invariants
     steps:
       - checkout
       - restore-cargo-cache
@@ -165,10 +217,11 @@ jobs:
       - run:
           name: scripts/check-changelog-updated.sh
           command: ./scripts/check-changelog-updated.sh
-      - save-cargo-cache
+      - cleanup-current-workspace
 
   cargo-semver-checks:
     executor: self-hosted-amd
+    working_directory: /tmp/workspace/<< pipeline.id >>/cargo-semver-checks/repo
     steps:
       - checkout
       - run:
@@ -183,8 +236,13 @@ jobs:
               exit 1
             fi
             echo "Baseline tag: $BASELINE"
-            BASELINE_DIR="/tmp/semver-baseline-${CIRCLE_PIPELINE_ID}"
+            JOB_ROOT="$(dirname "$(pwd)")"
+            BASELINE_DIR="$JOB_ROOT/semver-baseline"
+            SEMVER_TARGET_DIR="$JOB_ROOT/target"
+            echo "export CI_CLEANUP_ROOT=$JOB_ROOT" >> "$BASH_ENV"
+            echo "export CARGO_TARGET_DIR=$SEMVER_TARGET_DIR" >> "$BASH_ENV"
             rm -rf "$BASELINE_DIR"
+            mkdir -p "$SEMVER_TARGET_DIR"
             git clone --depth=1 --branch "$BASELINE" \
               "$(git remote get-url origin)" "$BASELINE_DIR"
             echo "export SEMVER_BASELINE_DIR=$BASELINE_DIR" >> "$BASH_ENV"
@@ -195,21 +253,24 @@ jobs:
           command: |
             CARGO_SEMVER_CHECKS_VERSION="0.47.0"
             curl -LsSf "https://github.com/obi1kenobi/cargo-semver-checks/releases/download/v${CARGO_SEMVER_CHECKS_VERSION}/cargo-semver-checks-x86_64-unknown-linux-gnu.tar.gz" \
-              | tar zxf - -C "$HOME/.cargo/bin"
+              | tar zxf - -C "$(pwd)/.tools/bin"
             cargo semver-checks --version
       - run:
           name: cargo semver-checks (cli + schemas only; sdk is internal)
+          no_output_timeout: 20m
           command: |
             source "$BASH_ENV"
             echo "Comparing against baseline at $SEMVER_BASELINE_DIR"
+            echo "Using shared job-local cargo target dir at $CARGO_TARGET_DIR"
             cargo semver-checks check-release \
               --package influxdb3-plugin-cli \
               --package influxdb3-plugin-schemas \
               --baseline-root "$SEMVER_BASELINE_DIR"
-      - save-cargo-cache
+      - cleanup-current-workspace
 
   cargo-package-check:
     executor: self-hosted-amd
+    working_directory: /tmp/workspace/<< pipeline.id >>/cargo-package-check
     steps:
       - checkout
       - restore-cargo-cache
@@ -232,32 +293,36 @@ jobs:
           # and the unpublished schemas dep makes that lookup fail. Group H
           # lifts this; until then, only schemas can be fully packaged.
           command: cargo package --no-verify -p influxdb3-plugin-schemas
-      - save-cargo-cache
+      - cleanup-current-workspace
 
   # --------------- Release jobs ---------------
 
   build-release:
     executor: self-hosted-amd
+    working_directory: /tmp/workspace/<< pipeline.id >>/build-release-<< parameters.target >>
     parameters:
       target:
         type: string
     steps:
       - checkout
       - run:
-          name: Isolate gcloud config (prevent concurrent-job interference on shared runners)
+          name: Isolate gcloud and Docker config
           command: |
-            export CLOUDSDK_CONFIG=/tmp/workspace/<< pipeline.id >>/gcloud
-            mkdir -p "$CLOUDSDK_CONFIG"
+            export CLOUDSDK_CONFIG="$(pwd)/gcloud"
+            export DOCKER_CONFIG="$(pwd)/docker"
+            mkdir -p "$CLOUDSDK_CONFIG" "$DOCKER_CONFIG"
             echo "export CLOUDSDK_CONFIG=$CLOUDSDK_CONFIG" >> "$BASH_ENV"
+            echo "export DOCKER_CONFIG=$DOCKER_CONFIG" >> "$BASH_ENV"
       - run:
           name: Install gcloud
           no_output_timeout: 5m
           command: |
             source "$BASH_ENV"
+            GCLOUD_ROOT="$(pwd)/google-cloud-sdk"
             curl -fsSL \
               https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-linux-x86_64.tar.gz \
-              | tar xz -C $HOME
-            echo 'export PATH=$HOME/google-cloud-sdk/bin:$PATH' >> "$BASH_ENV"
+              | tar xz -C "$(pwd)"
+            echo "export PATH=$GCLOUD_ROOT/bin:\$PATH" >> "$BASH_ENV"
       - run:
           name: WIF login as dedicated SA
           command: |
@@ -358,6 +423,7 @@ jobs:
           root: .
           paths:
             - artifacts/
+      - cleanup-current-workspace
 
   generate-checksums:
     docker:
