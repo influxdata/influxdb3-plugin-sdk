@@ -386,16 +386,18 @@ jobs:
             HOST_UID="$(id -u)"
             HOST_GID="$(id -g)"
             docker run --rm \
-              --user "$HOST_UID:$HOST_GID" \
               -v "$(pwd)":/workspace \
               -w /workspace \
               -e "TARGET=<< parameters.target >>" \
               -e "GIT_HASH=$CIRCLE_SHA1" \
               -e "INFLUXDB3_PLUGIN_SDK_KNOWN_LATEST_DB=$INFLUXDB3_PLUGIN_SDK_KNOWN_LATEST_DB" \
               -e "RUSTC_WRAPPER=" \
+              -e "HOST_UID=$HOST_UID" \
+              -e "HOST_GID=$HOST_GID" \
               "$IMAGE" \
               bash -lc '
                 set -euo pipefail
+                trap "chown -R \"$HOST_UID:$HOST_GID\" /workspace/target 2>/dev/null || true" EXIT
                 rustup target add "$TARGET"
                 target-env cargo build --release --locked --target "$TARGET" -p influxdb3-plugin-cli
               '
@@ -408,13 +410,15 @@ jobs:
                 HOST_UID="$(id -u)"
                 HOST_GID="$(id -g)"
                 docker run --rm \
-                  --user "$HOST_UID:$HOST_GID" \
                   -v "$(pwd)":/workspace \
                   -w /workspace \
                   -e "TARGET=<< parameters.target >>" \
+                  -e "HOST_UID=$HOST_UID" \
+                  -e "HOST_GID=$HOST_GID" \
                   "$IMAGE" \
                   bash -lc '
                     set -euo pipefail
+                    trap "chown -R \"$HOST_UID:$HOST_GID\" /workspace/target 2>/dev/null || true" EXIT
                     rcodesign sign "target/$TARGET/release/influxdb3-plugin"
                   '
                 echo "Signed << parameters.target >> binary with rcodesign (ad-hoc)"
