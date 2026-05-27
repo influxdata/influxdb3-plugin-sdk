@@ -33,4 +33,8 @@ Using the plugin SDK, plugin repository maintainers can solve these problems by 
     - Both `gh:` and registry consumers can coexist in the same repository.
 - **Minimal effort to set up and maintain**
     - Use a CI workflow to maintain the registry (templates provided to get started).
-    - No change to plugin author workflow. 
+    - No change to plugin author workflow.
+
+---
+
+Next: [Getting Started](./getting-started/README.md)

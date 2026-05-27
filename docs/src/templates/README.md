@@ -6,6 +6,10 @@ The v1 template is a GitHub Actions workflow for private GitHub Release registri
 
 | Template | Purpose | Status |
 |---|---|---|
-| [GitHub Actions publish workflow](./github-actions/) | Publish plugin artifacts and `index.json` to a private GitHub Release. | Current |
+| [GitHub Actions publish workflow](./github-actions/README.md) | Publish plugin artifacts and `index.json` to a private GitHub Release. | Current |
 
-For the repository scenarios that use this template, see [Getting Started](../getting-started/).
+For the repository scenarios that use this template, see [Getting Started](../getting-started/README.md).
+
+---
+
+Back: [The Registry Index Format](../reference/registry-index.md) | Next: [GitHub Actions publish workflow](./github-actions/README.md)

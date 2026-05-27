@@ -262,7 +262,8 @@ visibility: visible
 
 To install and run a plugin in InfluxDB 3, see the [official InfluxDB 3 plugin documentation](https://docs.influxdata.com/influxdb3/enterprise/get-started/process/).
 
-Normally, a registry is hosted on a remote server so that plugins can be shared with other users. Additionally, the packaging and publishing steps are typically automated in a CI/CD pipeline. For more details, see:
+Normally, a registry is hosted on a remote server so that plugins can be shared with other users. Additionally, the packaging and publishing steps are typically automated in a CI/CD pipeline.
 
-- [GitHub Releases + GitHub Actions](./recipes/ghreleases--ghactions.md)
-- [How publish pipelines vary](./concepts/publish-pipeline.md)
+---
+
+Back: [Install the CLI](./install.md) | Next: [Guides](../guides/README.md)

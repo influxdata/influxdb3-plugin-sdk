@@ -10,7 +10,7 @@ The SDK and registry are flexible and agnostic to hosting solutions, so you coul
 
 - Repo Hosts: GitHub, GitLab, Azure DevOps, or any code hosting platform or VCS.
 - CI Runners: GitHub Actions, GitLab CI, Azure Pipelines, CircleCI, Jenkins, Buildkite, or any CI that can run CLI commands.
-- Registry Hosts: S3, GitHub Releases, GitLab Releases, Azure DevOps Artifacts, or any HTTP server ([supported URL schemes documented here](./reference/registry.md#supported-url-schemes)).
+- Registry Hosts: S3, GitHub Releases, GitLab Releases, Azure DevOps Artifacts, or any HTTP server ([supported URL schemes documented here](../reference/registry.md#supported-url-schemes)).
 - Both the repo and registry can be private or public. 
 
 If you already have a repo, that's ok, you can use it as-is without breaking existing plugin consumers. 
@@ -46,7 +46,7 @@ triggers = ["process_writes"]
 database_version = ">=3.2.0,<4.0.0"
 ```
 
-The `triggers` array must match the functions implemented by the Python file. See [The Manifest Format](../../reference/manifest.md) for all fields and validation rules.
+The `triggers` array must match the functions implemented by the Python file. See [The Manifest Format](../reference/manifest.md) for all fields and validation rules.
 
 Validate locally before wiring CI:
 
@@ -79,7 +79,7 @@ influxdb3-plugin new index "${SEED_DIR}" --artifacts-url "${ARTIFACTS_URL}"
 gh release upload "${REGISTRY_TAG}" "${SEED_DIR}/index.json" --repo "${REGISTRY_REPO}"
 ```
 
-See [The Registry Index Format](../../reference/registry-index.md) for the index schema.
+See [The Registry Index Format](../reference/registry-index.md) for the index schema.
 
 ### Step 4: Add the GitHub Actions workflow
 
@@ -101,7 +101,7 @@ env:
   REGISTRY_TAG: "plugin-registry"
 ```
 
-The template walkthrough is [GitHub Actions publish workflow](../../templates/github-actions/).
+The template walkthrough is [GitHub Actions publish workflow](../templates/github-actions/README.md).
 
 ### Step 5: Configure authentication
 
@@ -219,9 +219,9 @@ A repository either has no existing plugin distribution (`new`) or already distr
 
 ## What stays the same across every pipeline
 
-- The registry concept itself — see [The Registry](../../reference/registry.md).
-- Manifest format (`manifest.toml`) — see [The Manifest Format](../../reference/manifest.md).
-- Index format (`index.json`) — see [The Registry Index Format](../../reference/registry-index.md).
+- The registry concept itself — see [The Registry](../reference/registry.md).
+- Manifest format (`manifest.toml`) — see [The Manifest Format](../reference/manifest.md).
+- Index format (`index.json`) — see [The Registry Index Format](../reference/registry-index.md).
 - The four-step pipeline shape listed at the top of this page.
 - The immutability rule: once `(name, version)` is published, only `yanked` can change.
 
@@ -231,6 +231,8 @@ Recipe filenames use the pattern `<registry>--<ci>.md`. Pick a recipe whose file
 
 Available recipes:
 
-- [GitHub Releases + GitHub Actions](../recipes/ghreleases--ghactions.md)
+- GitHub Releases + GitHub Actions
 
-Back to [Getting Started](../).
+---
+
+Back: [Guides](./README.md) | Next: [Plugin Author](./author.md)
