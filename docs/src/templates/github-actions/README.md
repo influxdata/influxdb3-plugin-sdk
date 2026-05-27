@@ -47,7 +47,7 @@ The workflow uses the token only for `gh release download` and `gh release uploa
 
 ## Registry Release
 
-Before the workflow can run, [create the registry release](../../getting-started/recipes/ghreleases--ghactions.md#step-2-create-the-registry-release) and [seed an empty `index.json`](../../getting-started/recipes/ghreleases--ghactions.md#step-3-seed-the-index).
+Before the workflow can run, create the registry release and seed an empty `index.json`.
 
 ## Repository Layout
 
@@ -93,6 +93,6 @@ The workflow does not delete, rename, or move existing source files used by `gh:
 | `already present in registry index` | The plugin version is already published. | Bump `plugin.version` in `manifest.toml` before republishing. |
 | Validation fails | The manifest or Python entry point does not match the schema. | Run `influxdb3-plugin validate <plugin-dir>` locally and fix the reported diagnostics. |
 
-Back to [Templates](../).
+---
 
-Next: [GitHub Releases + GitHub Actions](../../getting-started/recipes/ghreleases--ghactions.md).
+Back: [Templates](../README.md) | Next: None

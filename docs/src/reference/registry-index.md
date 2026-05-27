@@ -304,3 +304,7 @@ The SDK writes index JSON in canonical form:
 - Description strings are normalized to Unicode NFC.
 - Optional fields are omitted when absent.
 - `yanked` is omitted when false.
+
+---
+
+Back: [The Manifest Format](./manifest.md) | Next: [Templates](../templates/README.md)

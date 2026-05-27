@@ -17,3 +17,7 @@ After installing, validate by running:
 ```bash
 influxdb3-plugin --version
 ```
+
+---
+
+Back: [Getting Started](./README.md) | Next: [First Steps with the InfluxDB 3 Plugin SDK](./first-steps.md)
