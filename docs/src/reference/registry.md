@@ -70,7 +70,3 @@ Entries are never deleted from the registry. Consumers may continue to use a yan
 Every index entry carries a `hash` field of the archive bytes. Consumers should verify the hash before extracting an archive and reject mismatches. 
 
 The hash is used to verify the integrity between the index and the artifact. Do not install a plugin when an archive's bytes disagree with the index entry's `hash`.
-
-Back to [Reference](./).
-
-Next: [The Manifest Format](./manifest.md).

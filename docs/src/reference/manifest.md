@@ -249,7 +249,3 @@ Syntax errors, missing required fields, or wrong TOML container shape are report
 `manifest_schema_version` uses `<major>.<minor>` form.
 
 Within a supported major version, fields may be added and unknown fields are ignored. Breaking changes require a new major version. Consumers reject unsupported majors instead of guessing.
-
-Back to [Reference](./).
-
-Next: [The Registry Index Format](./registry-index.md).
