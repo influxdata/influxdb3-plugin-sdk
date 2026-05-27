@@ -38,6 +38,7 @@ Copy this into the release-prep PR description and check off each item as you go
 - [ ] `just verify-version X.Y.Z` reports all 5 assets present
 - [ ] GitHub Release page exists at `https://github.com/influxdata/influxdb3-plugin-sdk/releases/tag/vX.Y.Z`
 - [ ] Release is marked as prerelease (if RC) or latest (if stable)
+- [ ] **Stable releases only:** `latest` floating tag points at the new release's commit: `git fetch --tags --force origin && git rev-parse latest^{commit}` matches `git rev-parse vX.Y.Z^{commit}`
 - [ ] Download + run the binary for your platform:
   ```bash
   gh release download vX.Y.Z --repo influxdata/influxdb3-plugin-sdk --pattern '*aarch64-apple-darwin*' --dir /tmp
@@ -53,3 +54,4 @@ Copy this into the release-prep PR description and check off each item as you go
 - [ ] **Build fails:** fix in a follow-up PR, delete the tag (`git push origin --delete vX.Y.Z && git tag -d vX.Y.Z`), re-tag after merge
 - [ ] **Verify fails but builds succeeded:** check `docs/ci-cd-lessons-learned.md` for known gotchas; likely a script bug, not a binary bug
 - [ ] **Publish fails (PAT scope, gh CLI):** check the `influxdb3-plugin-sdk-github` CircleCI context has a valid `GH_TOKEN`
+- [ ] **`latest` tag stale or missing after a stable release:** the `publish-github-release` job's "Move floating 'latest' tag" step failed. See `RELEASE.md` "What to do if things go wrong" for manual recovery.
