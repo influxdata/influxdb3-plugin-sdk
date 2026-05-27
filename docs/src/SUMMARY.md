@@ -4,8 +4,11 @@
 
 - [Getting Started](./getting-started/README.md)
     - [Install the CLI](./getting-started/install.md)
-    - [New private repo](./getting-started/recipes/github--ghactions--ghreleases--private--new.md)
-    - [Migrate from `gh:`](./getting-started/recipes/github--ghactions--ghreleases--private--migrate.md)
+    - [First Steps with the InfluxDB 3 Plugin SDK](./getting-started/first-steps.md)
+- [Guides](./guides/README.md)
+    - [Plugin Repository Maintainer](./guides/maintainer.md)
+    - [Plugin Author](./guides/author.md)
+    - [Plugin Consumer](./guides/consumer.md)
 - [Reference](./reference/README.md)
     - [The Registry](./reference/registry.md)
     - [The Manifest Format](./reference/manifest.md)

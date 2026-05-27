@@ -28,8 +28,6 @@ The index file and the artifacts do not need to live at the same location, on th
 {artifacts_url}/{name}-{version}.tar.gz
 ```
 
-The CLI's `info` command displays this computed URL for a selected plugin version. Query strings and fragments on `artifacts_url` are preserved; see [The Registry Index Format](./registry-index.md#artifacts_url) for the exact rule and credential-safety warning.
-
 Valid topologies include:
 
 - Index and artifacts hosted together (for example, both under one S3 bucket prefix or one GitHub Release).
@@ -72,7 +70,3 @@ Entries are never deleted from the registry. Consumers may continue to use a yan
 Every index entry carries a `hash` field of the archive bytes. Consumers should verify the hash before extracting an archive and reject mismatches. 
 
 The hash is used to verify the integrity between the index and the artifact. Do not install a plugin when an archive's bytes disagree with the index entry's `hash`.
-
-Back to [Reference](./).
-
-Next: [The Manifest Format](./manifest.md).

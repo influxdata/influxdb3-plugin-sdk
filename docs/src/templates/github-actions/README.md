@@ -47,7 +47,7 @@ The workflow uses the token only for `gh release download` and `gh release uploa
 
 ## Registry Release
 
-Before the workflow can run, [create the registry release](../../getting-started/recipes/github--ghactions--ghreleases--private--new.md#step-3-create-the-registry-release) and [seed an empty `index.json`](../../getting-started/recipes/github--ghactions--ghreleases--private--new.md#step-4-seed-the-index).
+Before the workflow can run, [create the registry release](../../getting-started/recipes/ghreleases--ghactions.md#step-2-create-the-registry-release) and [seed an empty `index.json`](../../getting-started/recipes/ghreleases--ghactions.md#step-3-seed-the-index).
 
 ## Repository Layout
 
@@ -95,4 +95,4 @@ The workflow does not delete, rename, or move existing source files used by `gh:
 
 Back to [Templates](../).
 
-Next: [Create a new private registry](../../getting-started/recipes/github--ghactions--ghreleases--private--new.md).
+Next: [GitHub Releases + GitHub Actions](../../getting-started/recipes/ghreleases--ghactions.md).
