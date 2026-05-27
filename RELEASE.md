@@ -20,6 +20,14 @@ The SDK workspace has three crates, each with its own version:
 
 The `vX.Y.Z` git tag is **always anchored to cli's version**. cli is the user-facing binary release; the tag matches its version. The library crates may be at different versions internally — that's fine and is the deliberate consequence of the per-crate versioning model documented in `CONTRIBUTING.md`.
 
+In addition to the per-release `vX.Y.Z` tag, the repo carries a single floating lightweight tag named `latest`. The CircleCI release pipeline force-moves `latest` to the commit of each newly-published **stable** release. Prereleases (`vX.Y.Z-N.(alpha|beta|rc).N`) do **not** update `latest`. Users who want to track the most recent stable release without pinning a version can install with:
+
+```bash
+cargo install --git https://github.com/influxdata/influxdb3-plugin-sdk --tag latest influxdb3-plugin-cli --force
+```
+
+This is a convenience tag, not a release artifact — `latest` is a moving ref and is excluded from the release workflow's tag-filter regex.
+
 ## Standard release procedure
 
 1. **Prepare the version bump locally** (on a feature branch off `main`):
@@ -75,6 +83,17 @@ The `vX.Y.Z` git tag is **always anchored to cli's version**. cli is the user-fa
    just verify-version X.Y.Z
    ```
 
+   After a stable release, also confirm the floating `latest` tag points at the same commit:
+
+   ```bash
+   git fetch --tags --force origin
+   test "$(git rev-parse latest^{commit})" = "$(git rev-parse vX.Y.Z^{commit})" \
+     && echo "latest -> vX.Y.Z OK" \
+     || echo "MISMATCH: latest does not point at vX.Y.Z"
+   ```
+
+   The CircleCI `publish-github-release` job moves `latest` automatically; this check verifies the move succeeded.
+
    Then manually: download the `x86_64-unknown-linux-gnu` tarball from the release page, extract, run `./influxdb3-plugin --version`, confirm the revision SHA matches the commit `vX.Y.Z` points at.
 
 ## Pre-release (RC) procedure
@@ -89,6 +108,15 @@ The procedure is identical to the standard release with one difference: in step 
 - **`just tag-version` refuses with "HEAD != origin/main"**: you forgot to pull main after the squash merge. Run `git checkout main && git pull --ff-only origin main` and retry.
 - **`just tag-version` refuses with "Cargo.toml version mismatch"**: the merged commit doesn't have the version bump you expected. Investigate before re-tagging — likely the version-bump PR was merged with stale Cargo.toml content.
 - **Anything else unexpected**: stop, capture the output, surface to the team. Don't improvise tag manipulation.
+- **`latest` tag missing or pointing at the wrong commit**: the move step in `publish-github-release` failed (most commonly, the `influxdb3-plugin-sdk-github` context lacks a valid `GH_TOKEN`, or the token lacks `contents:write` on the repo). Inspect the failed step's logs. To recover manually after fixing the underlying issue:
+
+  ```bash
+  git fetch --tags --force origin
+  git tag -f latest vX.Y.Z^{commit}
+  git push --force origin refs/tags/latest
+  ```
+
+  Do not improvise tag manipulation on `vX.Y.Z` tags — `latest` is the only tag operators may move manually.
 
 ## Post-release follow-ups
 
