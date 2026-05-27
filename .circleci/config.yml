@@ -383,7 +383,10 @@ jobs:
           command: |
             source "$BASH_ENV"
             IMAGE="us-east1-docker.pkg.dev/influxdata-team-edge/ci-support/ci-cross-influxdb3@sha256:98b05538182a2e4eac5ce96150a1f5c552de48a7d3ea8d312d38e45f0dd42611"
+            HOST_UID="$(id -u)"
+            HOST_GID="$(id -g)"
             docker run --rm \
+              --user "$HOST_UID:$HOST_GID" \
               -v "$(pwd)":/workspace \
               -w /workspace \
               -e "TARGET=<< parameters.target >>" \
@@ -391,18 +394,29 @@ jobs:
               -e "INFLUXDB3_PLUGIN_SDK_KNOWN_LATEST_DB=$INFLUXDB3_PLUGIN_SDK_KNOWN_LATEST_DB" \
               -e "RUSTC_WRAPPER=" \
               "$IMAGE" \
-              bash -c "rustup target add << parameters.target >> && target-env cargo build --release --locked --target << parameters.target >> -p influxdb3-plugin-cli"
+              bash -lc '
+                set -euo pipefail
+                rustup target add "$TARGET"
+                target-env cargo build --release --locked --target "$TARGET" -p influxdb3-plugin-cli
+              '
       - run:
           name: Ad-hoc codesign Darwin binary (prevents macOS "damaged" errors)
           command: |
             case "<< parameters.target >>" in
               *apple-darwin*)
                 IMAGE="us-east1-docker.pkg.dev/influxdata-team-edge/ci-support/ci-cross-influxdb3@sha256:98b05538182a2e4eac5ce96150a1f5c552de48a7d3ea8d312d38e45f0dd42611"
+                HOST_UID="$(id -u)"
+                HOST_GID="$(id -g)"
                 docker run --rm \
+                  --user "$HOST_UID:$HOST_GID" \
                   -v "$(pwd)":/workspace \
                   -w /workspace \
+                  -e "TARGET=<< parameters.target >>" \
                   "$IMAGE" \
-                  rcodesign sign "target/<< parameters.target >>/release/influxdb3-plugin"
+                  bash -lc '
+                    set -euo pipefail
+                    rcodesign sign "target/$TARGET/release/influxdb3-plugin"
+                  '
                 echo "Signed << parameters.target >> binary with rcodesign (ad-hoc)"
                 ;;
               *) echo "Skipping codesign (not a Darwin target)" ;;
