@@ -395,7 +395,7 @@ jobs:
               -e "HOST_UID=$HOST_UID" \
               -e "HOST_GID=$HOST_GID" \
               "$IMAGE" \
-              bash -lc '
+              bash -c '
                 set -euo pipefail
                 trap "chown -R \"$HOST_UID:$HOST_GID\" /workspace/target 2>/dev/null || true" EXIT
                 rustup target add "$TARGET"
@@ -416,7 +416,7 @@ jobs:
                   -e "HOST_UID=$HOST_UID" \
                   -e "HOST_GID=$HOST_GID" \
                   "$IMAGE" \
-                  bash -lc '
+                  bash -c '
                     set -euo pipefail
                     trap "chown -R \"$HOST_UID:$HOST_GID\" /workspace/target 2>/dev/null || true" EXIT
                     rcodesign sign "target/$TARGET/release/influxdb3-plugin"
