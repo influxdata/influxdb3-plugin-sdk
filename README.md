@@ -1,82 +1,20 @@
 # influxdb3-plugin-sdk
 
-Tools for publishing versioned InfluxDB 3 Processing Engine plugins.
+The InfluxDB 3 Plugin SDK is a CLI tool and set of libraries to help author and manage plugins. **Plugin repository maintainers** use the SDK to publish versioned plugin registries from CI, and **plugin authors** use the SDK to create versioned plugins.
 
-This repository contains the public SDK for maintainers of InfluxDB 3 plugin repositories. It provides the `influxdb3-plugin` CLI plus Rust crates for validating plugin manifests, packaging plugin artifacts, and maintaining registry indexes.
+# [Documentation Site](https://influxdata.github.io/influxdb3-plugin-sdk/)
 
-## Why Use It
+# [Why Use The Plugin SDK?](docs/src/introduction.md)
 
-- Publish versioned plugin artifacts instead of relying only on `gh:` source-file fetches.
-- Validate `manifest.toml` and `index.json` before a broken plugin reaches users.
-- Automate private plugin registry publishing from CI while keeping existing `gh:` consumers working during migration.
+# [Installation](docs/src/getting-started/install.md)
 
-## Quickstart
-
-Install the `influxdb3-plugin` CLI with the current canonical path for your environment:
-
-- [Install the CLI](docs/src/getting-started/install.md)
-
-Then check the command is available:
-
-```bash
-influxdb3-plugin --help
-```
-
-Start with the documentation when setting up a plugin repository:
-
-- [Documentation source](docs/src/introduction.md)
-- [Getting started](docs/src/getting-started/)
-- [GitHub Releases + GitHub Actions recipe](docs/src/getting-started/recipes/ghreleases--ghactions.md) — covers both new repositories and migration from `gh:`
-- [How publish pipelines vary](docs/src/getting-started/concepts/publish-pipeline.md)
-- [The Manifest Format](docs/src/reference/manifest.md)
-- [The Registry Index Format](docs/src/reference/registry-index.md)
-- [Templates overview](docs/src/templates/)
-
-The rendered documentation site will be published at <https://influxdata.github.io/influxdb3-plugin-sdk/>.
-
-## Workspace Layout
-
-| Path | Purpose |
-|---|---|
-| `influxdb3-plugin-schemas/` | Public schema types and validation for manifests and registry indexes. |
-| `influxdb3-plugin-sdk/` | Library code for scaffolding, validating, packaging, hashing, and archive generation. |
-| `influxdb3-plugin-cli/` | The `influxdb3-plugin` command-line interface. |
-| `docs/` | mdBook source and internal design/reference material. |
-
-## Install
-
-See [Install the CLI](docs/src/getting-started/install.md) for the canonical install commands and current channel guidance.
-
-The CLI is the supported public interface for plugin authors.
-
-## Quick start
-
-Create and validate a new plugin:
-
-```shell
-influxdb3-plugin new process_writes ./my-plugin
-influxdb3-plugin validate ./my-plugin
-```
-
-Package it against a local plugin index:
-
-```shell
-influxdb3-plugin new index ./my-registry --artifacts-url https://plugins.example.com/artifacts
-influxdb3-plugin package ./my-plugin --index ./my-registry/index.json --out ./build
-```
+# [Getting Started](docs/src/getting-started/first-steps.md)
 
 ## Development
 
-Requires the Rust version pinned in `rust-toolchain.toml`.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidance.
 
-```bash
-cargo build --workspace --locked
-cargo nextest run --workspace --no-fail-fast --locked
-cargo clippy --workspace --all-targets --locked -- -D warnings
-cargo fmt --all -- --check
-```
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidance, versioning rules, and release discipline. Use [.github/PULL_REQUEST_TEMPLATE.md](.github/PULL_REQUEST_TEMPLATE.md) as the source of truth for PR checks.
+Instructions for AI agents are provided [here](./AGENTS.md).
 
 ## Security
 
@@ -84,9 +22,7 @@ Report security issues privately. See [SECURITY.md](SECURITY.md).
 
 ## Maintainers
 
-This project is maintained by the InfluxData Product team.
-
-Primary point of contact: Ryan Cater <rcater@influxdata.com>
+See [CODEOWNERS](.github/CODEOWNERS) for the current list of maintainers.
 
 For usage questions and community discussion, use the [InfluxData Community Forum](https://community.influxdata.com/) or [InfluxData Community Slack](https://www.influxdata.com/slack/). Use GitHub issues for reproducible bugs and feature requests.
 
