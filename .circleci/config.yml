@@ -76,18 +76,29 @@ commands:
             set -euo pipefail
             pipeline_root="/tmp/workspace/${CIRCLE_PIPELINE_ID:?CIRCLE_PIPELINE_ID is required for cleanup}"
             workdir="$(pwd)"
+            cleanup_root="${CI_CLEANUP_ROOT:-$workdir}"
             if [ -n "${SCCACHE_SERVER_UDS:-}" ] && command -v sccache >/dev/null 2>&1; then
               sccache --stop-server || true
             fi
-            case "$workdir" in
+            if [ ! -d "$cleanup_root" ]; then
+              echo "Skipping cleanup for missing directory: $cleanup_root"
+              exit 0
+            fi
+            pipeline_root="$(cd "$pipeline_root" && pwd -P)"
+            cleanup_root="$(cd "$cleanup_root" && pwd -P)"
+            if [ "$cleanup_root" = "$pipeline_root" ]; then
+              echo "Skipping cleanup for pipeline root: $cleanup_root"
+              exit 0
+            fi
+            case "$cleanup_root" in
               "$pipeline_root"/*)
-                parent="$(dirname "$workdir")"
+                parent="$(dirname "$cleanup_root")"
                 cd /
-                rm -rf "$workdir"
+                rm -rf "$cleanup_root"
                 rmdir "$parent" 2>/dev/null || true
                 ;;
               *)
-                echo "Skipping cleanup for unexpected working directory: $workdir"
+                echo "Skipping cleanup for unexpected cleanup root: $cleanup_root"
                 ;;
             esac
 
@@ -210,7 +221,7 @@ jobs:
 
   cargo-semver-checks:
     executor: self-hosted-amd
-    working_directory: /tmp/workspace/<< pipeline.id >>/cargo-semver-checks
+    working_directory: /tmp/workspace/<< pipeline.id >>/cargo-semver-checks/repo
     steps:
       - checkout
       - run:
@@ -225,7 +236,9 @@ jobs:
               exit 1
             fi
             echo "Baseline tag: $BASELINE"
-            BASELINE_DIR="$(pwd)/semver-baseline"
+            JOB_ROOT="$(dirname "$(pwd)")"
+            BASELINE_DIR="$JOB_ROOT/semver-baseline"
+            echo "export CI_CLEANUP_ROOT=$JOB_ROOT" >> "$BASH_ENV"
             rm -rf "$BASELINE_DIR"
             git clone --depth=1 --branch "$BASELINE" \
               "$(git remote get-url origin)" "$BASELINE_DIR"
