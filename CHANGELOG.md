@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+- **Release pipeline**: the CircleCI release workflow now force-moves a floating lightweight `latest` git tag to the commit of each newly-published stable release (prereleases are skipped). Users can now install the CLI without pinning a version: `cargo install --git https://github.com/influxdata/influxdb3-plugin-sdk --tag latest influxdb3-plugin-cli --force`. Pinning to `vX.Y.Z` is still recommended for reproducible installs.
+
 ## [0.4.0] - 2026-05-26
 
 ### Added
