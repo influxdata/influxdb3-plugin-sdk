@@ -238,8 +238,11 @@ jobs:
             echo "Baseline tag: $BASELINE"
             JOB_ROOT="$(dirname "$(pwd)")"
             BASELINE_DIR="$JOB_ROOT/semver-baseline"
+            SEMVER_TARGET_DIR="$JOB_ROOT/target"
             echo "export CI_CLEANUP_ROOT=$JOB_ROOT" >> "$BASH_ENV"
+            echo "export CARGO_TARGET_DIR=$SEMVER_TARGET_DIR" >> "$BASH_ENV"
             rm -rf "$BASELINE_DIR"
+            mkdir -p "$SEMVER_TARGET_DIR"
             git clone --depth=1 --branch "$BASELINE" \
               "$(git remote get-url origin)" "$BASELINE_DIR"
             echo "export SEMVER_BASELINE_DIR=$BASELINE_DIR" >> "$BASH_ENV"
@@ -254,9 +257,11 @@ jobs:
             cargo semver-checks --version
       - run:
           name: cargo semver-checks (cli + schemas only; sdk is internal)
+          no_output_timeout: 20m
           command: |
             source "$BASH_ENV"
             echo "Comparing against baseline at $SEMVER_BASELINE_DIR"
+            echo "Using shared job-local cargo target dir at $CARGO_TARGET_DIR"
             cargo semver-checks check-release \
               --package influxdb3-plugin-cli \
               --package influxdb3-plugin-schemas \
