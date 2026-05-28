@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-05-28
+
+### Changed
+- **CI**: the sccache compilation cache is now persisted on a stable path across runs (bounded by `SCCACHE_CACHE_SIZE` LRU eviction) instead of being discarded with each job's workspace, warming `rustc` compiles and reducing the cold-build memory spike behind intermittent self-hosted-runner timeouts. No functional changes to the `influxdb3-plugin` CLI or libraries.
+
 ## [0.4.1] - 2026-05-28
 
 ### Changed
