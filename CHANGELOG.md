@@ -6,7 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-05-28
+
 ### Changed
+- **Release pipeline**: the floating `latest` ref is now published as a full GitHub Release carrying the same assets as the stable `vX.Y.Z` release it tracks, instead of a bare git tag. Users can download prebuilt binaries with `gh release download latest --repo influxdata/influxdb3-plugin-sdk` in addition to building from source with `cargo install --tag latest`. The `latest` release is marked `--latest=false` so the `vX.Y.Z` release keeps GitHub's "Latest" badge.
 - `influxdb3-plugin-schemas`: expanded `Index` and `ArtifactHash` test coverage to pin documented invariants (hex-only hash zone, malformed-JSON short-circuit at root, per-entry `InvalidVersion` rejection, `git+ssh://` artifact URL rejection). No behavior change.
 
 ## [0.3.0] - 2026-05-04

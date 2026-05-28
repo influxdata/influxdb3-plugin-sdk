@@ -597,16 +597,19 @@ jobs:
               $PRERELEASE_FLAG \
               artifacts/*
       - run:
-          name: Move floating 'latest' tag (stable releases only)
-          # Force-moves the lightweight 'latest' ref to this release's commit
-          # so users can install via:
+          name: Update floating 'latest' release (stable releases only)
+          # Recreates the floating 'latest' release at this release's commit so
+          # both install paths track the newest stable release:
           #   cargo install --git https://github.com/influxdata/influxdb3-plugin-sdk \
-          #     --tag latest influxdb3-plugin-cli --force
+          #     --tag latest influxdb3-plugin-cli --force   # builds from source
+          #   gh release download latest --repo influxdata/influxdb3-plugin-sdk  # prebuilt binaries
+          # 'latest' carries the same assets as the vX.Y.Z release. It is marked
+          # --latest=false so the semver release keeps GitHub's "Latest" badge.
           # Skipped on prereleases (tag contains '-') so 'latest' always points
-          # at a stable release. Pushed via HTTPS using the existing GH_TOKEN
-          # PAT from the influxdb3-plugin-sdk-github context, since this docker
-          # executor has no SSH agent. The release workflow's tag filter does
-          # not match 'latest', so this push does not re-trigger the pipeline.
+          # at a stable release. Auth via the existing GH_TOKEN PAT from the
+          # influxdb3-plugin-sdk-github context. The release workflow's tag
+          # filter does not match 'latest', so creating it does not re-trigger
+          # the pipeline.
           command: |
             set -euo pipefail
             if [[ "$CIRCLE_TAG" == *-* ]]; then
@@ -614,17 +617,30 @@ jobs:
               exit 0
             fi
             if [ -z "${GH_TOKEN:-}" ]; then
-              echo "ERROR: GH_TOKEN is not set; cannot push 'latest' tag." >&2
+              echo "ERROR: GH_TOKEN is not set; cannot update the 'latest' release." >&2
               echo "       Check the influxdb3-plugin-sdk-github CircleCI context." >&2
               exit 1
             fi
-            git config user.email "ci@influxdata.com"
-            git config user.name "CircleCI"
-            git tag -f latest "$CIRCLE_SHA1"
+            # Delete any prior 'latest' release (--cleanup-tag also drops its git
+            # tag when the release exists). Tolerate absence on first run.
+            gh release delete latest \
+              --repo influxdata/influxdb3-plugin-sdk \
+              --yes --cleanup-tag || true
+            # Drop any orphan 'latest' git tag left from before 'latest' carried
+            # a release, so the create below tags THIS commit, not a stale one.
             git push --force \
               "https://x-access-token:${GH_TOKEN}@github.com/influxdata/influxdb3-plugin-sdk.git" \
-              "refs/tags/latest"
-            echo "Moved 'latest' tag to $CIRCLE_TAG ($CIRCLE_SHA1)."
+              ":refs/tags/latest" || true
+            # Recreate 'latest' at this commit with the same assets. gh creates
+            # the lightweight 'latest' tag at --target as part of this.
+            gh release create latest \
+              --repo influxdata/influxdb3-plugin-sdk \
+              --target "$CIRCLE_SHA1" \
+              --title "latest" \
+              --latest=false \
+              --notes "Floating pointer to the newest stable release ($CIRCLE_TAG). Assets mirror that release. Pin to vX.Y.Z for reproducible installs." \
+              artifacts/*
+            echo "Updated 'latest' release to $CIRCLE_TAG ($CIRCLE_SHA1)."
 
 workflows:
   ci:
