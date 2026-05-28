@@ -20,13 +20,21 @@ The SDK workspace has three crates, each with its own version:
 
 The `vX.Y.Z` git tag is **always anchored to cli's version**. cli is the user-facing binary release; the tag matches its version. The library crates may be at different versions internally — that's fine and is the deliberate consequence of the per-crate versioning model documented in `CONTRIBUTING.md`.
 
-In addition to the per-release `vX.Y.Z` tag, the repo carries a single floating lightweight tag named `latest`. The CircleCI release pipeline force-moves `latest` to the commit of each newly-published **stable** release. Prereleases (`vX.Y.Z-N.(alpha|beta|rc).N`) do **not** update `latest`. Users who want to track the most recent stable release without pinning a version can install with:
+In addition to the per-release `vX.Y.Z` tag, the repo carries a single floating `latest` release. The CircleCI release pipeline recreates `latest` at the commit of each newly-published **stable** release, attaching the same assets as that `vX.Y.Z` release. Prereleases (`vX.Y.Z-N.(alpha|beta|rc).N`) do **not** update `latest`. The `latest` release is marked `--latest=false` so the `vX.Y.Z` release keeps GitHub's "Latest" badge.
+
+Users who want to track the most recent stable release without pinning a version can build from source:
 
 ```bash
 cargo install --git https://github.com/influxdata/influxdb3-plugin-sdk --tag latest influxdb3-plugin-cli --force
 ```
 
-This is a convenience tag, not a release artifact — `latest` is a moving ref and is excluded from the release workflow's tag-filter regex.
+…or download the prebuilt binaries:
+
+```bash
+gh release download latest --repo influxdata/influxdb3-plugin-sdk
+```
+
+`latest` is a moving ref and is excluded from the release workflow's tag-filter regex, so recreating it does not re-trigger the pipeline.
 
 ## Standard release procedure
 
@@ -83,16 +91,18 @@ This is a convenience tag, not a release artifact — `latest` is a moving ref a
    just verify-version X.Y.Z
    ```
 
-   After a stable release, also confirm the floating `latest` tag points at the same commit:
+   After a stable release, also confirm the floating `latest` release was recreated at the same commit and carries the assets:
 
    ```bash
    git fetch --tags --force origin
    test "$(git rev-parse latest^{commit})" = "$(git rev-parse vX.Y.Z^{commit})" \
      && echo "latest -> vX.Y.Z OK" \
      || echo "MISMATCH: latest does not point at vX.Y.Z"
+   gh release view latest --repo influxdata/influxdb3-plugin-sdk --json assets \
+     --jq '.assets | length'   # expect 5
    ```
 
-   The CircleCI `publish-github-release` job moves `latest` automatically; this check verifies the move succeeded.
+   The CircleCI `publish-github-release` job recreates `latest` automatically; this check verifies it succeeded.
 
    Then manually: download the `x86_64-unknown-linux-gnu` tarball from the release page, extract, run `./influxdb3-plugin --version`, confirm the revision SHA matches the commit `vX.Y.Z` points at.
 
@@ -108,15 +118,20 @@ The procedure is identical to the standard release with one difference: in step 
 - **`just tag-version` refuses with "HEAD != origin/main"**: you forgot to pull main after the squash merge. Run `git checkout main && git pull --ff-only origin main` and retry.
 - **`just tag-version` refuses with "Cargo.toml version mismatch"**: the merged commit doesn't have the version bump you expected. Investigate before re-tagging — likely the version-bump PR was merged with stale Cargo.toml content.
 - **Anything else unexpected**: stop, capture the output, surface to the team. Don't improvise tag manipulation.
-- **`latest` tag missing or pointing at the wrong commit**: the move step in `publish-github-release` failed (most commonly, the `influxdb3-plugin-sdk-github` context lacks a valid `GH_TOKEN`, or the token lacks `contents:write` on the repo). Inspect the failed step's logs. To recover manually after fixing the underlying issue:
+- **`latest` release missing, stale, or has no assets**: the update step in `publish-github-release` failed (most commonly, the `influxdb3-plugin-sdk-github` context lacks a valid `GH_TOKEN`, or the token lacks `contents:write` on the repo). Inspect the failed step's logs. To recover manually after fixing the underlying issue, download the `vX.Y.Z` assets and recreate `latest` from them:
 
   ```bash
-  git fetch --tags --force origin
-  git tag -f latest vX.Y.Z^{commit}
-  git push --force origin refs/tags/latest
+  rm -rf /tmp/latest-assets && mkdir -p /tmp/latest-assets
+  gh release download vX.Y.Z --repo influxdata/influxdb3-plugin-sdk --dir /tmp/latest-assets
+  gh release delete latest --repo influxdata/influxdb3-plugin-sdk --yes --cleanup-tag || true
+  git push --force origin :refs/tags/latest || true
+  gh release create latest --repo influxdata/influxdb3-plugin-sdk \
+    --target "$(git rev-parse vX.Y.Z^{commit})" --title latest --latest=false \
+    --notes "Floating pointer to the newest stable release (vX.Y.Z)." \
+    /tmp/latest-assets/*
   ```
 
-  Do not improvise tag manipulation on `vX.Y.Z` tags — `latest` is the only tag operators may move manually.
+  Do not improvise tag manipulation on `vX.Y.Z` tags — `latest` is the only release operators may recreate manually.
 
 ## Post-release follow-ups
 
