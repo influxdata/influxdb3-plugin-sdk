@@ -9,12 +9,19 @@ This crate is consumed by:
 
 ## Overview
 
-The crate exposes three core types plus their supporting newtypes:
+The crate exposes the core types plus their supporting newtypes:
 
 - `Manifest` — parsed `manifest.toml` with `PluginMetadata` and `Dependencies`
 - `Index` / `IndexEntry` — parsed `index.json` with canonical serialization
   and required per-version `PublishedAt` publication timestamps
 - `PluginId` — the `(source, name, version)` identity tuple
+- `validate` — the **pure** plugin-directory validation contract: the
+  diagnostic type (`ValidationError`), the entry-point classification rule
+  (`classify_entry_point`), the trigger-binding rule (`check_triggers`), the
+  extraction rules (`TopLevelDef`), the success payload (`ValidatedPlugin` /
+  `EntryPoint`), and the executable `TOP_LEVEL_DEF_CORPUS` that any extractor
+  must satisfy. This module has no filesystem or `tree-sitter` dependency; the
+  SDK supplies the mechanism that feeds these checks.
 
 `Manifest::parse_toml` and `Index::parse_json` perform two-phase parsing:
 syntax/required-field decoding first, then field-level validation with

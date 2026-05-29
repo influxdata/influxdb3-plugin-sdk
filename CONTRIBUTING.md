@@ -40,19 +40,21 @@ For significant changes, open an issue or discussion before implementing. This i
 
 ### Schema documentation sync
 
-The `manifest.toml` and `index.json` formats are public contracts. Any change that affects either format must keep the user-facing reference docs and internal spec in sync.
+The `manifest.toml`, `index.json`, and plugin-directory-layout formats are public contracts. Any change that affects one of these formats must keep the user-facing reference docs and internal spec in sync.
 
 Update the schema documentation when a PR changes any of the following:
 
 - manifest or index schema versions
 - manifest or index fields, defaults, optionality, or serialized shape
-- validation rules in `influxdb3-plugin-schemas/src/manifest.rs`, `index.rs`, `identity.rs`, or `raw.rs`
+- plugin-directory layout rules (entry-point detection, trigger binding, top-level-def extraction)
+- validation rules in `influxdb3-plugin-schemas/src/manifest.rs`, `index.rs`, `identity.rs`, `raw.rs`, or `validate.rs`
 - schema fixtures under `influxdb3-plugin-schemas/tests/fixtures/`
 - CLI or SDK behavior that changes generated manifests, generated indexes, artifact hashes, yanking, or canonical serialization
 
 When applicable, update:
 
 - `docs/src/reference/manifest.md`
+- `docs/src/reference/plugin-format.md`
 - `docs/src/reference/registry-index.md`
 - `docs/internal/spec.md`
 

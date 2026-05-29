@@ -12,6 +12,7 @@
 - [Reference](./reference/README.md)
     - [The Registry](./reference/registry.md)
     - [The Manifest Format](./reference/manifest.md)
+    - [The Plugin Directory Format](./reference/plugin-format.md)
     - [The Registry Index Format](./reference/registry-index.md)
 - [Templates](./templates/README.md)
     - [GitHub Actions publish workflow](./templates/github-actions/README.md)
