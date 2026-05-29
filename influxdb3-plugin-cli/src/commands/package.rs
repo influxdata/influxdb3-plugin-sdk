@@ -16,7 +16,8 @@
 
 use clap::Args as ClapArgs;
 use influxdb3_plugin_schemas::Index;
-use influxdb3_plugin_sdk::{SdkError, ValidationError, package};
+use influxdb3_plugin_schemas::ValidationError;
+use influxdb3_plugin_sdk::{SdkError, package};
 use std::path::PathBuf;
 
 use crate::cli_error::CliError;

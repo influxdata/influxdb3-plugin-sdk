@@ -11,7 +11,7 @@
 
 use clap::Args as ClapArgs;
 use influxdb3_plugin_schemas::Index;
-use influxdb3_plugin_sdk::{SdkError, validate};
+use influxdb3_plugin_sdk::{SdkError, ValidationFailure, validate};
 use std::io::Write;
 use std::path::PathBuf;
 
@@ -107,7 +107,7 @@ fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
             )?;
             Ok(())
         }
-        (_, Err(SdkError::ValidationErrors(errs))) => {
+        (_, Err(ValidationFailure::Invalid(errs))) => {
             let je = JsonError {
                 code: "validate::failed".into(),
                 message: format!("{} validation diagnostic(s)", errs.len()),
@@ -118,17 +118,35 @@ fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
             };
             Err(CliError::runtime(je))
         }
+        (_, Err(ValidationFailure::Io { source, path })) => {
+            // Map through SdkError::Io so the wire code/shape stays identical
+            // to the pre-refactor behavior.
+            let je = json_error_from_sdk(&SdkError::Io { source, path }, ErrorContext::Validate);
+            Err(CliError::runtime(je))
+        }
+        // `ValidationFailure` is `#[non_exhaustive]`; render any future
+        // variant generically rather than panicking.
         (_, Err(other)) => {
-            let je = json_error_from_sdk(&other, ErrorContext::Validate);
+            let je = JsonError {
+                code: "validate::failed".into(),
+                message: other.to_string(),
+                field: None,
+                details: None,
+                diagnostics: vec![],
+                cause: vec![],
+            };
             Err(CliError::runtime(je))
         }
     }
 }
 
-fn run_validation(plugin_dir: &std::path::Path, index: Option<&Index>) -> Result<(), SdkError> {
+fn run_validation(
+    plugin_dir: &std::path::Path,
+    index: Option<&Index>,
+) -> Result<(), ValidationFailure> {
     let result = match index {
         Some(idx) => validate::plugin_dir_with_index(plugin_dir, idx),
         None => validate::plugin_dir(plugin_dir),
     };
-    result.map(|_manifest| ())
+    result.map(|_validated| ())
 }

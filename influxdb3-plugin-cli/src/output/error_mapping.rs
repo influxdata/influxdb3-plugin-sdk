@@ -3,8 +3,8 @@
 //! don't break the wire.
 
 use crate::output::json::JsonError;
-use influxdb3_plugin_schemas::SchemaError;
-use influxdb3_plugin_sdk::{SdkError, ValidationError};
+use influxdb3_plugin_schemas::{SchemaError, ValidationError};
+use influxdb3_plugin_sdk::SdkError;
 
 /// Identifies the calling command so the error mapper can pick the
 /// correct namespace for variants whose code dispatches by call site
@@ -626,8 +626,9 @@ pub(crate) fn json_error_from_sdk(err: &SdkError, ctx: ErrorContext) -> JsonErro
 mod tests {
     use super::*;
 
-    use influxdb3_plugin_schemas::{FieldPath, ReportedError, SchemaError, TriggerType};
-    use influxdb3_plugin_sdk::ValidationError;
+    use influxdb3_plugin_schemas::{
+        FieldPath, ReportedError, SchemaError, TriggerType, ValidationError,
+    };
 
     /// Helper: construct one of each `ValidationError` variant (mirrors the
     /// SDK's `every_validation_variant` fixture).

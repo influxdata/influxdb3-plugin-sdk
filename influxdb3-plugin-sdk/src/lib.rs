@@ -29,4 +29,4 @@ pub mod package;
 pub mod scaffold;
 pub mod validate;
 
-pub use error::{SdkError, ValidationError, ValidationReport};
+pub use error::{SdkError, ValidationFailure, ValidationReport};

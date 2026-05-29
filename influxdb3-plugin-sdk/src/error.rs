@@ -1,12 +1,17 @@
 //! Error types for the SDK.
 //!
-//! Two-layer design:
+//! Error layers:
 //! - [`SdkError`] — crate-level error returned by every public function.
-//! - [`ValidationError`] — individual validation failures, collected into
-//!   [`ValidationReport`] and surfaced together via
-//!   [`SdkError::ValidationErrors`] so callers get every error in one pass.
+//! - [`ValidationFailure`] — the focused, validation-only error returned by
+//!   the `validate::plugin_dir` wrapper. Either [`ValidationFailure::Invalid`]
+//!   (a batch of [`ValidationError`]s) or [`ValidationFailure::Io`].
+//! - [`ValidationReport`] — accumulator that collects [`ValidationError`]s
+//!   during a pass and converts to a [`ValidationFailure`].
+//!
+//! The diagnostic type [`ValidationError`] lives in `influxdb3-plugin-schemas`
+//! (the validation contract); it is re-imported here.
 
-use influxdb3_plugin_schemas::{ReportedError, SchemaError, SchemaErrors, TriggerType};
+use influxdb3_plugin_schemas::{SchemaError, SchemaErrors, ValidationError};
 use std::path::PathBuf;
 
 /// Crate-level error type.
@@ -146,78 +151,53 @@ impl From<influxdb3_plugin_schemas::IndexInsertError> for SdkError {
     }
 }
 
-/// An individual validation failure.
+/// The error returned by the `validate::plugin_dir` wrapper.
 ///
-/// Collected into [`ValidationReport`] and surfaced together via
-/// [`SdkError::ValidationErrors`].
+/// A focused, validation-only error type that separates validation failures
+/// from the kitchen-sink [`SdkError`]. External consumers (including the
+/// future runtime) interact with the pure `schemas::validate` surface and
+/// define their own I/O error types; they do not depend on this type.
+///
+/// `package.rs` stays ergonomic via [`From<ValidationFailure> for SdkError`],
+/// so `?` propagation through `SdkError`-returning code paths works unchanged.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
-pub enum ValidationError {
-    /// Wraps a structural [`ReportedError`] from the schemas crate's
-    /// two-phase parse (`Manifest::parse_toml` / `Index::parse_json`),
-    /// preserving the field path and inner `SchemaError` losslessly so the
-    /// CLI can render structural and cross-file diagnostics in one array.
-    #[error(transparent)]
-    SchemaReported(ReportedError),
+pub enum ValidationFailure {
+    /// One or more validation rules failed; all diagnostics for a single pass.
+    #[error("{} validation error(s) found", .0.len())]
+    Invalid(Vec<ValidationError>),
 
-    #[error("required file {file:?} is missing from the plugin directory")]
-    MissingRequiredFile { file: String },
-
-    #[error("{entry_point} does not parse as valid Python: {message}")]
-    PythonParse {
-        entry_point: String,
-        message: String,
+    /// Non-`NotFound` I/O error reading the plugin directory or a file.
+    #[error("I/O error{}", path_suffix(.path.as_ref()))]
+    Io {
+        #[source]
+        source: std::io::Error,
+        path: Option<PathBuf>,
     },
-
-    #[error(
-        "trigger {trigger:?} is declared in manifest.toml but has no matching \
-         top-level `def {}(...)` in {entry_point}",
-        .trigger.as_str()
-    )]
-    TriggerNotImplemented {
-        trigger: TriggerType,
-        entry_point: String,
-    },
-
-    #[error(
-        "trigger {trigger:?} is implemented as `async def` in {entry_point}; \
-         the runtime invokes trigger functions synchronously"
-    )]
-    AsyncTriggerFn {
-        trigger: TriggerType,
-        entry_point: String,
-    },
-
-    #[error("no Python entry point found in the plugin directory (no .py files at the top level)")]
-    NoEntryPoint,
-
-    #[error(
-        "multiple .py files found at the top level without __init__.py: {files:?}; add __init__.py for a multi-file plugin, or keep only one .py file"
-    )]
-    AmbiguousEntryPoint { files: Vec<String> },
-
-    /// Plugin `(name, version)` already exists in the target index. Surfaces
-    /// from [`crate::validate::plugin_dir_with_index`] so index-aware
-    /// validation can collect uniqueness conflicts alongside other validation
-    /// errors. The mutation-boundary check in `mutate_index::add_entry`
-    /// returns the distinct [`SdkError::AlreadyPublished`] instead.
-    #[error("plugin ({name:?}, {version:?}) already exists in the target index")]
-    NameVersionConflict { name: String, version: String },
 }
 
-impl ValidationError {
-    /// Stable tag per variant (same drift-guard role as `SdkError::variant_name`).
-    pub fn variant_name(&self) -> &'static str {
-        match self {
-            Self::SchemaReported(_) => "SchemaReported",
-            Self::MissingRequiredFile { .. } => "MissingRequiredFile",
-            Self::PythonParse { .. } => "PythonParse",
-            Self::TriggerNotImplemented { .. } => "TriggerNotImplemented",
-            Self::AsyncTriggerFn { .. } => "AsyncTriggerFn",
-            Self::NoEntryPoint => "NoEntryPoint",
-            Self::AmbiguousEntryPoint { .. } => "AmbiguousEntryPoint",
-            Self::NameVersionConflict { .. } => "NameVersionConflict",
+/// `Invalid → SdkError::ValidationErrors`, `Io → SdkError::Io`. Keeps
+/// `SdkError`-returning callers (e.g. `package.rs`) ergonomic under `?`.
+impl From<ValidationFailure> for SdkError {
+    fn from(failure: ValidationFailure) -> Self {
+        match failure {
+            ValidationFailure::Invalid(errs) => SdkError::ValidationErrors(errs),
+            ValidationFailure::Io { source, path } => SdkError::Io { source, path },
         }
+    }
+}
+
+/// Adapts schemas-layer `SchemaErrors` into `ValidationFailure::Invalid`.
+/// Each `ReportedError` becomes one [`ValidationError::SchemaReported`].
+/// Additive companion to [`From<SchemaErrors> for SdkError`]; covers the
+/// `plugin_dir` wrapper boundary.
+impl From<SchemaErrors> for ValidationFailure {
+    fn from(errors: SchemaErrors) -> Self {
+        let diagnostics = errors
+            .into_iter()
+            .map(ValidationError::SchemaReported)
+            .collect();
+        ValidationFailure::Invalid(diagnostics)
     }
 }
 
@@ -225,7 +205,7 @@ impl ValidationError {
 ///
 /// Callers [`push`](Self::push) failures as they're encountered, then
 /// [`into_result`](Self::into_result) to get `Ok(())` (empty) or
-/// `Err(SdkError::ValidationErrors(errors))`. The type forces collect-all
+/// `Err(ValidationFailure::Invalid(errors))`. The type forces collect-all
 /// semantics: the builder is the only way to return validation results.
 #[derive(Debug, Default)]
 pub struct ValidationReport {
@@ -241,6 +221,13 @@ impl ValidationReport {
         self.errors.push(err);
     }
 
+    pub fn extend<I>(&mut self, errors: I)
+    where
+        I: IntoIterator<Item = ValidationError>,
+    {
+        self.errors.extend(errors);
+    }
+
     pub fn is_empty(&self) -> bool {
         self.errors.is_empty()
     }
@@ -249,12 +236,12 @@ impl ValidationReport {
         self.errors.len()
     }
 
-    /// `Ok(())` if empty, else `Err(SdkError::ValidationErrors(errors))`.
-    pub fn into_result(self) -> Result<(), SdkError> {
+    /// `Ok(())` if empty, else `Err(ValidationFailure::Invalid(errors))`.
+    pub fn into_result(self) -> Result<(), ValidationFailure> {
         if self.errors.is_empty() {
             Ok(())
         } else {
-            Err(SdkError::ValidationErrors(self.errors))
+            Err(ValidationFailure::Invalid(self.errors))
         }
     }
 }
@@ -304,39 +291,6 @@ mod tests {
         ]
     }
 
-    fn every_validation_variant() -> Vec<ValidationError> {
-        use influxdb3_plugin_schemas::FieldPath;
-        vec![
-            ValidationError::SchemaReported(ReportedError::new(
-                FieldPath::root().field("plugin").field("description"),
-                SchemaError::DescriptionEmpty,
-            )),
-            ValidationError::MissingRequiredFile {
-                file: "__init__.py".into(),
-            },
-            ValidationError::PythonParse {
-                entry_point: "__init__.py".into(),
-                message: "unexpected token".into(),
-            },
-            ValidationError::TriggerNotImplemented {
-                trigger: TriggerType::ProcessWrites,
-                entry_point: "__init__.py".into(),
-            },
-            ValidationError::AsyncTriggerFn {
-                trigger: TriggerType::ProcessScheduledCall,
-                entry_point: "__init__.py".into(),
-            },
-            ValidationError::NoEntryPoint,
-            ValidationError::AmbiguousEntryPoint {
-                files: vec!["a.py".into(), "b.py".into()],
-            },
-            ValidationError::NameVersionConflict {
-                name: "downsampler".into(),
-                version: "1.2.0".into(),
-            },
-        ]
-    }
-
     #[test]
     fn sdk_error_display_stable() {
         let rendered: Vec<String> = every_sdk_variant().iter().map(|e| e.to_string()).collect();
@@ -350,24 +304,6 @@ mod tests {
             .map(SdkError::variant_name)
             .collect();
         insta::assert_yaml_snapshot!("sdk_error_variant_tags", tags);
-    }
-
-    #[test]
-    fn validation_error_display_stable() {
-        let rendered: Vec<String> = every_validation_variant()
-            .iter()
-            .map(|e| e.to_string())
-            .collect();
-        insta::assert_yaml_snapshot!("validation_error_display", rendered);
-    }
-
-    #[test]
-    fn validation_error_variant_tags_stable() {
-        let tags: Vec<&'static str> = every_validation_variant()
-            .iter()
-            .map(ValidationError::variant_name)
-            .collect();
-        insta::assert_yaml_snapshot!("validation_error_variant_tags", tags);
     }
 
     #[test]
@@ -387,10 +323,58 @@ mod tests {
         assert!(!report.is_empty());
         assert_eq!(report.len(), 1);
         match report.into_result() {
-            Err(SdkError::ValidationErrors(errs)) => {
+            Err(ValidationFailure::Invalid(errs)) => {
                 assert_eq!(errs.len(), 1);
             }
+            other => panic!("expected ValidationFailure::Invalid, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn validation_report_extend_collects() {
+        let mut report = ValidationReport::new();
+        report.extend([
+            ValidationError::NoEntryPoint,
+            ValidationError::MissingRequiredFile {
+                file: "manifest.toml".into(),
+            },
+        ]);
+        assert_eq!(report.len(), 2);
+    }
+
+    #[test]
+    fn validation_failure_converts_to_sdk_error() {
+        let invalid = ValidationFailure::Invalid(vec![ValidationError::NoEntryPoint]);
+        match SdkError::from(invalid) {
+            SdkError::ValidationErrors(errs) => assert_eq!(errs.len(), 1),
             other => panic!("expected ValidationErrors, got {other:?}"),
+        }
+
+        let io = ValidationFailure::Io {
+            source: std::io::Error::other("boom"),
+            path: Some(PathBuf::from("/tmp/x")),
+        };
+        match SdkError::from(io) {
+            SdkError::Io { path, .. } => {
+                assert_eq!(path.as_deref(), Some(std::path::Path::new("/tmp/x")));
+            }
+            other => panic!("expected Io, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn schema_errors_convert_to_validation_failure() {
+        use influxdb3_plugin_schemas::{FieldPath, ReportedError, SchemaErrors};
+        let errors = SchemaErrors::new(vec![ReportedError::new(
+            FieldPath::root().field("plugin").field("description"),
+            SchemaError::DescriptionEmpty,
+        )]);
+        match ValidationFailure::from(errors) {
+            ValidationFailure::Invalid(errs) => {
+                assert_eq!(errs.len(), 1);
+                assert!(matches!(errs[0], ValidationError::SchemaReported(_)));
+            }
+            other => panic!("expected Invalid, got {other:?}"),
         }
     }
 
@@ -435,25 +419,5 @@ mod tests {
             .source()
             .expect("nested source reaches semver::Error");
         assert!(bottom.downcast_ref::<semver::Error>().is_some());
-    }
-
-    /// `ValidationError::SchemaReported` wraps `ReportedError` losslessly
-    /// (path + inner variant), so downstream callers can pattern-match on
-    /// the original `SchemaError` variant and field path.
-    #[test]
-    fn schemas_error_structured_payload_preserved_via_validation_schema_reported() {
-        use influxdb3_plugin_schemas::FieldPath;
-        let reported = ReportedError::new(
-            FieldPath::root().field("plugin").field("description"),
-            SchemaError::DescriptionEmpty,
-        );
-        let wrapped = ValidationError::SchemaReported(reported);
-        match &wrapped {
-            ValidationError::SchemaReported(r) => {
-                assert_eq!(r.path.as_str(), "plugin.description");
-                assert!(matches!(r.error, SchemaError::DescriptionEmpty));
-            }
-            other => panic!("expected SchemaReported, got {other:?}"),
-        }
     }
 }

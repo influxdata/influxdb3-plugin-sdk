@@ -5,11 +5,11 @@
 //! in `influxdb3-plugin-schemas` through `Index::search` and `Index::info`.
 
 use clap::{Args as ClapArgs, ValueEnum};
+use influxdb3_plugin_schemas::ValidationError;
 use influxdb3_plugin_schemas::{
     ArtifactsUrl, Dependencies, Index, IndexInfo, IndexInfoQuery, IndexInfoResult, IndexSearchHit,
     IndexSearchQuery, IndexVersionVisibility, IndexVisibilityReason, PluginName, TriggerType,
 };
-use influxdb3_plugin_sdk::ValidationError;
 use std::path::{Path, PathBuf};
 
 use crate::cli_error::CliError;

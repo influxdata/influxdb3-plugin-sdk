@@ -10,8 +10,8 @@
 
 #![allow(unused_crate_dependencies)]
 
-use influxdb3_plugin_schemas::TriggerType;
-use influxdb3_plugin_sdk::{SdkError, ValidationError, validate};
+use influxdb3_plugin_schemas::{TriggerType, ValidationError};
+use influxdb3_plugin_sdk::{ValidationFailure, validate};
 use std::path::PathBuf;
 
 mod common;
@@ -41,7 +41,7 @@ fn valid_plugin_passes() {
 fn missing_init_reports_no_entry_point() {
     let err = validate::plugin_dir(&fixtures().join("invalid_plugins/missing_init")).unwrap_err();
     match err {
-        SdkError::ValidationErrors(errs) => {
+        ValidationFailure::Invalid(errs) => {
             assert_eq!(errs.len(), 1);
             assert!(matches!(errs[0], ValidationError::NoEntryPoint));
         }
@@ -57,7 +57,7 @@ fn missing_manifest_reports_missing_required_file() {
     let err =
         validate::plugin_dir(&fixtures().join("invalid_plugins/missing_manifest")).unwrap_err();
     match err {
-        SdkError::ValidationErrors(errs) => {
+        ValidationFailure::Invalid(errs) => {
             assert_eq!(errs.len(), 1);
             match &errs[0] {
                 ValidationError::MissingRequiredFile { file } => {
@@ -75,7 +75,7 @@ fn missing_trigger_impl_reports_trigger_not_implemented() {
     let err =
         validate::plugin_dir(&fixtures().join("invalid_plugins/missing_trigger_impl")).unwrap_err();
     match err {
-        SdkError::ValidationErrors(errs) => {
+        ValidationFailure::Invalid(errs) => {
             assert_eq!(errs.len(), 1);
             assert!(matches!(
                 errs[0],
@@ -93,7 +93,7 @@ fn missing_trigger_impl_reports_trigger_not_implemented() {
 fn async_trigger_reports_async_trigger_fn() {
     let err = validate::plugin_dir(&fixtures().join("invalid_plugins/async_trigger")).unwrap_err();
     match err {
-        SdkError::ValidationErrors(errs) => {
+        ValidationFailure::Invalid(errs) => {
             assert_eq!(errs.len(), 1);
             assert!(matches!(
                 errs[0],
@@ -112,7 +112,7 @@ fn bad_python_syntax_reports_python_parse() {
     let err =
         validate::plugin_dir(&fixtures().join("invalid_plugins/bad_python_syntax")).unwrap_err();
     match err {
-        SdkError::ValidationErrors(errs) => {
+        ValidationFailure::Invalid(errs) => {
             assert_eq!(errs.len(), 1);
             assert!(matches!(errs[0], ValidationError::PythonParse { .. }));
         }
@@ -161,7 +161,7 @@ fn validate_with_index_reports_name_version_conflict() {
 
     let err = validate::plugin_dir_with_index(&plugin_dir, &index).unwrap_err();
     match err {
-        SdkError::ValidationErrors(errs) => {
+        ValidationFailure::Invalid(errs) => {
             assert_eq!(errs.len(), 1);
             match &errs[0] {
                 ValidationError::NameVersionConflict { name, version } => {
@@ -180,9 +180,9 @@ fn validate_with_index_returns_manifest_when_no_collision() {
     let plugin_dir = fixtures().join("valid_plugin");
     let index = empty_index();
 
-    let manifest =
+    let validated =
         validate::plugin_dir_with_index(&plugin_dir, &index).expect("no collision; should pass");
-    assert_eq!(manifest.plugin.name.as_str(), "valid-plugin");
+    assert_eq!(validated.manifest.plugin.name.as_str(), "valid-plugin");
 }
 
 #[test]
@@ -190,7 +190,7 @@ fn multi_cross_file_defects_collected_in_one_pass() {
     let err = validate::plugin_dir(&fixtures().join("invalid_plugins/multi_cross_file_defect"))
         .unwrap_err();
 
-    let SdkError::ValidationErrors(errs) = err else {
+    let ValidationFailure::Invalid(errs) = err else {
         panic!("expected ValidationErrors, got {err:?}");
     };
     assert_eq!(
@@ -242,7 +242,7 @@ fn valid_single_file_plugin_passes() {
 #[test]
 fn no_entry_point_reports_error() {
     let err = validate::plugin_dir(&fixtures().join("invalid_plugins/no_entry_point")).unwrap_err();
-    let SdkError::ValidationErrors(errs) = err else {
+    let ValidationFailure::Invalid(errs) = err else {
         panic!("expected ValidationErrors")
     };
     assert_eq!(errs.len(), 1);
@@ -253,7 +253,7 @@ fn no_entry_point_reports_error() {
 fn ambiguous_entry_point_reports_sorted_files() {
     let err = validate::plugin_dir(&fixtures().join("invalid_plugins/ambiguous_entry_point"))
         .unwrap_err();
-    let SdkError::ValidationErrors(errs) = err else {
+    let ValidationFailure::Invalid(errs) = err else {
         panic!("expected ValidationErrors")
     };
     assert_eq!(errs.len(), 1);
@@ -269,7 +269,7 @@ fn ambiguous_entry_point_reports_sorted_files() {
 fn single_file_missing_trigger_names_entry_point() {
     let err = validate::plugin_dir(&fixtures().join("invalid_plugins/single_file_missing_trigger"))
         .unwrap_err();
-    let SdkError::ValidationErrors(errs) = err else {
+    let ValidationFailure::Invalid(errs) = err else {
         panic!("expected ValidationErrors")
     };
     assert_eq!(errs.len(), 1);
@@ -289,7 +289,7 @@ fn single_file_missing_trigger_names_entry_point() {
 fn single_file_async_trigger_names_entry_point() {
     let err = validate::plugin_dir(&fixtures().join("invalid_plugins/single_file_async_trigger"))
         .unwrap_err();
-    let SdkError::ValidationErrors(errs) = err else {
+    let ValidationFailure::Invalid(errs) = err else {
         panic!("expected ValidationErrors")
     };
     assert_eq!(errs.len(), 1);
@@ -309,7 +309,7 @@ fn single_file_async_trigger_names_entry_point() {
 fn single_file_bad_syntax_names_entry_point() {
     let err = validate::plugin_dir(&fixtures().join("invalid_plugins/single_file_bad_syntax"))
         .unwrap_err();
-    let SdkError::ValidationErrors(errs) = err else {
+    let ValidationFailure::Invalid(errs) = err else {
         panic!("expected ValidationErrors")
     };
     assert_eq!(errs.len(), 1);
@@ -350,7 +350,7 @@ fn py_files_in_subdirectory_not_counted() {
     )
     .unwrap();
     let err = validate::plugin_dir(td.path()).unwrap_err();
-    let SdkError::ValidationErrors(errs) = err else {
+    let ValidationFailure::Invalid(errs) = err else {
         panic!("expected ValidationErrors")
     };
     assert!(
@@ -367,7 +367,7 @@ fn nonexistent_plugin_dir_returns_validation_errors() {
     // A nonexistent directory surfaces as ValidationErrors (NoEntryPoint +
     // MissingRequiredFile) since both detect_entry_point and the manifest
     // read treat NotFound as collectible validation diagnostics.
-    let SdkError::ValidationErrors(errs) = err else {
+    let ValidationFailure::Invalid(errs) = err else {
         panic!("expected ValidationErrors for missing dir, got {err:?}")
     };
     assert!(
@@ -392,7 +392,7 @@ fn symlinked_init_py_only_reports_no_entry_point() {
     std::fs::remove_file(&target).unwrap();
     // __init__.py is a dangling symlink — not counted as regular file. No other .py files.
     let err = validate::plugin_dir(td.path()).unwrap_err();
-    let SdkError::ValidationErrors(errs) = err else {
+    let ValidationFailure::Invalid(errs) = err else {
         panic!("expected ValidationErrors")
     };
     assert!(
@@ -411,7 +411,7 @@ fn symlinked_py_file_only_reports_no_entry_point() {
     std::os::unix::fs::symlink(&target, td.path().join("plugin.py")).unwrap();
     // plugin.py is a symlink — not counted. No regular .py files.
     let err = validate::plugin_dir(td.path()).unwrap_err();
-    let SdkError::ValidationErrors(errs) = err else {
+    let ValidationFailure::Invalid(errs) = err else {
         panic!("expected ValidationErrors")
     };
     assert!(
