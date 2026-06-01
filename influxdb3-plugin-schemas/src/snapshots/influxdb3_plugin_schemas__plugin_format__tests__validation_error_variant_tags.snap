@@ -1,5 +1,5 @@
 ---
-source: influxdb3-plugin-schemas/src/validate.rs
+source: influxdb3-plugin-schemas/src/plugin_format.rs
 expression: tags
 ---
 - SchemaReported

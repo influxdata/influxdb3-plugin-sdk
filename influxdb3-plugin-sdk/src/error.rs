@@ -155,7 +155,7 @@ impl From<influxdb3_plugin_schemas::IndexInsertError> for SdkError {
 ///
 /// A focused, validation-only error type that separates validation failures
 /// from the kitchen-sink [`SdkError`]. External consumers (including the
-/// future runtime) interact with the pure `schemas::validate` surface and
+/// future runtime) interact with the pure `schemas::plugin_format` surface and
 /// define their own I/O error types; they do not depend on this type.
 ///
 /// `package.rs` stays ergonomic via [`From<ValidationFailure> for SdkError`],

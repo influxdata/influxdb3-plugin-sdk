@@ -14,15 +14,15 @@
 //! `influxdb3-plugin-sdk`, which feeds its results into the pure checks here.
 //! A consumer that cannot take a `tree-sitter` dependency (or that loads
 //! plugins from a non-filesystem source) implements the extraction rules
-//! documented on [`TopLevelDef`] against its own parser and then calls
-//! [`check_triggers`].
+//! documented on [`TopLevelFunctionDef`] against its own parser and then calls
+//! [`check_trigger_bindings`].
 //!
 //! # Extraction drift
 //!
 //! Because the extractor is not single-sourced (the SDK uses tree-sitter; a
 //! runtime might use the CPython AST), the rules an extractor must satisfy are
-//! captured three ways: the prose on [`TopLevelDef`], the SDK's reference
-//! implementation, and the executable [`TOP_LEVEL_DEF_CORPUS`] that any
+//! captured three ways: the prose on [`TopLevelFunctionDef`], the SDK's reference
+//! implementation, and the executable [`TOP_LEVEL_DEF_CONFORMANCE_CASES`] that any
 //! extractor's test suite can iterate to prove conformance.
 
 use crate::{Manifest, ReportedError, TriggerType};
@@ -33,18 +33,18 @@ use crate::{Manifest, ReportedError, TriggerType};
 /// re-parse the TOML or re-derive the entry-point kind.
 ///
 /// `#[non_exhaustive]`: fields may be added without a breaking change; use
-/// [`ValidatedPlugin::new`] to construct.
+/// [`ValidatedPluginDefinition::new`] to construct.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
-pub struct ValidatedPlugin {
+pub struct ValidatedPluginDefinition {
     /// The parsed manifest.
     pub manifest: Manifest,
     /// The classified entry point.
     pub entry_point: EntryPoint,
 }
 
-impl ValidatedPlugin {
-    /// Constructs a [`ValidatedPlugin`].
+impl ValidatedPluginDefinition {
+    /// Constructs a [`ValidatedPluginDefinition`].
     ///
     /// Required because `#[non_exhaustive]` blocks struct-literal construction
     /// from other crates (e.g. the SDK orchestrator).
@@ -98,9 +98,9 @@ impl EntryPoint {
 ///
 /// The extractor does **not** dedup: a redefined name appears once per
 /// occurrence, in source order. Last-occurrence-wins resolution is the
-/// responsibility of [`check_triggers`].
+/// responsibility of [`check_trigger_bindings`].
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TopLevelDef {
+pub struct TopLevelFunctionDef {
     /// The function name.
     pub name: String,
     /// Whether the definition is `async def`.
@@ -243,9 +243,9 @@ pub fn classify_entry_point(file_names: &[String]) -> Result<EntryPoint, Validat
 /// - matched by a sync `def` → ok.
 ///
 /// Extra defs not declared as triggers are ignored.
-pub fn check_triggers(
+pub fn check_trigger_bindings(
     declared: &[TriggerType],
-    defs: &[TopLevelDef],
+    defs: &[TopLevelFunctionDef],
     entry_point: &str,
 ) -> Vec<ValidationError> {
     let mut errors = Vec::new();
@@ -279,29 +279,29 @@ pub fn check_triggers(
 /// crates' test suites (the SDK's reference extractor today, a runtime's
 /// extractor later) can iterate it and assert their extractor conforms.
 #[derive(Debug, Clone, Copy)]
-pub struct ConformanceCase {
+pub struct TopLevelDefConformanceCase {
     pub label: &'static str,
     pub source: &'static str,
-    pub expected: Expectation,
+    pub expected: TopLevelDefExpectation,
 }
 
 /// The expected outcome of extracting top-level defs from a source.
 #[derive(Debug, Clone, Copy)]
-pub enum Expectation {
+pub enum TopLevelDefExpectation {
     /// Source parses; the extractor must return exactly these defs, in order.
-    Defs(&'static [ExpectedDef]),
+    Defs(&'static [ExpectedTopLevelFunctionDef]),
     /// Source is unparseable; the extractor must return a parse error.
     ParseError,
 }
 
-/// An expected top-level def in a [`ConformanceCase`].
+/// An expected top-level def in a [`TopLevelDefConformanceCase`].
 ///
-/// Distinct from [`TopLevelDef`] by design: `ExpectedDef` uses `&'static str`
-/// so the whole corpus can live in a `pub const`, whereas `TopLevelDef` uses
+/// Distinct from [`TopLevelFunctionDef`] by design: `ExpectedTopLevelFunctionDef` uses `&'static str`
+/// so the whole corpus can live in a `pub const`, whereas `TopLevelFunctionDef` uses
 /// owned `String` because runtime extractors build it from arbitrary parsed
 /// source. Same shape, different lifetimes — do not collapse.
 #[derive(Debug, Clone, Copy)]
-pub struct ExpectedDef {
+pub struct ExpectedTopLevelFunctionDef {
     pub name: &'static str,
     pub is_async: bool,
 }
@@ -311,96 +311,96 @@ pub struct ExpectedDef {
 /// Covers the F6–F15 extraction rules in one table. Any extractor must
 /// satisfy every case; the SDK's `tests/conformance.rs` iterates this against
 /// its reference extractor and a runtime would mirror that loop.
-pub const TOP_LEVEL_DEF_CORPUS: &[ConformanceCase] = &[
-    ConformanceCase {
+pub const TOP_LEVEL_DEF_CONFORMANCE_CASES: &[TopLevelDefConformanceCase] = &[
+    TopLevelDefConformanceCase {
         label: "plain_def",
         source: "def foo(): pass",
-        expected: Expectation::Defs(&[ExpectedDef {
+        expected: TopLevelDefExpectation::Defs(&[ExpectedTopLevelFunctionDef {
             name: "foo",
             is_async: false,
         }]),
     },
-    ConformanceCase {
+    TopLevelDefConformanceCase {
         label: "async_def",
         source: "async def foo(): pass",
-        expected: Expectation::Defs(&[ExpectedDef {
+        expected: TopLevelDefExpectation::Defs(&[ExpectedTopLevelFunctionDef {
             name: "foo",
             is_async: true,
         }]),
     },
-    ConformanceCase {
+    TopLevelDefConformanceCase {
         label: "decorated_def",
         source: "@staticmethod\ndef foo(): pass",
-        expected: Expectation::Defs(&[ExpectedDef {
+        expected: TopLevelDefExpectation::Defs(&[ExpectedTopLevelFunctionDef {
             name: "foo",
             is_async: false,
         }]),
     },
-    ConformanceCase {
+    TopLevelDefConformanceCase {
         label: "class_method",
         source: "class C:\n    def foo(self): pass",
-        expected: Expectation::Defs(&[]),
+        expected: TopLevelDefExpectation::Defs(&[]),
     },
-    ConformanceCase {
+    TopLevelDefConformanceCase {
         label: "nested_def",
         source: "def outer():\n    def inner(): pass",
-        expected: Expectation::Defs(&[ExpectedDef {
+        expected: TopLevelDefExpectation::Defs(&[ExpectedTopLevelFunctionDef {
             name: "outer",
             is_async: false,
         }]),
     },
-    ConformanceCase {
+    TopLevelDefConformanceCase {
         label: "guarded_if",
         source: "if True:\n    def foo(): pass",
-        expected: Expectation::Defs(&[]),
+        expected: TopLevelDefExpectation::Defs(&[]),
     },
-    ConformanceCase {
+    TopLevelDefConformanceCase {
         label: "reexport",
         source: "from bar import foo",
-        expected: Expectation::Defs(&[]),
+        expected: TopLevelDefExpectation::Defs(&[]),
     },
-    ConformanceCase {
+    TopLevelDefConformanceCase {
         label: "assignment",
         source: "foo = bar",
-        expected: Expectation::Defs(&[]),
+        expected: TopLevelDefExpectation::Defs(&[]),
     },
-    ConformanceCase {
+    TopLevelDefConformanceCase {
         label: "same_kind_redefinition",
         source: "def foo(): pass\ndef foo(): pass",
-        expected: Expectation::Defs(&[
-            ExpectedDef {
+        expected: TopLevelDefExpectation::Defs(&[
+            ExpectedTopLevelFunctionDef {
                 name: "foo",
                 is_async: false,
             },
-            ExpectedDef {
+            ExpectedTopLevelFunctionDef {
                 name: "foo",
                 is_async: false,
             },
         ]),
     },
-    ConformanceCase {
+    TopLevelDefConformanceCase {
         label: "sync_then_async",
         source: "def foo(): pass\nasync def foo(): pass",
-        expected: Expectation::Defs(&[
-            ExpectedDef {
+        expected: TopLevelDefExpectation::Defs(&[
+            ExpectedTopLevelFunctionDef {
                 name: "foo",
                 is_async: false,
             },
-            ExpectedDef {
+            ExpectedTopLevelFunctionDef {
                 name: "foo",
                 is_async: true,
             },
         ]),
     },
-    ConformanceCase {
+    TopLevelDefConformanceCase {
         label: "unparseable_source",
         source: "def foo(:",
-        expected: Expectation::ParseError,
+        expected: TopLevelDefExpectation::ParseError,
     },
-    ConformanceCase {
+    TopLevelDefConformanceCase {
         label: "empty_source",
         source: "",
-        expected: Expectation::Defs(&[]),
+        expected: TopLevelDefExpectation::Defs(&[]),
     },
 ];
 
@@ -410,7 +410,7 @@ mod tests {
     use crate::{FieldPath, SchemaError};
     use pretty_assertions::assert_eq;
 
-    // -- EntryPoint / ValidatedPlugin data shapes ---------------------------
+    // -- EntryPoint / ValidatedPluginDefinition data shapes ---------------------------
 
     #[test]
     fn entry_point_file_name() {
@@ -437,7 +437,7 @@ mod tests {
              database_version = \">=3.0.0\"\n",
         )
         .expect("fixture manifest parses");
-        let vp = ValidatedPlugin::new(manifest, EntryPoint::Multi);
+        let vp = ValidatedPluginDefinition::new(manifest, EntryPoint::Multi);
         assert_eq!(vp.entry_point, EntryPoint::Multi);
         assert_eq!(vp.manifest.plugin.name.as_str(), "p");
     }
@@ -529,10 +529,10 @@ mod tests {
         );
     }
 
-    // -- check_triggers  F1-F5, F13 -----------------------------------------
+    // -- check_trigger_bindings  F1-F5, F13 -----------------------------------------
 
-    fn def(name: &str, is_async: bool) -> TopLevelDef {
-        TopLevelDef {
+    fn def(name: &str, is_async: bool) -> TopLevelFunctionDef {
+        TopLevelFunctionDef {
             name: name.into(),
             is_async,
         }
@@ -540,7 +540,7 @@ mod tests {
 
     #[test]
     fn f1_sync_def_matches_trigger() {
-        let errs = check_triggers(
+        let errs = check_trigger_bindings(
             &[TriggerType::ProcessWrites],
             &[def("process_writes", false)],
             "__init__.py",
@@ -550,7 +550,7 @@ mod tests {
 
     #[test]
     fn f2_no_matching_def_is_not_implemented() {
-        let errs = check_triggers(
+        let errs = check_trigger_bindings(
             &[TriggerType::ProcessWrites],
             &[def("something_else", false)],
             "__init__.py",
@@ -567,7 +567,7 @@ mod tests {
 
     #[test]
     fn f3_async_def_is_async_trigger_fn() {
-        let errs = check_triggers(
+        let errs = check_trigger_bindings(
             &[TriggerType::ProcessWrites],
             &[def("process_writes", true)],
             "__init__.py",
@@ -578,7 +578,7 @@ mod tests {
 
     #[test]
     fn f4_multiple_bad_triggers_all_reported() {
-        let errs = check_triggers(
+        let errs = check_trigger_bindings(
             &[
                 TriggerType::ProcessWrites,
                 TriggerType::ProcessScheduledCall,
@@ -592,7 +592,7 @@ mod tests {
 
     #[test]
     fn f5_extra_defs_ignored() {
-        let errs = check_triggers(
+        let errs = check_trigger_bindings(
             &[TriggerType::ProcessWrites],
             &[def("process_writes", false), def("helper", false)],
             "__init__.py",
@@ -603,7 +603,7 @@ mod tests {
     #[test]
     fn f13_redefinition_last_wins_sync_only() {
         // Two sync defs: last wins, still sync → ok.
-        let errs = check_triggers(
+        let errs = check_trigger_bindings(
             &[TriggerType::ProcessWrites],
             &[def("process_writes", false), def("process_writes", false)],
             "__init__.py",
@@ -614,7 +614,7 @@ mod tests {
     #[test]
     fn f13_redefinition_last_wins_sync_then_async() {
         // Sync then async: later async kind wins → AsyncTriggerFn.
-        let errs = check_triggers(
+        let errs = check_trigger_bindings(
             &[TriggerType::ProcessWrites],
             &[def("process_writes", false), def("process_writes", true)],
             "__init__.py",
@@ -626,7 +626,7 @@ mod tests {
     #[test]
     fn f13_redefinition_last_wins_async_then_sync() {
         // Async then sync: later sync kind wins → ok.
-        let errs = check_triggers(
+        let errs = check_trigger_bindings(
             &[TriggerType::ProcessWrites],
             &[def("process_writes", true), def("process_writes", false)],
             "__init__.py",
@@ -719,7 +719,10 @@ mod tests {
 
     #[test]
     fn corpus_labels_unique() {
-        let mut labels: Vec<&str> = TOP_LEVEL_DEF_CORPUS.iter().map(|c| c.label).collect();
+        let mut labels: Vec<&str> = TOP_LEVEL_DEF_CONFORMANCE_CASES
+            .iter()
+            .map(|c| c.label)
+            .collect();
         let count = labels.len();
         labels.sort_unstable();
         labels.dedup();
@@ -728,7 +731,10 @@ mod tests {
 
     #[test]
     fn corpus_covers_required_rules() {
-        let labels: Vec<&str> = TOP_LEVEL_DEF_CORPUS.iter().map(|c| c.label).collect();
+        let labels: Vec<&str> = TOP_LEVEL_DEF_CONFORMANCE_CASES
+            .iter()
+            .map(|c| c.label)
+            .collect();
         for required in [
             "plain_def",
             "async_def",

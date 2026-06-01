@@ -4,8 +4,8 @@
 //! walking the top level, reading the entry-point file, and extracting
 //! top-level Python definitions with `tree-sitter-python`. The *contract* —
 //! what counts as a valid entry-point layout and a satisfied trigger — is the
-//! pure surface in [`influxdb3_plugin_schemas::validate`]
-//! ([`classify_entry_point`], [`check_triggers`]). This module feeds its
+//! pure surface in [`influxdb3_plugin_schemas::plugin_format`]
+//! ([`classify_entry_point`], [`check_trigger_bindings`]). This module feeds its
 //! mechanical results into those pure checks.
 //!
 //! Two plugin formats are supported:
@@ -22,10 +22,10 @@
 //! # Reference extractor
 //!
 //! [`extract_top_level_defs`] is the reference implementation of the
-//! extraction rules documented on [`influxdb3_plugin_schemas::validate::TopLevelDef`].
+//! extraction rules documented on [`influxdb3_plugin_schemas::plugin_format::TopLevelFunctionDef`].
 //! It is `pub` so a consumer that accepts a `tree-sitter` dependency (e.g. the
 //! future runtime) can reuse it directly instead of reimplementing the rules.
-//! The shared [`TOP_LEVEL_DEF_CORPUS`](influxdb3_plugin_schemas::validate::TOP_LEVEL_DEF_CORPUS)
+//! The shared [`TOP_LEVEL_DEF_CONFORMANCE_CASES`](influxdb3_plugin_schemas::plugin_format::TOP_LEVEL_DEF_CONFORMANCE_CASES)
 //! guards drift between extractors.
 //!
 //! # Multi-error collection
@@ -36,8 +36,8 @@
 //! are merged with any entry-point diagnostic already collected, so both
 //! surface in one pass.
 
-use influxdb3_plugin_schemas::validate::{
-    TopLevelDef, ValidatedPlugin, check_triggers, classify_entry_point,
+use influxdb3_plugin_schemas::plugin_format::{
+    TopLevelFunctionDef, ValidatedPluginDefinition, check_trigger_bindings, classify_entry_point,
 };
 use influxdb3_plugin_schemas::{Index, IndexEntry, Manifest, ValidationError};
 use std::path::Path;
@@ -58,15 +58,15 @@ pub struct PythonParseError {
 /// order, using `tree-sitter-python`.
 ///
 /// This is the reference implementation of the extraction rules on
-/// [`TopLevelDef`]. It captures top-level `def`/`async def` and decorated
+/// [`TopLevelFunctionDef`]. It captures top-level `def`/`async def` and decorated
 /// top-level functions; it does not capture class methods, nested defs,
 /// guarded defs, re-exports, or assignments. It does **not** dedup — a
 /// redefined name appears once per occurrence; last-occurrence-wins is
-/// resolved by [`check_triggers`].
+/// resolved by [`check_trigger_bindings`].
 ///
 /// Returns [`PythonParseError`] when the source does not parse as valid
 /// Python 3.
-pub fn extract_top_level_defs(source: &str) -> Result<Vec<TopLevelDef>, PythonParseError> {
+pub fn extract_top_level_defs(source: &str) -> Result<Vec<TopLevelFunctionDef>, PythonParseError> {
     let mut parser = tree_sitter::Parser::new();
     let language = tree_sitter_python::LANGUAGE;
     parser
@@ -90,7 +90,7 @@ pub fn extract_top_level_defs(source: &str) -> Result<Vec<TopLevelDef>, PythonPa
     // (which wraps a `function_definition`). Decorators don't make a def
     // indirect; class methods, re-exports, and assignments do, so those
     // aren't collected here.
-    let mut defs: Vec<TopLevelDef> = Vec::new();
+    let mut defs: Vec<TopLevelFunctionDef> = Vec::new();
     let mut cursor = root.walk();
     for child in root.children(&mut cursor) {
         if let Some(def) = extract_top_level_def(&child, source) {
@@ -103,7 +103,10 @@ pub fn extract_top_level_defs(source: &str) -> Result<Vec<TopLevelDef>, PythonPa
 /// If `node` is (or wraps) a top-level function definition, return its name
 /// and sync/async kind. Returns `None` for class defs, imports, expressions,
 /// assignments, and malformed defs caught by tree-sitter error recovery.
-fn extract_top_level_def(node: &tree_sitter::Node<'_>, source: &str) -> Option<TopLevelDef> {
+fn extract_top_level_def(
+    node: &tree_sitter::Node<'_>,
+    source: &str,
+) -> Option<TopLevelFunctionDef> {
     let function_def = match node.kind() {
         "function_definition" => *node,
         // `@foo\ndef bar():` parses as a `decorated_definition` wrapping a
@@ -117,7 +120,7 @@ fn extract_top_level_def(node: &tree_sitter::Node<'_>, source: &str) -> Option<T
     };
     let name_node = function_def.child_by_field_name("name")?;
     let name = source[name_node.byte_range()].to_owned();
-    Some(TopLevelDef {
+    Some(TopLevelFunctionDef {
         name,
         is_async: is_async_function(&function_def),
     })
@@ -182,7 +185,7 @@ fn read_required(
 
 /// Validates a plugin directory.
 ///
-/// Returns a [`ValidatedPlugin`] (parsed manifest + classified entry point)
+/// Returns a [`ValidatedPluginDefinition`] (parsed manifest + classified entry point)
 /// on success. On failure:
 /// - [`ValidationFailure::Io`] — I/O error other than `NotFound` on
 ///   `manifest.toml`.
@@ -194,7 +197,7 @@ fn read_required(
 /// merged with any entry-point diagnostic so both surface together. An
 /// unreadable entry-point file after detection produces
 /// [`ValidationError::NoEntryPoint`] (preserving current behavior).
-pub fn plugin_dir(dir: &Path) -> Result<ValidatedPlugin, ValidationFailure> {
+pub fn plugin_dir(dir: &Path) -> Result<ValidatedPluginDefinition, ValidationFailure> {
     let mut report = ValidationReport::new();
 
     // Step 1: entry-point detection runs unconditionally.
@@ -249,7 +252,8 @@ pub fn plugin_dir(dir: &Path) -> Result<ValidatedPlugin, ValidationFailure> {
                     message,
                 }),
                 Ok(defs) => {
-                    let diagnostics = check_triggers(&manifest.plugin.triggers, &defs, &file_name);
+                    let diagnostics =
+                        check_trigger_bindings(&manifest.plugin.triggers, &defs, &file_name);
                     report.extend(diagnostics);
                 }
             },
@@ -259,7 +263,7 @@ pub fn plugin_dir(dir: &Path) -> Result<ValidatedPlugin, ValidationFailure> {
     // Step 4: success only when the report is empty.
     report.into_result()?;
     let entry_point = entry_point.expect("empty report implies a classified entry point");
-    Ok(ValidatedPlugin::new(manifest, entry_point))
+    Ok(ValidatedPluginDefinition::new(manifest, entry_point))
 }
 
 /// [`plugin_dir`] plus an index-relative uniqueness check.
@@ -271,7 +275,7 @@ pub fn plugin_dir(dir: &Path) -> Result<ValidatedPlugin, ValidationFailure> {
 pub fn plugin_dir_with_index(
     dir: &Path,
     index: &Index,
-) -> Result<ValidatedPlugin, ValidationFailure> {
+) -> Result<ValidatedPluginDefinition, ValidationFailure> {
     let validated = plugin_dir(dir)?;
 
     let probe_entry =
@@ -343,11 +347,13 @@ fn find_first_error_or_missing(root: tree_sitter::Node<'_>) -> Option<tree_sitte
 #[cfg(test)]
 mod tests {
     use super::*;
-    use influxdb3_plugin_schemas::validate::{EntryPoint, Expectation, TOP_LEVEL_DEF_CORPUS};
+    use influxdb3_plugin_schemas::plugin_format::{
+        EntryPoint, TOP_LEVEL_DEF_CONFORMANCE_CASES, TopLevelDefExpectation,
+    };
 
     // -- extract_top_level_defs  F6-F15 -------------------------------------
 
-    fn names(defs: &[TopLevelDef]) -> Vec<(String, bool)> {
+    fn names(defs: &[TopLevelFunctionDef]) -> Vec<(String, bool)> {
         defs.iter().map(|d| (d.name.clone(), d.is_async)).collect()
     }
 
@@ -441,10 +447,10 @@ mod tests {
 
     #[test]
     fn sdk_extractor_satisfies_top_level_def_corpus() {
-        for case in TOP_LEVEL_DEF_CORPUS {
+        for case in TOP_LEVEL_DEF_CONFORMANCE_CASES {
             let result = extract_top_level_defs(case.source);
             match (&case.expected, result) {
-                (Expectation::Defs(expected), Ok(got)) => {
+                (TopLevelDefExpectation::Defs(expected), Ok(got)) => {
                     let expected: Vec<(String, bool)> = expected
                         .iter()
                         .map(|e| (e.name.to_string(), e.is_async))
@@ -456,14 +462,14 @@ mod tests {
                         case.label
                     );
                 }
-                (Expectation::ParseError, Err(_)) => { /* pass */ }
-                (Expectation::Defs(_), Err(e)) => {
+                (TopLevelDefExpectation::ParseError, Err(_)) => { /* pass */ }
+                (TopLevelDefExpectation::Defs(_), Err(e)) => {
                     panic!(
                         "{}: expected defs, got parse error: {}",
                         case.label, e.message
                     )
                 }
-                (Expectation::ParseError, Ok(defs)) => panic!(
+                (TopLevelDefExpectation::ParseError, Ok(defs)) => panic!(
                     "{}: expected parse error, got {} def(s)",
                     case.label,
                     defs.len()
