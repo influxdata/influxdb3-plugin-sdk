@@ -53,7 +53,7 @@ Schemes for `index_url` are governed by the consumer, not by the index format.
 
 A registry grows by appending entries to `index.json` and uploading the matching archive:
 
-1. The plugin author creates or updates a `manifest.toml` and the plugin source.
+1. The plugin author creates or updates a plugin directory that follows the [plugin format](./plugin-format.md).
 2. Use `influxdb3-plugin package` to package an archive and append a new entry to `index.json`.
 3. Upload the new archive to `{artifacts_url}/{name}-{version}.tar.gz` and replace `index.json` at its hosted location with the newly generated version.
 
