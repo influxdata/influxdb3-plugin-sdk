@@ -360,20 +360,23 @@ fn py_files_in_subdirectory_not_counted() {
 }
 
 #[test]
-fn nonexistent_plugin_dir_returns_validation_errors() {
+fn nonexistent_plugin_dir_reports_missing_manifest() {
     let td = tempfile::tempdir().unwrap();
     let missing = td.path().join("does_not_exist");
     let err = validate::plugin_dir(&missing).unwrap_err();
-    // A nonexistent directory surfaces as ValidationErrors (NoEntryPoint +
-    // MissingRequiredFile) since both detect_entry_point and the manifest
-    // read treat NotFound as collectible validation diagnostics.
     let ValidationFailure::Invalid(errs) = err else {
         panic!("expected ValidationErrors for missing dir, got {err:?}")
     };
     assert!(
-        errs.iter()
+        errs.iter().any(|e| matches!(
+            e, ValidationError::MissingRequiredFile { file } if file == "manifest.toml")),
+        "expected MissingRequiredFile(manifest.toml) among {errs:?}"
+    );
+    assert!(
+        !errs
+            .iter()
             .any(|e| matches!(e, ValidationError::NoEntryPoint)),
-        "expected NoEntryPoint among {errs:?}"
+        "entry-point detection must not run when the manifest is missing: {errs:?}"
     );
 }
 

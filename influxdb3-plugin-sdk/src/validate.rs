@@ -28,13 +28,16 @@
 //! The shared [`TOP_LEVEL_DEF_CONFORMANCE_CASES`](influxdb3_plugin_schemas::plugin_format::TOP_LEVEL_DEF_CONFORMANCE_CASES)
 //! guards drift between extractors.
 //!
-//! # Multi-error collection
+//! # Manifest gate and multi-error collection
 //!
-//! Cross-file failures accumulate into a [`ValidationReport`] so multiple
-//! issues surface together. A manifest parse failure stops cross-file checks
-//! (the trigger set is unknown without a valid manifest) but its diagnostics
-//! are merged with any entry-point diagnostic already collected, so both
-//! surface in one pass.
+//! The manifest is the gate: `manifest.toml` is read and parsed before any
+//! entry-point work. A missing or malformed manifest is reported on its own —
+//! without a valid manifest the `[plugin].exclude` list is unknown, so no
+//! source-file selection (and therefore no entry-point detection) can run.
+//!
+//! With a valid manifest, source-file selection drives entry-point detection,
+//! and cross-file failures accumulate into a [`ValidationReport`] so multiple
+//! issues surface together in one pass.
 
 use influxdb3_plugin_schemas::plugin_format::{
     TopLevelFunctionDef, ValidatedPluginDefinition, check_trigger_bindings, classify_entry_point,
@@ -138,29 +141,6 @@ fn is_async_function(function_def: &tree_sitter::Node<'_>) -> bool {
     false
 }
 
-/// Lists the names of top-level regular files in `dir`.
-///
-/// Excludes symlinks (via `symlink_metadata`) and subdirectories (including a
-/// directory named `foo.py`); does not recurse. Any `read_dir` failure
-/// (including `NotFound`, permission, or other I/O) surfaces as
-/// [`ValidationError::NoEntryPoint`] — preserving current behavior per the
-/// design's non-goal. Per-entry read errors are skipped.
-fn top_level_regular_file_names(dir: &Path) -> Result<Vec<String>, ValidationError> {
-    let entries = std::fs::read_dir(dir).map_err(|_| ValidationError::NoEntryPoint)?;
-    let mut names = Vec::new();
-    for entry in entries {
-        let Ok(entry) = entry else { continue };
-        let Ok(meta) = std::fs::symlink_metadata(entry.path()) else {
-            continue;
-        };
-        if !meta.is_file() {
-            continue;
-        }
-        names.push(entry.file_name().to_string_lossy().into_owned());
-    }
-    Ok(names)
-}
-
 /// Reads a required file, treating `NotFound` as a collectible validation
 /// error. Returns `Ok(Some(content))` on success, `Ok(None)` when missing
 /// (after recording [`ValidationError::MissingRequiredFile`]), and
@@ -188,48 +168,36 @@ fn read_required(
 /// Returns a [`ValidatedPluginDefinition`] (parsed manifest + classified entry point)
 /// on success. On failure:
 /// - [`ValidationFailure::Io`] — I/O error other than `NotFound` on
-///   `manifest.toml`.
+///   `manifest.toml`, or an I/O error during source-file selection.
+/// - [`ValidationFailure::InvalidExcludePattern`] — a malformed
+///   `[plugin].exclude` pattern.
 /// - [`ValidationFailure::Invalid`] — structural or cross-file check failures.
 ///
-/// Entry-point detection runs unconditionally (before the manifest check).
-/// Missing `manifest.toml` surfaces as [`ValidationError::MissingRequiredFile`].
-/// A manifest parse failure stops cross-file checks but its diagnostics are
-/// merged with any entry-point diagnostic so both surface together. An
-/// unreadable entry-point file after detection produces
-/// [`ValidationError::NoEntryPoint`] (preserving current behavior).
+/// The manifest is the gate. `manifest.toml` is read and parsed first; a
+/// missing file surfaces as [`ValidationError::MissingRequiredFile`] and a
+/// parse failure surfaces its [`ValidationError::SchemaReported`] diagnostics —
+/// in both cases entry-point detection does **not** run, because without a
+/// valid manifest the `[plugin].exclude` list (and therefore the source-file
+/// selection) is unknown.
+///
+/// With a valid manifest, [`crate::plugin_source_files::select`] applies the
+/// exclude list, the entry point is classified from the selected depth-1 files,
+/// and trigger checks run against the entry point's source. An unreadable
+/// entry-point file after detection produces [`ValidationError::NoEntryPoint`].
 pub fn plugin_dir(dir: &Path) -> Result<ValidatedPluginDefinition, ValidationFailure> {
     let mut report = ValidationReport::new();
 
-    // Step 1: entry-point detection runs unconditionally.
-    let entry_point = match top_level_regular_file_names(dir) {
-        Ok(names) => match classify_entry_point(&names) {
-            Ok(ep) => Some(ep),
-            Err(diag) => {
-                report.push(diag);
-                None
-            }
-        },
-        Err(diag) => {
-            report.push(diag);
-            None
-        }
-    };
-
-    // Step 2: read + parse manifest.toml.
+    // Step 1: manifest is the gate. Without a valid manifest there is no
+    // exclude list, so no source-file selection and no entry-point detection.
     let Some(manifest_raw) =
         read_required(&dir.join("manifest.toml"), "manifest.toml", &mut report)?
     else {
-        // Missing manifest: trigger set is unknown, so cross-file checks
-        // can't run. Surface collected diagnostics now.
         report.into_result()?;
         unreachable!("non-empty report always returns Err");
     };
     let manifest = match Manifest::parse_toml(&manifest_raw) {
         Ok(manifest) => manifest,
         Err(schema_errors) => {
-            // H2: merge manifest defects with any entry-point diagnostic so
-            // both appear in one pass (do not use `?` — that would drop the
-            // accumulated report).
             report.extend(
                 schema_errors
                     .into_iter()
@@ -240,11 +208,31 @@ pub fn plugin_dir(dir: &Path) -> Result<ValidatedPluginDefinition, ValidationFai
         }
     };
 
-    // Step 3: entry-point read + extraction + trigger checks.
+    // Step 2: source-file selection (manifest-driven). Invalid patterns and
+    // I/O errors short-circuit; they are not collectible diagnostics.
+    let selected = crate::plugin_source_files::select(dir, &manifest.plugin.exclude)
+        .map_err(ValidationFailure::from)?;
+
+    // Step 3: derive top-level (depth-1) file names from the selected set.
+    let top_level: Vec<String> = selected
+        .iter()
+        .filter(|f| !f.normalized.contains('/'))
+        .map(|f| f.normalized.clone())
+        .collect();
+
+    // Step 4: classify the entry point from the selected depth-1 files.
+    let entry_point = match classify_entry_point(&top_level) {
+        Ok(ep) => Some(ep),
+        Err(diag) => {
+            report.push(diag);
+            None
+        }
+    };
+
+    // Step 5: entry-point read + extraction + trigger checks.
     if let Some(ep) = &entry_point {
         let file_name = ep.file_name().to_owned();
         match std::fs::read_to_string(dir.join(&file_name)) {
-            // C3: any read failure → NoEntryPoint (preserve current behavior).
             Err(_) => report.push(ValidationError::NoEntryPoint),
             Ok(source) => match extract_top_level_defs(&source) {
                 Err(PythonParseError { message }) => report.push(ValidationError::PythonParse {
@@ -260,7 +248,7 @@ pub fn plugin_dir(dir: &Path) -> Result<ValidatedPluginDefinition, ValidationFai
         }
     }
 
-    // Step 4: success only when the report is empty.
+    // Step 6: success only when the report is empty.
     report.into_result()?;
     let entry_point = entry_point.expect("empty report implies a classified entry point");
     Ok(ValidatedPluginDefinition::new(manifest, entry_point))
@@ -493,24 +481,20 @@ mod tests {
          [dependencies]\n\
          database_version = \">=3.0.0\"\n";
 
+    /// Manifest is the gate: an empty dir reports only the missing manifest;
+    /// entry-point detection does not run without a parsed manifest.
     #[test]
-    fn empty_dir_reports_missing_manifest_and_no_entry_point() {
+    fn empty_dir_reports_only_missing_manifest() {
         let td = tempfile::tempdir().unwrap();
         let err = plugin_dir(td.path()).expect_err("empty dir must fail");
         let ValidationFailure::Invalid(errs) = err else {
-            panic!("expected Invalid, got {err:?}");
+            panic!("expected Invalid, got {err:?}")
         };
-        assert_eq!(errs.len(), 2, "got {errs:?}");
-        // H1: entry-point detection runs first.
+        assert_eq!(errs.len(), 1, "got {errs:?}");
         assert!(
-            matches!(errs[0], ValidationError::NoEntryPoint),
+            matches!(&errs[0], ValidationError::MissingRequiredFile { file } if file == "manifest.toml"),
             "got {:?}",
             errs[0]
-        );
-        assert!(
-            matches!(&errs[1], ValidationError::MissingRequiredFile { file } if file == "manifest.toml"),
-            "got {:?}",
-            errs[1]
         );
     }
 
@@ -531,14 +515,14 @@ mod tests {
         );
     }
 
-    /// H2: an entry-point defect and a manifest defect surface together.
+    /// With manifest-gates-entry-point ordering, a malformed manifest is
+    /// reported alone — entry-point detection cannot run without a valid
+    /// manifest (the exclude list is unknown).
     #[test]
-    fn h2_entry_point_and_manifest_defects_merged() {
+    fn malformed_manifest_reported_without_entry_point_detection() {
         let td = tempfile::tempdir().unwrap();
-        // Two .py files (no __init__.py) → AmbiguousEntryPoint.
         write(td.path(), "a.py", "def process_writes(a,b,c): pass\n");
         write(td.path(), "b.py", "def process_writes(a,b,c): pass\n");
-        // Malformed manifest: empty description.
         write(
             td.path(),
             "manifest.toml",
@@ -546,20 +530,94 @@ mod tests {
              [plugin]\nname = \"test\"\nversion = \"0.1.0\"\ndescription = \"\"\ntriggers = [\"process_writes\"]\n\
              [dependencies]\ndatabase_version = \">=3.0.0\"\n",
         );
-        let err = plugin_dir(td.path()).expect_err("both defects present");
+        let err = plugin_dir(td.path()).expect_err("malformed manifest");
         let ValidationFailure::Invalid(errs) = err else {
-            panic!("expected Invalid, got {err:?}");
+            panic!("expected Invalid, got {err:?}")
         };
-        assert!(
-            errs.iter()
-                .any(|e| matches!(e, ValidationError::AmbiguousEntryPoint { .. })),
-            "expected AmbiguousEntryPoint among {errs:?}"
-        );
         assert!(
             errs.iter()
                 .any(|e| matches!(e, ValidationError::SchemaReported(_))),
             "expected SchemaReported among {errs:?}"
         );
+        assert!(
+            !errs
+                .iter()
+                .any(|e| matches!(e, ValidationError::AmbiguousEntryPoint { .. })),
+            "entry-point detection must not run for a malformed manifest: {errs:?}"
+        );
+    }
+
+    /// Excluding all .py files yields the normal no-entry-point result;
+    /// selection does not special-case required files.
+    #[test]
+    fn excluding_all_python_yields_no_entry_point() {
+        let td = tempfile::tempdir().unwrap();
+        write(
+            td.path(),
+            "__init__.py",
+            "def process_writes(a,b,c): pass\n",
+        );
+        write(
+            td.path(),
+            "manifest.toml",
+            "manifest_schema_version = \"1.2\"\n\
+             [plugin]\nname = \"t\"\nversion = \"0.1.0\"\ndescription = \"x\"\ntriggers = [\"process_writes\"]\nexclude = [\"*.py\"]\n\
+             [dependencies]\ndatabase_version = \">=3.0.0\"\n",
+        );
+        let err = plugin_dir(td.path()).expect_err("all py excluded");
+        let ValidationFailure::Invalid(errs) = err else {
+            panic!("got {err:?}")
+        };
+        assert!(
+            errs.iter()
+                .any(|e| matches!(e, ValidationError::NoEntryPoint)),
+            "got {errs:?}"
+        );
+    }
+
+    /// Nested .py files never count for entry-point classification.
+    #[test]
+    fn nested_python_does_not_classify_entry_point() {
+        let td = tempfile::tempdir().unwrap();
+        write(td.path(), "manifest.toml", MINIMAL_MANIFEST);
+        std::fs::create_dir(td.path().join("pkg")).unwrap();
+        write(&td.path().join("pkg"), "helper.py", "def helper(): pass\n");
+        let err = plugin_dir(td.path()).expect_err("nested-only must fail");
+        let ValidationFailure::Invalid(errs) = err else {
+            panic!("got {err:?}")
+        };
+        assert!(
+            errs.iter()
+                .any(|e| matches!(e, ValidationError::NoEntryPoint)),
+            "got {errs:?}"
+        );
+    }
+
+    /// An invalid exclude pattern surfaces as ValidationFailure::InvalidExcludePattern.
+    /// NOTE: `ignore` 0.4.25 accepts `a/**b` and `[`; use an inverted character
+    /// class `[z-a]`, which it reliably rejects.
+    #[test]
+    fn invalid_exclude_pattern_surfaces_named() {
+        let td = tempfile::tempdir().unwrap();
+        write(
+            td.path(),
+            "__init__.py",
+            "def process_writes(a,b,c): pass\n",
+        );
+        write(
+            td.path(),
+            "manifest.toml",
+            "manifest_schema_version = \"1.2\"\n\
+             [plugin]\nname = \"t\"\nversion = \"0.1.0\"\ndescription = \"x\"\ntriggers = [\"process_writes\"]\nexclude = [\"[z-a]\"]\n\
+             [dependencies]\ndatabase_version = \">=3.0.0\"\n",
+        );
+        let err = plugin_dir(td.path()).expect_err("invalid pattern");
+        match err {
+            ValidationFailure::InvalidExcludePattern { pattern, .. } => {
+                assert_eq!(pattern, "[z-a]")
+            }
+            other => panic!("expected InvalidExcludePattern, got {other:?}"),
+        }
     }
 
     /// C3: an unreadable entry-point file after detection produces
