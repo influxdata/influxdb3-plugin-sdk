@@ -65,8 +65,12 @@ fn package_plugin_with_published_at(
 ) -> Result<PackageOutput, SdkError> {
     let manifest = validate::plugin_dir(plugin_dir)?.manifest;
 
-    let archive_bytes =
-        archive::canonical_tar_gz(plugin_dir, &manifest.plugin.name, &manifest.plugin.version)?;
+    let archive_bytes = archive::canonical_tar_gz(
+        plugin_dir,
+        &manifest.plugin.name,
+        &manifest.plugin.version,
+        &manifest.plugin.exclude,
+    )?;
 
     let hash_value = hash::sha256_of_bytes(&archive_bytes);
 

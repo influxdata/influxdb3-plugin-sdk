@@ -65,6 +65,9 @@ pub enum SelectError {
 /// historical packaging behavior). Patterns are gitignore-style and resolved
 /// relative to the plugin root. The result is sorted lexicographically by the
 /// normalized (`/`-separated) relative path for cross-platform determinism.
+/// `normalized` is built from `to_string_lossy`, so the sort is over UTF-8
+/// code units. For the ASCII paths plugins use in practice this is the natural
+/// byte order; non-ASCII names are sorted by their lossy UTF-8 form.
 pub fn select(plugin_dir: &Path, exclude: &[String]) -> Result<Vec<SelectedFile>, SelectError> {
     let root = std::fs::canonicalize(plugin_dir).map_err(|source| SelectError::Io {
         source,
@@ -74,9 +77,7 @@ pub fn select(plugin_dir: &Path, exclude: &[String]) -> Result<Vec<SelectedFile>
     let matcher = build_matcher(&root, exclude)?;
 
     let mut out = Vec::new();
-    let walk = walkdir::WalkDir::new(&root)
-        .sort_by_file_name()
-        .follow_links(false);
+    let walk = walkdir::WalkDir::new(&root).follow_links(false);
     for result in walk {
         let entry = result.map_err(|e| {
             if e.io_error().is_some() {
@@ -276,6 +277,37 @@ mod tests {
         assert!(
             !got.contains(&"__pycache__/drop.pyc".to_string()),
             "got {got:?}"
+        );
+    }
+
+    /// Even a path component containing a literal backslash byte (which is a
+    /// valid filename byte on Unix) must produce a forward-slash-separated
+    /// normalized path. Unix-only: Windows parses `\` as a path separator, so
+    /// the same input would split into different components.
+    #[cfg(unix)]
+    #[test]
+    fn backslash_byte_in_component_does_not_leak_into_normalized_path() {
+        // Single component whose name contains a literal `\` byte.
+        let p = PathBuf::from("sub\\leaf");
+        let result = to_normalized(&p);
+        assert_eq!(result, "sub\\leaf", "single component preserved verbatim");
+        assert!(
+            !result.contains('/'),
+            "single component must not introduce `/`"
+        );
+
+        // Multi-component path with a backslash in one component: the component
+        // separator is `/`, component content is preserved byte-for-byte. On
+        // Unix, `PathBuf::from_iter` treats each string as a single component
+        // and backslashes are ordinary filename bytes, so the middle
+        // component's name is literally `sub\leaf` (8 bytes including the
+        // backslash). `to_normalized` joins the three components with `/`,
+        // yielding the bytes `a/sub\leaf/c`.
+        let p: PathBuf = ["a", "sub\\leaf", "c"].iter().collect();
+        let result = to_normalized(&p);
+        assert_eq!(
+            result, "a/sub\\leaf/c",
+            "backslash byte inside a component is preserved; `/` only appears as component separator"
         );
     }
 

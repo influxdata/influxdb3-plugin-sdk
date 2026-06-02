@@ -106,8 +106,8 @@ proptest! {
 
         let name: influxdb3_plugin_schemas::PluginName = "p".parse().unwrap();
         let version = Version::new(0, 1, 0);
-        let a = canonical_tar_gz(&dir, &name, &version).unwrap();
-        let b = canonical_tar_gz(&dir, &name, &version).unwrap();
+        let a = canonical_tar_gz(&dir, &name, &version, &[]).unwrap();
+        let b = canonical_tar_gz(&dir, &name, &version, &[]).unwrap();
         prop_assert_eq!(a, b);
     }
 }
