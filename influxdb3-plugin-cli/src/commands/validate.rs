@@ -124,6 +124,10 @@ fn run_with_env(args: Args, env: &dyn Env) -> anyhow::Result<()> {
             let je = json_error_from_sdk(&SdkError::Io { source, path }, ErrorContext::Validate);
             Err(CliError::runtime(je))
         }
+        (_, Err(e @ ValidationFailure::InvalidExcludePattern { .. })) => {
+            let je = json_error_from_sdk(&SdkError::from(e), ErrorContext::Validate);
+            Err(CliError::runtime(je))
+        }
         // `ValidationFailure` is `#[non_exhaustive]`; render any future
         // variant generically rather than panicking.
         (_, Err(other)) => {

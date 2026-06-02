@@ -1,6 +1,6 @@
 ---
 source: influxdb3-plugin-cli/src/output/json.rs
-assertion_line: 458
+assertion_line: 461
 expression: ALL_WIRE_CODES
 ---
 - "validate::failed"
@@ -13,6 +13,7 @@ expression: ALL_WIRE_CODES
 - "validate::index_read_failed"
 - "validate::schema_error"
 - "validate::io_failed"
+- "validate::invalid_exclude_pattern"
 - "validate::sdk_error"
 - "package::canonical_collision"
 - "package::already_published"
@@ -23,6 +24,7 @@ expression: ALL_WIRE_CODES
 - "package::path_overlap"
 - "package::index_parse_failed"
 - "package::io_failed"
+- "package::invalid_exclude_pattern"
 - "package::sdk_error"
 - "index::index_read_failed"
 - "index::index_parse_failed"
