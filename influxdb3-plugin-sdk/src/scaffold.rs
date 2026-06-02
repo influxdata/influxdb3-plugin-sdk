@@ -572,6 +572,22 @@ mod tests {
         );
     }
 
+    #[test]
+    fn scaffolded_manifest_includes_recommended_exclude() {
+        let td = tempfile::tempdir().unwrap();
+        let dir = td.path().join("p");
+        plugin(&dir, "p", TriggerType::ProcessWrites, None, false).unwrap();
+        let raw = fs::read_to_string(dir.join("manifest.toml")).unwrap();
+        let m = Manifest::parse_toml(&raw).expect("scaffolded manifest must parse");
+        for pat in ["__pycache__/", "*.pyc"] {
+            assert!(
+                m.plugin.exclude.iter().any(|p| p == pat),
+                "recommended exclude {pat} missing: {:?}",
+                m.plugin.exclude
+            );
+        }
+    }
+
     /// Explicit `--database-version` must parse as a `semver::VersionReq`;
     /// otherwise the scaffold can produce a manifest that `Manifest::parse_toml`
     /// would reject. Fail fast, write nothing.
