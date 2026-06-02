@@ -1,6 +1,5 @@
 ---
 source: influxdb3-plugin-sdk/src/error.rs
-assertion_line: 306
 expression: rendered
 ---
 - I/O error at /tmp/x
@@ -12,3 +11,4 @@ expression: rendered
 - "plugin (\"downsampler\", \"1.2.0\") already exists in the target index; existing versions: [\"1.0.0\", \"1.1.0\", \"1.2.0\"]"
 - "canonical collision: plugin name \"my-plugin\" conflicts with existing entries sharing canonical form \"my_plugin\": [(\"my_plugin\", Version { major: 1, minor: 0, patch: 0 }), (\"my_plugin\", Version { major: 1, minor: 1, patch: 0 })]"
 - "plugin (\"downsampler\", \"1.2.0\") is not present in the target index"
+- "invalid exclude pattern \"tests/**[\": unclosed character class"

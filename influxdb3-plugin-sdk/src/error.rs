@@ -80,6 +80,11 @@ pub enum SdkError {
 
     #[error("plugin ({name:?}, {version:?}) is not present in the target index")]
     EntryNotFound { name: String, version: String },
+
+    /// A manifest `[plugin].exclude` entry is not a valid gitignore pattern.
+    /// Surfaces from any command that performs source-file selection.
+    #[error("invalid exclude pattern {pattern:?}: {message}")]
+    InvalidExcludePattern { pattern: String, message: String },
 }
 
 impl SdkError {
@@ -96,6 +101,7 @@ impl SdkError {
             Self::AlreadyPublished { .. } => "AlreadyPublished",
             Self::CanonicalCollision { .. } => "CanonicalCollision",
             Self::EntryNotFound { .. } => "EntryNotFound",
+            Self::InvalidExcludePattern { .. } => "InvalidExcludePattern",
         }
     }
 }
@@ -147,6 +153,22 @@ impl From<influxdb3_plugin_schemas::IndexInsertError> for SdkError {
             _ => unreachable!(
                 "IndexInsertError has no other variants in the current schemas version"
             ),
+        }
+    }
+}
+
+impl From<crate::plugin_source_files::SelectError> for SdkError {
+    fn from(err: crate::plugin_source_files::SelectError) -> Self {
+        use crate::plugin_source_files::SelectError;
+        match err {
+            SelectError::InvalidExcludePattern { pattern, message } => {
+                SdkError::InvalidExcludePattern { pattern, message }
+            }
+            SelectError::Io { source, path } => SdkError::Io { source, path },
+            // Preserve historical archive behavior: walk errors → Archive.
+            SelectError::Walk { message } => SdkError::Archive {
+                message: format!("walkdir error: {message}"),
+            },
         }
     }
 }
@@ -288,6 +310,10 @@ mod tests {
                 name: "downsampler".into(),
                 version: "1.2.0".into(),
             },
+            SdkError::InvalidExcludePattern {
+                pattern: "tests/**[".into(),
+                message: "unclosed character class".into(),
+            },
         ]
     }
 
@@ -395,6 +421,19 @@ mod tests {
     /// structured payload. With `#[error(transparent)]`, pattern-matching
     /// on the wrapper variant is the correct propagation test, and
     /// `Error::source()` still reaches any nested `#[source]` at the bottom.
+    #[test]
+    fn select_error_invalid_pattern_maps_to_sdk_invalid_exclude_pattern() {
+        use crate::plugin_source_files::SelectError;
+        let se = SelectError::InvalidExcludePattern {
+            pattern: "[z-a]".into(),
+            message: "bad glob".into(),
+        };
+        match SdkError::from(se) {
+            SdkError::InvalidExcludePattern { pattern, .. } => assert_eq!(pattern, "[z-a]"),
+            other => panic!("expected InvalidExcludePattern, got {other:?}"),
+        }
+    }
+
     #[test]
     fn schemas_error_structured_payload_preserved_via_sdk_schema() {
         use std::error::Error as _;
