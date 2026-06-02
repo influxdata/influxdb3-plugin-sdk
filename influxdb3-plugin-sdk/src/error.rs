@@ -448,16 +448,24 @@ mod tests {
     #[test]
     fn select_error_maps_to_validation_failure_invalid_exclude_pattern() {
         use crate::plugin_source_files::SelectError;
-        let se = SelectError::InvalidExcludePattern { pattern: "[z-a]".into(), message: "bad".into() };
+        let se = SelectError::InvalidExcludePattern {
+            pattern: "[z-a]".into(),
+            message: "bad".into(),
+        };
         match ValidationFailure::from(se) {
-            ValidationFailure::InvalidExcludePattern { pattern, .. } => assert_eq!(pattern, "[z-a]"),
+            ValidationFailure::InvalidExcludePattern { pattern, .. } => {
+                assert_eq!(pattern, "[z-a]")
+            }
             other => panic!("expected InvalidExcludePattern, got {other:?}"),
         }
     }
 
     #[test]
     fn validation_invalid_exclude_pattern_converts_to_sdk_invalid_exclude_pattern() {
-        let vf = ValidationFailure::InvalidExcludePattern { pattern: "[z-a]".into(), message: "bad".into() };
+        let vf = ValidationFailure::InvalidExcludePattern {
+            pattern: "[z-a]".into(),
+            message: "bad".into(),
+        };
         match SdkError::from(vf) {
             SdkError::InvalidExcludePattern { pattern, .. } => assert_eq!(pattern, "[z-a]"),
             other => panic!("expected InvalidExcludePattern, got {other:?}"),

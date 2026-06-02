@@ -87,7 +87,9 @@ pub fn select(plugin_dir: &Path, exclude: &[String]) -> Result<Vec<SelectedFile>
                     path,
                 }
             } else {
-                SelectError::Walk { message: e.to_string() }
+                SelectError::Walk {
+                    message: e.to_string(),
+                }
             }
         })?;
 
@@ -323,6 +325,10 @@ mod tests {
             .into_iter()
             .map(|f| f.normalized)
             .collect();
-        assert_eq!(got, vec!["real.py"], "symlink + dir must be excluded; got {got:?}");
+        assert_eq!(
+            got,
+            vec!["real.py"],
+            "symlink + dir must be excluded; got {got:?}"
+        );
     }
 }

@@ -538,7 +538,10 @@ mod schema_version_tests {
     #[test]
     fn current_is_one_two() {
         assert_eq!(
-            (ManifestSchemaVersion::CURRENT.major(), ManifestSchemaVersion::CURRENT.minor()),
+            (
+                ManifestSchemaVersion::CURRENT.major(),
+                ManifestSchemaVersion::CURRENT.minor()
+            ),
             (1, 2)
         );
     }
@@ -910,7 +913,10 @@ database_version = ">=3.0.0"
             "triggers = [\"process_writes\"]\nexclude = [\"tests/**\", \"*.pyc\"]",
         );
         let m = Manifest::parse_toml(&src).unwrap();
-        assert_eq!(m.plugin.exclude, vec!["tests/**".to_string(), "*.pyc".to_string()]);
+        assert_eq!(
+            m.plugin.exclude,
+            vec!["tests/**".to_string(), "*.pyc".to_string()]
+        );
     }
 
     #[test]

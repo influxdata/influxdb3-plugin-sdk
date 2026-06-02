@@ -194,7 +194,10 @@ mod tests {
         let listing = list_tar_paths(&bytes);
         for entry in &listing {
             assert!(!entry.contains("/target/"), "unexpected target/: {entry}");
-            assert!(!entry.contains("/__pycache__/"), "unexpected __pycache__/: {entry}");
+            assert!(
+                !entry.contains("/__pycache__/"),
+                "unexpected __pycache__/: {entry}"
+            );
             assert!(!entry.ends_with(".pyc"), "unexpected .pyc: {entry}");
         }
     }
@@ -213,12 +216,18 @@ mod tests {
 
         let bytes = canonical_tar_gz(&dir, &name(), &version(), &[]).unwrap();
         let listing = list_tar_paths(&bytes);
-        assert!(listing.iter().any(|p| p.ends_with("compiled.pyc")),
-            "no-exclude must keep root .pyc; got {listing:?}");
-        assert!(listing.iter().any(|p| p.contains("target/some_file")),
-            "no-exclude must keep target/ files; got {listing:?}");
-        assert!(listing.iter().any(|p| p.contains("__pycache__/cache.pyc")),
-            "no-exclude must keep __pycache__/ files; got {listing:?}");
+        assert!(
+            listing.iter().any(|p| p.ends_with("compiled.pyc")),
+            "no-exclude must keep root .pyc; got {listing:?}"
+        );
+        assert!(
+            listing.iter().any(|p| p.contains("target/some_file")),
+            "no-exclude must keep target/ files; got {listing:?}"
+        );
+        assert!(
+            listing.iter().any(|p| p.contains("__pycache__/cache.pyc")),
+            "no-exclude must keep __pycache__/ files; got {listing:?}"
+        );
     }
 
     #[test]
