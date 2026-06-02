@@ -196,6 +196,10 @@ pub enum ValidationFailure {
         source: std::io::Error,
         path: Option<PathBuf>,
     },
+
+    /// A manifest `[plugin].exclude` entry is not a valid gitignore pattern.
+    #[error("invalid exclude pattern {pattern:?}: {message}")]
+    InvalidExcludePattern { pattern: String, message: String },
 }
 
 /// `Invalid → SdkError::ValidationErrors`, `Io → SdkError::Io`. Keeps
@@ -205,6 +209,26 @@ impl From<ValidationFailure> for SdkError {
         match failure {
             ValidationFailure::Invalid(errs) => SdkError::ValidationErrors(errs),
             ValidationFailure::Io { source, path } => SdkError::Io { source, path },
+            ValidationFailure::InvalidExcludePattern { pattern, message } => {
+                SdkError::InvalidExcludePattern { pattern, message }
+            }
+        }
+    }
+}
+
+impl From<crate::plugin_source_files::SelectError> for ValidationFailure {
+    fn from(err: crate::plugin_source_files::SelectError) -> Self {
+        use crate::plugin_source_files::SelectError;
+        match err {
+            SelectError::InvalidExcludePattern { pattern, message } => {
+                ValidationFailure::InvalidExcludePattern { pattern, message }
+            }
+            SelectError::Io { source, path } => ValidationFailure::Io { source, path },
+            // validate has no Archive surface; fold walk errors into Io.
+            SelectError::Walk { message } => ValidationFailure::Io {
+                source: std::io::Error::other(message),
+                path: None,
+            },
         }
     }
 }
@@ -421,6 +445,25 @@ mod tests {
     /// structured payload. With `#[error(transparent)]`, pattern-matching
     /// on the wrapper variant is the correct propagation test, and
     /// `Error::source()` still reaches any nested `#[source]` at the bottom.
+    #[test]
+    fn select_error_maps_to_validation_failure_invalid_exclude_pattern() {
+        use crate::plugin_source_files::SelectError;
+        let se = SelectError::InvalidExcludePattern { pattern: "[z-a]".into(), message: "bad".into() };
+        match ValidationFailure::from(se) {
+            ValidationFailure::InvalidExcludePattern { pattern, .. } => assert_eq!(pattern, "[z-a]"),
+            other => panic!("expected InvalidExcludePattern, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn validation_invalid_exclude_pattern_converts_to_sdk_invalid_exclude_pattern() {
+        let vf = ValidationFailure::InvalidExcludePattern { pattern: "[z-a]".into(), message: "bad".into() };
+        match SdkError::from(vf) {
+            SdkError::InvalidExcludePattern { pattern, .. } => assert_eq!(pattern, "[z-a]"),
+            other => panic!("expected InvalidExcludePattern, got {other:?}"),
+        }
+    }
+
     #[test]
     fn select_error_invalid_pattern_maps_to_sdk_invalid_exclude_pattern() {
         use crate::plugin_source_files::SelectError;
