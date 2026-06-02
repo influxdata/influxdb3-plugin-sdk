@@ -26,6 +26,7 @@ pub mod archive;
 pub mod hash;
 pub mod mutate_index;
 pub mod package;
+pub mod plugin_source_files;
 pub mod scaffold;
 pub mod validate;
 

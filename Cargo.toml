@@ -28,6 +28,7 @@ anstyle = "1"
 anyhow = "1"
 clap = { version = "4.5.47", features = ["derive", "env"] }
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+ignore = "0.4"
 pep508_rs = "0.9"
 semver = { version = "1", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }

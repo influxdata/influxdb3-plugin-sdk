@@ -18,6 +18,7 @@ influxdb3-plugin-schemas.workspace = true
 
 # crates.io dependencies
 flate2.workspace = true
+ignore.workspace = true
 semver.workspace = true
 sha2.workspace = true
 tar.workspace = true
