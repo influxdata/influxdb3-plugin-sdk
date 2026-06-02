@@ -1998,6 +1998,7 @@ mod from_manifest_tests {
                 homepage: Some(url::Url::parse("https://example.com").unwrap()),
                 repository: Some(url::Url::parse("https://github.com/example/repo").unwrap()),
                 documentation: Some(url::Url::parse("https://docs.example.com").unwrap()),
+                exclude: vec![],
             },
             dependencies: Dependencies {
                 database_version: ">=3.2.0,<4.0.0".parse().unwrap(),

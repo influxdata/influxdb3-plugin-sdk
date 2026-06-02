@@ -25,6 +25,7 @@ Manifest {
         homepage: None,
         repository: None,
         documentation: None,
+        exclude: [],
     },
     dependencies: Dependencies {
         database_version: VersionReq {

@@ -1,6 +1,6 @@
 ---
 source: influxdb3-plugin-schemas/src/manifest.rs
-assertion_line: 481
+assertion_line: 741
 expression: m
 ---
 Manifest {
@@ -75,6 +75,7 @@ Manifest {
                 fragment: None,
             },
         ),
+        exclude: [],
     },
     dependencies: Dependencies {
         database_version: VersionReq {

@@ -24,6 +24,8 @@ pub(crate) struct RawPluginMetadata {
     pub repository: Option<String>,
     #[serde(default)]
     pub documentation: Option<String>,
+    #[serde(default)]
+    pub exclude: Vec<String>,
 }
 
 #[derive(Debug, serde::Deserialize)]
