@@ -1,0 +1,11 @@
+manifest_schema_version = "1.2"
+
+[plugin]
+name = "empty-excludes"
+version = "0.1.0"
+description = "A plugin with an explicit empty exclude list."
+triggers = ["process_writes"]
+exclude = []
+
+[dependencies]
+database_version = ">=3.0.0"

@@ -1,0 +1,54 @@
+---
+source: influxdb3-plugin-schemas/tests/parse_fixtures.rs
+expression: manifest
+---
+Manifest {
+    manifest_schema_version: ManifestSchemaVersion {
+        major: 1,
+        minor: 2,
+    },
+    plugin: PluginMetadata {
+        name: PluginName(
+            "excludes",
+        ),
+        version: Version {
+            major: 0,
+            minor: 1,
+            patch: 0,
+        },
+        description: Description(
+            "A plugin exercising the exclude field.",
+        ),
+        triggers: [
+            ProcessWrites,
+        ],
+        homepage: None,
+        repository: None,
+        documentation: None,
+        exclude: [
+            ".git/",
+            ".venv/",
+            "__pycache__/",
+            "*.pyc",
+            "tests/**",
+        ],
+    },
+    dependencies: Dependencies {
+        database_version: VersionReq {
+            comparators: [
+                Comparator {
+                    op: GreaterEq,
+                    major: 3,
+                    minor: Some(
+                        0,
+                    ),
+                    patch: Some(
+                        0,
+                    ),
+                    pre: Prerelease(""),
+                },
+            ],
+        },
+        python: [],
+    },
+}
