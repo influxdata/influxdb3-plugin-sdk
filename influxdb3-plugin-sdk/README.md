@@ -10,11 +10,16 @@ wraps in user-facing subcommands.
 - **`scaffold`** — generate a plugin directory or index directory from a
   built-in template (`process_writes`, `process_scheduled_call`,
   `process_request`, `index`).
-- **`validate`** — structural + cross-file checks against a plugin directory:
-  manifest well-formedness, required-file presence, and (via
-  `tree-sitter-python`) top-level sync-def implementation of every declared
-  trigger. Supports both multi-file plugins (with `__init__.py`) and
-  single-file plugins (a sole `.py` file at the top level, no local imports).
+- **`validate`** — the filesystem + Python-parser mechanism for validating a
+  plugin directory. `plugin_dir` walks the directory, reads the entry point,
+  and feeds the results into the pure contract in
+  `influxdb3_plugin_schemas::plugin_format`, returning a `ValidatedPluginDefinition`
+  (parsed manifest + classified `EntryPoint`) on success or a
+  `ValidationFailure` on error. Supports multi-file plugins (with `__init__.py`)
+  and single-file plugins (a sole `.py` file at the top level). The reference
+  `tree-sitter-python` extractor `extract_top_level_defs` is exposed publicly
+  so other consumers (e.g. the runtime) can reuse it; it is drift-checked
+  against `schemas::plugin_format::TOP_LEVEL_DEF_CONFORMANCE_CASES`.
 - **`archive`** — canonical tar.gz construction per Spec 2 Reproducibility.
   Byte-deterministic across machines given identical inputs.
 - **`hash`** — SHA-256 of archive bytes in the canonical

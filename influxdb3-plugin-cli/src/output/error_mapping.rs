@@ -3,8 +3,8 @@
 //! don't break the wire.
 
 use crate::output::json::JsonError;
-use influxdb3_plugin_schemas::SchemaError;
-use influxdb3_plugin_sdk::{SdkError, ValidationError};
+use influxdb3_plugin_schemas::{SchemaError, ValidationError};
+use influxdb3_plugin_sdk::SdkError;
 
 /// Identifies the calling command so the error mapper can pick the
 /// correct namespace for variants whose code dispatches by call site
@@ -626,8 +626,9 @@ pub(crate) fn json_error_from_sdk(err: &SdkError, ctx: ErrorContext) -> JsonErro
 mod tests {
     use super::*;
 
-    use influxdb3_plugin_schemas::{FieldPath, ReportedError, SchemaError, TriggerType};
-    use influxdb3_plugin_sdk::ValidationError;
+    use influxdb3_plugin_schemas::{
+        FieldPath, ReportedError, SchemaError, TriggerType, ValidationError,
+    };
 
     /// Helper: construct one of each `ValidationError` variant (mirrors the
     /// SDK's `every_validation_variant` fixture).
@@ -652,6 +653,10 @@ mod tests {
                 trigger: TriggerType::ProcessScheduledCall,
                 entry_point: "__init__.py".into(),
             },
+            ValidationError::NoEntryPoint,
+            ValidationError::AmbiguousEntryPoint {
+                files: vec!["a.py".into(), "b.py".into()],
+            },
             ValidationError::NameVersionConflict {
                 name: "downsampler".into(),
                 version: "1.2.0".into(),
@@ -667,6 +672,8 @@ mod tests {
             "validate::python_parse",
             "validate::trigger_not_implemented",
             "validate::async_trigger_fn",
+            "validate::no_entry_point",
+            "validate::ambiguous_entry_point",
             "validate::name_version_conflict",
         ];
         let variants = every_validation_variant();
@@ -677,6 +684,23 @@ mod tests {
                 &je.code,
                 expected_code,
                 "variant {:?} produced wrong code",
+                std::mem::discriminant(err)
+            );
+        }
+    }
+
+    /// Drift guard: no `ValidationError` in the coverage helper maps to the
+    /// `validate::unknown` fallthrough arm. Combined with the doc-comment
+    /// contract ("one of each variant"), this catches a new variant added to
+    /// `json_error_from_validation` without an explicit `validate::*` code.
+    #[test]
+    fn no_validation_variant_falls_through_to_unknown() {
+        for err in &every_validation_variant() {
+            let je = json_error_from_validation(err);
+            assert_ne!(
+                je.code,
+                "validate::unknown",
+                "variant {:?} fell through to the `_` arm",
                 std::mem::discriminant(err)
             );
         }

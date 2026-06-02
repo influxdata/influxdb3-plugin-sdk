@@ -18,6 +18,7 @@ mod index;
 mod index_query;
 mod manifest;
 mod path;
+pub mod plugin_format;
 mod raw;
 
 pub use error::{IndexInsertError, ReportedError, SchemaError, SchemaErrors};
@@ -32,3 +33,4 @@ pub use manifest::{
     TriggerType,
 };
 pub use path::FieldPath;
+pub use plugin_format::ValidationError;

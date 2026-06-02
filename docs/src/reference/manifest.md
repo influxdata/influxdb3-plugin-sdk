@@ -166,7 +166,7 @@ The array must contain at least one value. Supported trigger values are:
 - `process_scheduled_call`
 - `process_request`
 
-Each value must correspond to a supported trigger entry point in the plugin source. Unknown trigger strings are rejected.
+Each value must correspond to a supported trigger entry point in the plugin source. Unknown trigger strings are rejected. How a declared trigger binds to a Python function in the entry point is specified in [The Plugin Directory Format](./plugin-format.md#trigger-binding).
 
 ### `plugin.homepage`
 
@@ -252,4 +252,4 @@ Within a supported major version, fields may be added and unknown fields are ign
 
 ---
 
-Back: [The Registry](./registry.md) | Next: [The Registry Index Format](./registry-index.md)
+Back: [The Registry](./registry.md) | Next: [The Plugin Directory Format](./plugin-format.md)
