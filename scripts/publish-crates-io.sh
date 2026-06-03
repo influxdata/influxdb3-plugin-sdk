@@ -4,6 +4,10 @@ set -euo pipefail
 # Overridable for tests / mirrors.
 INDEX_BASE="${INDEX_BASE:-https://index.crates.io}"
 
+# Dependency order. A downstream crate's publish-verify build resolves the
+# just-published upstream from the registry, so order matters.
+CRATES=(influxdb3-plugin-schemas influxdb3-plugin-sdk influxdb3-plugin-cli)
+
 # Sparse-index path for a crate name, per cargo's layout:
 #   len 1     -> 1/<name>
 #   len 2     -> 2/<name>
@@ -57,6 +61,45 @@ fetch_index_versions() {
         *)   rm -f "$body"; echo "ERROR: crates.io index returned HTTP $code for $url" >&2; return 1 ;;
     esac
     rm -f "$body"
+}
+
+main() {
+    local mode="publish"
+    case "${1:-}" in
+        --dry-run) mode="dry-run" ;;
+        --verify)  mode="verify" ;;
+        "")        : ;;
+        *) echo "ERROR: unknown arg '$1' (expected --dry-run, --verify, or none)" >&2; exit 2 ;;
+    esac
+
+    # Only the real publish needs the token; dry-run/verify are read-only.
+    if [ "$mode" = "publish" ]; then
+        : "${CARGO_REGISTRY_TOKEN:?CARGO_REGISTRY_TOKEN is required to publish}"
+    fi
+
+    local missing=0
+    for crate in "${CRATES[@]}"; do
+        local version body
+        version="$(crate_version "$crate")"
+        body="$(fetch_index_versions "$crate")"
+        if version_published "$body" "$version"; then
+            case "$mode" in
+                verify) echo "OK: $crate $version is on crates.io" ;;
+                *)      echo "skip: $crate $version (already on crates.io)" ;;
+            esac
+            continue
+        fi
+        case "$mode" in
+            verify)  echo "MISSING: $crate $version is NOT on crates.io" >&2; missing=$((missing+1)) ;;
+            dry-run) echo "would publish: $crate $version" ;;
+            publish) echo "publish: $crate $version"; cargo publish -p "$crate" --locked ;;
+        esac
+    done
+
+    if [ "$mode" = "verify" ] && [ "$missing" -gt 0 ]; then
+        echo "$missing crate version(s) missing from crates.io." >&2
+        exit 1
+    fi
 }
 
 if [ "${BASH_SOURCE[0]}" = "${0}" ]; then main "$@"; fi
