@@ -4,7 +4,9 @@
 //! - [`SdkError`] — crate-level error returned by every public function.
 //! - [`ValidationFailure`] — the focused, validation-only error returned by
 //!   the `validate::plugin_dir` wrapper. Either [`ValidationFailure::Invalid`]
-//!   (a batch of [`ValidationError`]s) or [`ValidationFailure::Io`].
+//!   (a batch of [`ValidationError`]s), [`ValidationFailure::Io`], or
+//!   [`ValidationFailure::InvalidExcludePattern`] (a `[plugin].exclude` entry
+//!   that is not a valid gitignore pattern).
 //! - [`ValidationReport`] — accumulator that collects [`ValidationError`]s
 //!   during a pass and converts to a [`ValidationFailure`].
 //!

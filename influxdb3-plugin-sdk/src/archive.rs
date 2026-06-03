@@ -59,8 +59,10 @@ use crate::SdkError;
 
 /// Packages `plugin_dir` into a canonical gzipped tar archive.
 ///
-/// The archive's top-level directory is `{name}-{version}/`; all files under
-/// `plugin_dir` are placed beneath it, preserving their relative paths.
+/// The archive's top-level directory is `{name}-{version}/`; the selected
+/// source files (after `[plugin].exclude` filtering via
+/// [`crate::plugin_source_files`]) are placed beneath it, preserving their
+/// relative paths.
 ///
 /// Returns the archive bytes. Consumers are expected to feed them into
 /// [`crate::hash::sha256_of_bytes`] and write them out; this function
