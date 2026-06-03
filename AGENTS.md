@@ -30,6 +30,6 @@ Keep documentation in sync with code and process changes. In particular, conside
 
 ## Non-negotiable release and publishing rules
 
-- Do not run `cargo publish`. Publishing to crates.io is automated in CI. 
+- Do not run `cargo publish` by hand. Publishing to crates.io is automated by the CircleCI `publish-crates-io` job (`scripts/publish-crates-io.sh`) on stable `vX.Y.Z` tags. The only sanctioned manual invocation is documented recovery via `just publish-crates-io` (see `RELEASE.md`).
 - Do not modify the tag format (`vX.Y.Z`) without updating the justfile, `.circleci/config.yml` tag filter, `RELEASE.md`, and `.github/RELEASE_CHECKLIST.md` in lockstep.
 - Do not cut a release, run `just tag-version`, or push a `v*` tag without explicit user authorization. Releases trigger the full build and publish pipeline.
