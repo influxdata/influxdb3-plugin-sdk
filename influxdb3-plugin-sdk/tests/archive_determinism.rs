@@ -48,11 +48,10 @@ struct PluginSpec {
 }
 
 fn arb_filename() -> impl Strategy<Value = String> {
-    // Short lowercase names with `.py` suffix. After the suffix, the output
-    // can't collide with directory-exclusion tokens (`target`, `.git`,
-    // `__pycache__` — which match path components, not filenames) or with
-    // the required fixture files (`manifest.toml` / `__init__.py` —
-    // different extension), so no post-map filters are needed.
+    // Short lowercase names with `.py` suffix. The `.py` suffix means a
+    // generated name can't collide with the required fixture files
+    // (`manifest.toml` / `__init__.py` have different extensions), so no
+    // post-map filters are needed.
     proptest::string::string_regex("[a-z][a-z0-9]{0,6}")
         .unwrap()
         .prop_map(|s| format!("{s}.py"))

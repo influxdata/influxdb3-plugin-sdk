@@ -441,10 +441,6 @@ mod tests {
         ));
     }
 
-    /// Schemas errors wrapped in `SdkError::Schema` must preserve the
-    /// structured payload. With `#[error(transparent)]`, pattern-matching
-    /// on the wrapper variant is the correct propagation test, and
-    /// `Error::source()` still reaches any nested `#[source]` at the bottom.
     #[test]
     fn select_error_maps_to_validation_failure_invalid_exclude_pattern() {
         use crate::plugin_source_files::SelectError;

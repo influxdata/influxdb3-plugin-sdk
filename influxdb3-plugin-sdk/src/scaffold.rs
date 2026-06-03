@@ -573,17 +573,27 @@ mod tests {
     }
 
     #[test]
-    fn scaffolded_manifest_includes_recommended_exclude() {
-        let td = tempfile::tempdir().unwrap();
-        let dir = td.path().join("p");
-        plugin(&dir, "p", TriggerType::ProcessWrites, None, false).unwrap();
-        let raw = fs::read_to_string(dir.join("manifest.toml")).unwrap();
-        let m = Manifest::parse_toml(&raw).expect("scaffolded manifest must parse");
-        for pat in ["__pycache__/", "*.pyc"] {
-            assert!(
-                m.plugin.exclude.iter().any(|p| p == pat),
-                "recommended exclude {pat} missing: {:?}",
-                m.plugin.exclude
+    fn scaffolded_manifest_includes_full_recommended_exclude() {
+        let expected = vec![
+            ".git/".to_string(),
+            ".venv/".to_string(),
+            "__pycache__/".to_string(),
+            "*.pyc".to_string(),
+            "tests/**".to_string(),
+        ];
+        for trigger in [
+            TriggerType::ProcessWrites,
+            TriggerType::ProcessScheduledCall,
+            TriggerType::ProcessRequest,
+        ] {
+            let td = tempfile::tempdir().unwrap();
+            let dir = td.path().join("p");
+            plugin(&dir, "p", trigger, None, false).unwrap();
+            let raw = fs::read_to_string(dir.join("manifest.toml")).unwrap();
+            let m = Manifest::parse_toml(&raw).expect("scaffolded manifest must parse");
+            assert_eq!(
+                m.plugin.exclude, expected,
+                "{trigger:?} template must ship the full recommended exclude list"
             );
         }
     }

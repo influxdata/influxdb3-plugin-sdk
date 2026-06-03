@@ -367,6 +367,11 @@ fn nonexistent_plugin_dir_reports_missing_manifest() {
     let ValidationFailure::Invalid(errs) = err else {
         panic!("expected ValidationErrors for missing dir, got {err:?}")
     };
+    assert_eq!(
+        errs.len(),
+        1,
+        "missing manifest must be the only diagnostic: {errs:?}"
+    );
     assert!(
         errs.iter().any(|e| matches!(
             e, ValidationError::MissingRequiredFile { file } if file == "manifest.toml")),

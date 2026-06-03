@@ -152,16 +152,14 @@ fn package_invalid_exclude_pattern_reports_named_error() {
     let stdout = String::from_utf8_lossy(&out.stdout);
     let doc: serde_json::Value = serde_json::from_str(&stdout)
         .unwrap_or_else(|e| panic!("stdout must be valid JSON: {e}\n{stdout}"));
+    assert_eq!(doc["error"]["code"], "package::invalid_exclude_pattern");
     assert_eq!(
-        doc["error"]["code"], "package::invalid_exclude_pattern",
-        "expected package::invalid_exclude_pattern, got:\n{stdout}"
+        doc["error"]["field"], "[z-a]",
+        "field must name the offending pattern"
     );
-    // The offending pattern must appear in `field` or `details.pattern`.
-    let field = doc["error"]["field"].as_str().unwrap_or("");
-    let details_pattern = doc["error"]["details"]["pattern"].as_str().unwrap_or("");
-    assert!(
-        field == "[z-a]" || details_pattern == "[z-a]",
-        "expected [z-a] in field or details.pattern, got:\n{stdout}"
+    assert_eq!(
+        doc["error"]["details"]["pattern"], "[z-a]",
+        "details.pattern must name the offending pattern"
     );
     assert!(
         out.stderr.is_empty(),

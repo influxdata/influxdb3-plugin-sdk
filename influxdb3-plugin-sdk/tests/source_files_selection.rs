@@ -6,7 +6,7 @@
 mod common;
 
 use common::empty_index;
-use influxdb3_plugin_sdk::{archive::canonical_tar_gz, package, plugin_source_files};
+use influxdb3_plugin_sdk::{archive::canonical_tar_gz, package, plugin_source_files, validate};
 use std::fs;
 
 fn write(dir: &std::path::Path, rel: &str, body: &str) {
@@ -98,10 +98,56 @@ fn gitignore_files_above_and_in_dir_have_no_effect() {
 }
 
 #[test]
-fn clean_plugin_with_no_exclude_packages_deterministically() {
-    // Byte-identity before/after the exclude feature is guaranteed by
-    // construction (ASCII flat paths: normalized-string order == old byte
-    // order; clean plugin has nothing to exclude). Here we pin determinism.
+fn exclude_changes_validate_outcome_and_package_contents() {
+    // Two top-level .py files with no __init__.py is ambiguous → validate
+    // fails. Excluding one resolves it to a single-file plugin, so validate
+    // PASSING proves validation applied the manifest exclude; the package
+    // archive omitting the excluded file proves packaging used it too.
+    let td = tempfile::tempdir().unwrap();
+    let dir = td.path().join("p");
+    write(
+        &dir,
+        "manifest.toml",
+        "manifest_schema_version = \"1.2\"\n[plugin]\nname=\"downsampler\"\nversion=\"1.2.0\"\n\
+         description=\"x\"\ntriggers=[\"process_writes\"]\nexclude=[\"b.py\"]\n\
+         [dependencies]\ndatabase_version=\">=3.0.0\"\n",
+    );
+    write(&dir, "a.py", "def process_writes(a, b, c):\n    pass\n");
+    write(&dir, "b.py", "def helper():\n    pass\n");
+
+    // validate: without the exclude this would be AmbiguousEntryPoint; with
+    // exclude=["b.py"] it is the single-file plugin a.py → Ok.
+    let validated =
+        validate::plugin_dir(&dir).expect("exclude must resolve ambiguity to single-file a.py");
+    assert_eq!(validated.manifest.plugin.name.as_str(), "downsampler");
+
+    // package: archive must omit the excluded b.py.
+    let out = package::package_plugin(&dir, empty_index()).unwrap();
+    let packaged: Vec<String> = list_tar_paths(&out.archive_bytes)
+        .into_iter()
+        .map(|p| p.trim_start_matches("downsampler-1.2.0/").to_string())
+        .collect();
+    assert!(
+        packaged.contains(&"a.py".to_string()),
+        "a.py must be packaged: {packaged:?}"
+    );
+    assert!(
+        !packaged.iter().any(|p| p == "b.py"),
+        "b.py must be excluded: {packaged:?}"
+    );
+    assert!(
+        packaged.contains(&"manifest.toml".to_string()),
+        "manifest.toml must be packaged: {packaged:?}"
+    );
+}
+
+#[test]
+fn clean_plugin_with_no_exclude_has_stable_archive_bytes() {
+    // A clean ASCII no-exec plugin with no exclude must produce byte-stable
+    // canonical archive bytes. Pinning the SHA-256 guards against accidental
+    // canonicalization drift (sort key, headers, gzip params). The bytes are
+    // cross-platform identical because the plugin carries no executable files.
+    use influxdb3_plugin_sdk::hash;
     let td = tempfile::tempdir().unwrap();
     let dir = td.path().join("p");
     write(
@@ -110,20 +156,22 @@ fn clean_plugin_with_no_exclude_packages_deterministically() {
         "manifest_schema_version = \"1.2\"\n[plugin]\nname=\"p\"\nversion=\"0.1.0\"\n\
          description=\"x\"\ntriggers=[\"process_writes\"]\n[dependencies]\ndatabase_version=\">=3.0.0\"\n",
     );
-    write(&dir, "__init__.py", "def process_writes(a,b,c): pass\n");
-    let a = canonical_tar_gz(
+    write(
+        &dir,
+        "__init__.py",
+        "def process_writes(a, b, c):\n    pass\n",
+    );
+    let bytes = canonical_tar_gz(
         &dir,
         &"p".parse().unwrap(),
         &semver::Version::new(0, 1, 0),
         &[],
     )
     .unwrap();
-    let b = canonical_tar_gz(
-        &dir,
-        &"p".parse().unwrap(),
-        &semver::Version::new(0, 1, 0),
-        &[],
-    )
-    .unwrap();
-    assert_eq!(a, b);
+    let digest = hash::sha256_of_bytes(&bytes);
+    assert_eq!(
+        digest.as_str(),
+        "sha256:9ec4a7ccb674b7f21178bc7dc8fbca65d51501e25ef8032fbd59b7c7ef39abf2",
+        "canonical archive bytes drifted; if this is an intentional canonicalization change, update the golden hash"
+    );
 }
