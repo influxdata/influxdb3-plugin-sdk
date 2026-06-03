@@ -17,4 +17,13 @@ index_path() {
     esac
 }
 
+# Return 0 if <version> ($2) appears as a "vers" entry in the index body ($1).
+# Yanked versions still count — crates.io versions are immutable and a yanked
+# version cannot be republished. The trailing quote in the pattern prevents
+# prefix matches (e.g. "0.3" must not match "0.3.0").
+version_published() {
+    local body="$1" version="$2"
+    printf '%s\n' "$body" | grep -qF "\"vers\":\"$version\""
+}
+
 if [ "${BASH_SOURCE[0]}" = "${0}" ]; then main "$@"; fi
