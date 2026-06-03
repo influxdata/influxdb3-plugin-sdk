@@ -51,6 +51,44 @@ else
     pass "missing crate -> error"
 fi
 
+echo "== main --dry-run (stubbed: cli-only bump) =="
+# Deterministic stubs: cli bumped to 0.5.1 (unpublished); schemas/sdk unchanged.
+crate_version() {
+    case "$1" in
+        influxdb3-plugin-schemas) echo 0.3.0 ;;
+        influxdb3-plugin-sdk)     echo 0.4.0 ;;
+        influxdb3-plugin-cli)     echo 0.5.1 ;;
+    esac
+}
+fetch_index_versions() {
+    case "$1" in
+        influxdb3-plugin-schemas) echo '{"vers":"0.3.0"}' ;;
+        influxdb3-plugin-sdk)     echo '{"vers":"0.4.0"}' ;;
+        influxdb3-plugin-cli)     echo '{"vers":"0.5.0"}' ;;
+    esac
+}
+out="$(main --dry-run)"
+echo "$out" | grep -qF "skip: influxdb3-plugin-schemas 0.3.0"    && pass "skips published schemas" || fail "skips published schemas"
+echo "$out" | grep -qF "skip: influxdb3-plugin-sdk 0.4.0"        && pass "skips published sdk"     || fail "skips published sdk"
+echo "$out" | grep -qF "would publish: influxdb3-plugin-cli 0.5.1" && pass "would publish bumped cli" || fail "would publish bumped cli"
+
+echo "== main --verify (stubbed: all published) =="
+fetch_index_versions() {
+    case "$1" in
+        influxdb3-plugin-schemas) echo '{"vers":"0.3.0"}' ;;
+        influxdb3-plugin-sdk)     echo '{"vers":"0.4.0"}' ;;
+        influxdb3-plugin-cli)     echo '{"vers":"0.5.1"}' ;;
+    esac
+}
+crate_version() {
+    case "$1" in
+        influxdb3-plugin-schemas) echo 0.3.0 ;;
+        influxdb3-plugin-sdk)     echo 0.4.0 ;;
+        influxdb3-plugin-cli)     echo 0.5.1 ;;
+    esac
+}
+if main --verify >/dev/null 2>&1; then pass "verify passes when all present"; else fail "verify passes when all present"; fi
+
 echo ""
 echo "== Results =="
 echo "$TESTS_RUN tests, $TESTS_PASSED passed, $TESTS_FAILED failed"
