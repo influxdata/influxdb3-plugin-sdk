@@ -313,6 +313,32 @@ mod tests {
         );
     }
 
+    #[test]
+    fn anchored_pattern_is_relative_to_plugin_root_not_nested_dirs() {
+        // A pattern with an internal separator (e.g. `tests/**`) is anchored to
+        // the plugin root, so it excludes `<root>/tests/...` but NOT a `tests/`
+        // directory nested deeper. This proves selection is relative to the
+        // plugin root, independent of where the matched files sit.
+        let td = tempfile::tempdir().unwrap();
+        write(td.path(), "__init__.py", "y");
+        write(td.path(), "tests/a.py", "root-level tests, excluded");
+        write(td.path(), "pkg/tests/b.py", "nested tests, kept");
+        let got: Vec<String> = select(td.path(), &["tests/**".to_string()])
+            .unwrap()
+            .into_iter()
+            .map(|f| f.normalized)
+            .collect();
+        assert!(
+            !got.iter().any(|p| p == "tests/a.py"),
+            "root tests/ must be excluded: {got:?}"
+        );
+        assert!(
+            got.iter().any(|p| p == "pkg/tests/b.py"),
+            "nested pkg/tests/ must be kept (pattern anchored to root): {got:?}"
+        );
+        assert!(got.iter().any(|p| p == "__init__.py"), "got {got:?}");
+    }
+
     #[cfg(unix)]
     #[test]
     fn symlinks_and_dirs_are_excluded_from_selection() {

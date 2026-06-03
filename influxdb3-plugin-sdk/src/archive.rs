@@ -213,6 +213,8 @@ mod tests {
         fs::write(dir.join("target/some_file"), "kept").unwrap();
         fs::create_dir_all(dir.join("__pycache__")).unwrap();
         fs::write(dir.join("__pycache__/cache.pyc"), "kept").unwrap();
+        fs::create_dir_all(dir.join(".git")).unwrap();
+        fs::write(dir.join(".git/config"), "[core]\n").unwrap();
 
         let bytes = canonical_tar_gz(&dir, &name(), &version(), &[]).unwrap();
         let listing = list_tar_paths(&bytes);
@@ -227,6 +229,10 @@ mod tests {
         assert!(
             listing.iter().any(|p| p.contains("__pycache__/cache.pyc")),
             "no-exclude must keep __pycache__/ files; got {listing:?}"
+        );
+        assert!(
+            listing.iter().any(|p| p.contains(".git/config")),
+            "no-exclude must keep .git/ files; got {listing:?}"
         );
     }
 

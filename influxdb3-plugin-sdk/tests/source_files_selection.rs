@@ -69,7 +69,7 @@ fn validate_and_package_select_identical_sets() {
 }
 
 #[test]
-fn gitignore_files_above_and_in_dir_have_no_effect() {
+fn ignore_files_have_no_effect_on_selection() {
     let td = tempfile::tempdir().unwrap();
     let dir = td.path().join("p");
     write(
@@ -81,6 +81,8 @@ fn gitignore_files_above_and_in_dir_have_no_effect() {
     write(&dir, "__init__.py", "def process_writes(a,b,c): pass\n");
     write(&dir, ".gitignore", "__init__.py\n");
     write(td.path(), ".gitignore", "*.py\n"); // above the plugin dir
+    write(&dir, ".ignore", "__init__.py\n");
+    write(&dir, ".git/info/exclude", "__init__.py\n");
     let selected: Vec<String> = plugin_source_files::select(&dir, &[])
         .unwrap()
         .into_iter()
@@ -94,6 +96,21 @@ fn gitignore_files_above_and_in_dir_have_no_effect() {
     assert!(
         selected.contains(&".gitignore".to_string()),
         "got {selected:?}"
+    );
+    assert!(
+        selected.contains(&"__init__.py".to_string()),
+        ".ignore / .git/info/exclude must not affect selection: {selected:?}"
+    );
+    // The ignore files themselves are ordinary files under no exclude: none of
+    // them is special-cased, and there is no residual hard-coded `.git/`
+    // removal, so `.git/info/exclude` is selected like any other file.
+    assert!(
+        selected.contains(&".ignore".to_string()),
+        ".ignore must be selected under no exclude: {selected:?}"
+    );
+    assert!(
+        selected.contains(&".git/info/exclude".to_string()),
+        ".git/info/exclude must be selected (no hard-coded .git/ removal): {selected:?}"
     );
 }
 
@@ -139,6 +156,30 @@ fn exclude_changes_validate_outcome_and_package_contents() {
         packaged.contains(&"manifest.toml".to_string()),
         "manifest.toml must be packaged: {packaged:?}"
     );
+}
+
+#[test]
+fn package_plugin_rejects_invalid_exclude_pattern() {
+    use influxdb3_plugin_sdk::SdkError;
+    let td = tempfile::tempdir().unwrap();
+    let dir = td.path().join("p");
+    write(
+        &dir,
+        "manifest.toml",
+        "manifest_schema_version = \"1.2\"\n[plugin]\nname=\"p\"\nversion=\"0.1.0\"\n\
+         description=\"x\"\ntriggers=[\"process_writes\"]\nexclude=[\"[z-a]\"]\n\
+         [dependencies]\ndatabase_version=\">=3.0.0\"\n",
+    );
+    write(
+        &dir,
+        "__init__.py",
+        "def process_writes(a, b, c):\n    pass\n",
+    );
+    let err = package::package_plugin(&dir, empty_index()).unwrap_err();
+    match err {
+        SdkError::InvalidExcludePattern { pattern, .. } => assert_eq!(pattern, "[z-a]"),
+        other => panic!("expected SdkError::InvalidExcludePattern, got {other:?}"),
+    }
 }
 
 #[test]
