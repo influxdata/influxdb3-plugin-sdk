@@ -71,12 +71,13 @@ point.
 
 ## Diagnostics
 
-Validation collects every diagnostic it can safely gather in one pass, so an
-entry-point problem and a manifest problem (for example) are reported together
-rather than one at a time. A manifest that fails to parse stops the cross-file
-trigger checks — the set of declared triggers is unknown without a valid
-manifest — but any entry-point diagnostic already found is still reported
-alongside the manifest errors.
+A missing or malformed `manifest.toml` is reported on its own; entry-point
+detection does not run, because the entry point is classified from the files
+that survive source-file selection, and selection requires a valid manifest
+(to apply `[plugin].exclude` patterns). When the manifest parses successfully,
+validation continues: source-file selection, entry-point classification, and
+trigger checks all run, and multiple cross-file diagnostics from that stage are
+collected together so authors can fix everything in one pass.
 
 ---
 
