@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+- Automated crates.io publishing on stable releases (`publish-crates-io` CircleCI job + `scripts/publish-crates-io.sh`).
+
 ## [0.5.0] - 2026-06-02
 
 ### Added
