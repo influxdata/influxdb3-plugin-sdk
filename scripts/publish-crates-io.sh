@@ -64,6 +64,10 @@ fetch_index_versions() {
 }
 
 main() {
+    if [ "$#" -gt 1 ]; then
+        echo "ERROR: expected 0 or 1 argument, got $#" >&2
+        exit 2
+    fi
     local mode="publish"
     case "${1:-}" in
         --dry-run) mode="dry-run" ;;

@@ -89,6 +89,31 @@ crate_version() {
 }
 if main --verify >/dev/null 2>&1; then pass "verify passes when all present"; else fail "verify passes when all present"; fi
 
+echo "== main --verify (stubbed: cli missing) =="
+crate_version() {
+    case "$1" in
+        influxdb3-plugin-schemas) echo 0.3.0 ;;
+        influxdb3-plugin-sdk)     echo 0.4.0 ;;
+        influxdb3-plugin-cli)     echo 0.5.1 ;;
+    esac
+}
+fetch_index_versions() {
+    case "$1" in
+        influxdb3-plugin-schemas) echo '{"vers":"0.3.0"}' ;;
+        influxdb3-plugin-sdk)     echo '{"vers":"0.4.0"}' ;;
+        influxdb3-plugin-cli)     echo '{"vers":"0.5.0"}' ;;
+    esac
+}
+if ( main --verify ) >/dev/null 2>&1; then fail "verify fails when crate missing"; else pass "verify fails when crate missing"; fi
+
+echo "== main unknown arg =="
+if ( main --bogus ) >/dev/null 2>&1; then fail "unknown arg -> non-zero exit"; else pass "unknown arg -> non-zero exit"; fi
+
+echo "== main too many args =="
+if ( main --dry-run extra ) >/dev/null 2>&1; then fail "extra args -> non-zero exit"; else pass "extra args -> non-zero exit"; fi
+
+unset -f crate_version fetch_index_versions
+
 echo ""
 echo "== Results =="
 echo "$TESTS_RUN tests, $TESTS_PASSED passed, $TESTS_FAILED failed"
