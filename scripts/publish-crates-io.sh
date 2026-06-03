@@ -17,6 +17,14 @@ index_path() {
     esac
 }
 
+# Echo a crate's version from its Cargo.toml via cargo metadata. Per crate —
+# never assumes the three crate versions are equal (per-crate versioning model).
+crate_version() {
+    local name="$1"
+    cargo metadata --format-version 1 --no-deps \
+        | jq -r --arg n "$name" '.packages[] | select(.name == $n) | .version'
+}
+
 # Return 0 if <version> ($2) appears as a "vers" entry in the index body ($1).
 # Yanked versions still count — crates.io versions are immutable and a yanked
 # version cannot be republished. The trailing quote in the pattern prevents
