@@ -159,6 +159,36 @@ fn exclude_changes_validate_outcome_and_package_contents() {
 }
 
 #[test]
+fn package_plugin_rejects_manifest_excluded_from_selection() {
+    use influxdb3_plugin_sdk::SdkError;
+    let td = tempfile::tempdir().unwrap();
+    let dir = td.path().join("p");
+    write(
+        &dir,
+        "manifest.toml",
+        "manifest_schema_version = \"1.2\"\n[plugin]\nname=\"p\"\nversion=\"0.1.0\"\n\
+         description=\"x\"\ntriggers=[\"process_writes\"]\nexclude=[\"manifest.toml\"]\n\
+         [dependencies]\ndatabase_version=\">=3.0.0\"\n",
+    );
+    write(
+        &dir,
+        "__init__.py",
+        "def process_writes(a, b, c):\n    pass\n",
+    );
+    // Excluding the manifest must make packaging fail (no manifest-less archive),
+    // surfacing the missing required file as a validation error.
+    let err = package::package_plugin(&dir, empty_index()).unwrap_err();
+    match err {
+        SdkError::ValidationErrors(errs) => assert!(
+            errs.iter().any(|e| matches!(
+                e, influxdb3_plugin_schemas::ValidationError::MissingRequiredFile { file } if file == "manifest.toml")),
+            "expected MissingRequiredFile(manifest.toml) among {errs:?}"
+        ),
+        other => panic!("expected ValidationErrors with MissingRequiredFile, got {other:?}"),
+    }
+}
+
+#[test]
 fn package_plugin_rejects_invalid_exclude_pattern() {
     use influxdb3_plugin_sdk::SdkError;
     let td = tempfile::tempdir().unwrap();

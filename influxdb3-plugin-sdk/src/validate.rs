@@ -220,6 +220,16 @@ pub fn plugin_dir(dir: &Path) -> Result<ValidatedPluginDefinition, ValidationFai
         .map(|f| f.normalized.clone())
         .collect();
 
+    // The manifest must survive selection — exclude can drop it, and the
+    // packaged set is what counts. A selected set without manifest.toml is
+    // invalid (it would package a manifest-less archive), so report it as the
+    // ordinary missing-required-file error rather than a special exclude error.
+    if !top_level.iter().any(|name| name == "manifest.toml") {
+        report.push(ValidationError::MissingRequiredFile {
+            file: "manifest.toml".into(),
+        });
+    }
+
     // Step 4: classify the entry point from the selected depth-1 files.
     let entry_point = match classify_entry_point(&top_level) {
         Ok(ep) => Some(ep),
@@ -572,6 +582,34 @@ mod tests {
             errs.iter()
                 .any(|e| matches!(e, ValidationError::NoEntryPoint)),
             "got {errs:?}"
+        );
+    }
+
+    /// Excluding `manifest.toml` removes it from the selected/packaged set, so
+    /// the selected set is invalid: validation must report MissingRequiredFile.
+    #[test]
+    fn excluding_manifest_yields_missing_required_file() {
+        let td = tempfile::tempdir().unwrap();
+        write(
+            td.path(),
+            "__init__.py",
+            "def process_writes(a,b,c): pass\n",
+        );
+        write(
+            td.path(),
+            "manifest.toml",
+            "manifest_schema_version = \"1.2\"\n\
+             [plugin]\nname = \"t\"\nversion = \"0.1.0\"\ndescription = \"x\"\ntriggers = [\"process_writes\"]\nexclude = [\"manifest.toml\"]\n\
+             [dependencies]\ndatabase_version = \">=3.0.0\"\n",
+        );
+        let err = plugin_dir(td.path()).expect_err("excluding manifest.toml must fail validation");
+        let ValidationFailure::Invalid(errs) = err else {
+            panic!("expected Invalid, got {err:?}")
+        };
+        assert!(
+            errs.iter().any(|e| matches!(
+                e, ValidationError::MissingRequiredFile { file } if file == "manifest.toml")),
+            "expected MissingRequiredFile(manifest.toml) among {errs:?}"
         );
     }
 
