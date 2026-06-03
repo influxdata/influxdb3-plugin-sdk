@@ -226,6 +226,9 @@ jobs:
       - run:
           name: scripts/check-changelog-updated.sh
           command: ./scripts/check-changelog-updated.sh
+      - run:
+          name: scripts/test-publish-crates-io.sh
+          command: ./scripts/test-publish-crates-io.sh
       - cleanup-current-workspace
 
   cargo-semver-checks:
