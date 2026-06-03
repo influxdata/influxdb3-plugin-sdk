@@ -23,9 +23,14 @@ index_path() {
 # Echo a crate's version from its Cargo.toml via cargo metadata. Per crate —
 # never assumes the three crate versions are equal (per-crate versioning model).
 crate_version() {
-    local name="$1"
-    cargo metadata --format-version 1 --no-deps \
-        | jq -r --arg n "$name" '.packages[] | select(.name == $n) | .version'
+    local name="$1" ver
+    ver="$(cargo metadata --format-version 1 --no-deps \
+        | jq -r --arg n "$name" '.packages[] | select(.name == $n) | .version')"
+    if [ -z "$ver" ]; then
+        echo "ERROR: crate '$name' not found in workspace" >&2
+        return 1
+    fi
+    printf '%s\n' "$ver"
 }
 
 # Return 0 if <version> ($2) appears as a "vers" entry in the index body ($1).
@@ -45,7 +50,7 @@ fetch_index_versions() {
     local name="$1" url body code
     url="$INDEX_BASE/$(index_path "$name")"
     body="$(mktemp)"
-    code="$(curl -sS -o "$body" -w '%{http_code}' "$url" || echo 000)"
+    code="$(curl -sS -o "$body" -w '%{http_code}' "$url" || true)"
     case "$code" in
         200) cat "$body" ;;
         404) : ;;

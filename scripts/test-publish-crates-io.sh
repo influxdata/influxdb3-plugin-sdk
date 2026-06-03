@@ -11,6 +11,7 @@ source ./scripts/publish-crates-io.sh
 TESTS_RUN=0; TESTS_PASSED=0; TESTS_FAILED=0; FAILURES=""
 pass() { TESTS_RUN=$((TESTS_RUN+1)); TESTS_PASSED=$((TESTS_PASSED+1)); echo "  ✓ $1"; }
 fail() { TESTS_RUN=$((TESTS_RUN+1)); TESTS_FAILED=$((TESTS_FAILED+1)); FAILURES="${FAILURES}\n  ✗ $1"; echo "  ✗ $1"; }
+# eq <label> <expected> <actual>
 eq() { if [ "$2" = "$3" ]; then pass "$1"; else fail "$1 (expected '$2', got '$3')"; fi; }
 
 echo "== index_path =="
@@ -35,6 +36,20 @@ for c in influxdb3-plugin-schemas influxdb3-plugin-sdk influxdb3-plugin-cli; do
     v="$(crate_version "$c")"
     if [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then pass "crate_version $c -> $v"; else fail "crate_version $c -> '$v'"; fi
 done
+
+echo "== fetch_index_versions transport error =="
+if INDEX_BASE="http://localhost:1" fetch_index_versions test-crate >/dev/null 2>&1; then
+    fail "transport error -> non-zero exit"
+else
+    pass "transport error -> non-zero exit"
+fi
+
+echo "== crate_version not-found guard =="
+if crate_version no-such-crate-xyz >/dev/null 2>&1; then
+    fail "missing crate -> error"
+else
+    pass "missing crate -> error"
+fi
 
 echo ""
 echo "== Results =="
