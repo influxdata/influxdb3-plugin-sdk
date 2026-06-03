@@ -8,7 +8,9 @@ This document is the canonical release runbook for `influxdb3-plugin-sdk`. It mi
 - `just` installed (`cargo install just --locked` or download from <https://github.com/casey/just/releases>).
 - `gh` CLI authenticated to github.com with repo access to `influxdata/influxdb3-plugin-sdk`.
 - Push permission on `main` (you'll be opening a PR, but you also need to push tags).
-- The CircleCI release pipeline is wired and the `influxdb3-plugin-sdk-github` context exists with a `GH_TOKEN` PAT (one-time setup; see `.circleci/config.yml` and Phase 1.5 of the rollout).
+- The CircleCI release pipeline is wired and these contexts exist (one-time setup; see `.circleci/config.yml`):
+  - `influxdb3-plugin-sdk-github` with a `GH_TOKEN` PAT (GitHub Release + floating `latest`).
+  - `influxdb3-plugin-sdk-cratesio` with a scoped `CARGO_REGISTRY_TOKEN` (crates.io publish; scope restricted to the three crate names).
 
 ## Versioning model
 
@@ -28,7 +30,7 @@ Crates.io publication follows the workspace dependency order. Release automation
 
 Crates.io versions are immutable. If a publish succeeds and a later release step fails, you must recover with a new version; yanking prevents new dependency resolution but does not delete the uploaded crate.
 
-Crates.io publishing is intentionally not part of the standard release procedure until CI publishing is wired. The first public crates.io bootstrap is a one-time operation outside this runbook and requires explicit authorization.
+Crates.io publishing is automated. On a **stable** `vX.Y.Z` tag, the CircleCI `publish-crates-io` job runs after `publish-github-release` and publishes any crate whose `Cargo.toml` version is not yet on crates.io, in the dependency order above (`scripts/publish-crates-io.sh`). It is idempotent: re-running a release publishes nothing new, and a cli-only bump publishes only cli. RC tags (`vX.Y.Z-N.(alpha|beta|rc).N`) do **not** publish to crates.io — they ship GitHub Release binaries only. Do not run `cargo publish` by hand except for the documented recovery below.
 
 In addition to the per-release `vX.Y.Z` tag, the repo carries a single floating `latest` release. The CircleCI release pipeline recreates `latest` at the commit of each newly-published **stable** release, attaching the same assets as that `vX.Y.Z` release. Prereleases (`vX.Y.Z-N.(alpha|beta|rc).N`) do **not** update `latest`. The `latest` release is marked `--latest=false` so the `vX.Y.Z` release keeps GitHub's "Latest" badge.
 
@@ -116,6 +118,19 @@ gh release download latest --repo influxdata/influxdb3-plugin-sdk
 
    Then manually: download the `x86_64-unknown-linux-gnu` tarball from the release page, extract, run `./influxdb3-plugin --version`, confirm the revision SHA matches the commit `vX.Y.Z` points at.
 
+8. **Verify the crates.io publish** (stable releases only):
+
+   ```bash
+   just verify-crates-io
+   ```
+
+   Confirms each crate's current version is live on crates.io. Then spot-check a clean install:
+
+   ```bash
+   cargo install influxdb3-plugin-cli --version X.Y.Z --locked --root /tmp/i3pc-verify --force
+   /tmp/i3pc-verify/bin/influxdb3-plugin --version   # expect X.Y.Z + the tagged commit SHA
+   ```
+
 ## Pre-release (RC) procedure
 
 RC tags use the format `vX.Y.Z-N.(alpha|beta|rc).N` (matching `influxdb_pro`'s convention). Example: `v0.1.0-1.rc.0`.
@@ -142,6 +157,7 @@ The procedure is identical to the standard release with one difference: in step 
   ```
 
   Do not improvise tag manipulation on `vX.Y.Z` tags — `latest` is the only release operators may recreate manually.
+- **crates.io publish failed or was partial:** crates.io versions are immutable — never reuse a version. Re-running the release workflow is safe: already-published crates are skipped and only the missing ones are retried. If a *bad* version was published, `cargo yank --version X.Y.Z -p <crate>` (stops new resolution) and ship a corrected new version. For manual recovery with the token in your environment: `just publish-crates-io`. Check the `influxdb3-plugin-sdk-cratesio` context has a valid `CARGO_REGISTRY_TOKEN` if the job failed on auth.
 
 ## Post-release follow-ups
 
