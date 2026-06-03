@@ -3,7 +3,7 @@
 The easiest way to install the CLI is to first [install Cargo](https://doc.rust-lang.org/cargo/getting-started/installation.html), and then you can install `influxdb3-plugin` from `crates.io`:
 
 ```bash
-cargo install influxdb3-plugin-cli
+cargo install influxdb3-plugin-cli --locked
 ```
 
 Alternatively, you can install from the [repo's GitHub Releases](https://github.com/influxdata/influxdb3-plugin-sdk/releases):

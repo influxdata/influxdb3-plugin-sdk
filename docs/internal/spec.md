@@ -598,7 +598,7 @@ The SDK ships pre-built binaries for four targets, mirroring `influxdb_pro`'s re
 | macOS | aarch64 (Apple Silicon) | `aarch64-apple-darwin` |
 | Windows | x86_64 | `x86_64-pc-windows-gnu` |
 
-Linux binaries dynamically link glibc; macOS and Windows binaries have no non-OS runtime dependencies. Alpine Linux, Intel macOS, and Windows-on-ARM are out of scope for pre-built v1 binaries; users on those platforms install from crates.io with `cargo install influxdb3-plugin-cli --locked`, use `cargo install --git` while crates.io publication is not yet live, or rebuild from source. See [[#S2-19 Platform Matrix|S2-19]].
+Linux binaries dynamically link glibc; macOS and Windows binaries have no non-OS runtime dependencies. Alpine Linux, Intel macOS, and Windows-on-ARM are out of scope for pre-built v1 binaries; users on those platforms install from crates.io with `cargo install influxdb3-plugin-cli --locked`, use `cargo install --git` for unreleased commits or tags, or rebuild from source. See [[#S2-19 Platform Matrix|S2-19]].
 
 #### Canonical distribution (public go-live)
 
@@ -622,7 +622,7 @@ GitHub Releases remain the prebuilt-binary channel. Each tagged release publishe
 
 See [[#S2-20 v1 Distribution Channel|S2-20]].
 
-**Transitional/current-state note.** Until the crates are published publicly, internal users and CI jobs use either the pinned GitHub Release binary or `cargo install --git https://github.com/influxdata/influxdb3-plugin-sdk --tag vX.Y.Z influxdb3-plugin-cli`. The public docs may show both, but must label crates.io as the go-live default and GitHub/git installation as the current/fallback path.
+**Source-install fallback.** Internal users and CI jobs that need unreleased commits or tags can use `cargo install --git https://github.com/influxdata/influxdb3-plugin-sdk --tag vX.Y.Z influxdb3-plugin-cli`. Public docs should present crates.io as the default source-install path and GitHub Releases as the prebuilt-binary path.
 
 **CI/CD agent consumption patterns.** Two widely-used shapes are supported:
 
@@ -971,7 +971,7 @@ The SDK v1 must ship pre-built binaries for exactly four targets:
 - `aarch64-apple-darwin`
 - `x86_64-pc-windows-gnu`
 
-The matrix mirrors `influxdb_pro`'s release matrix exactly so that the SDK's release pipeline can reuse the org's existing cross-builder image (`us-east1-docker.pkg.dev/influxdata-team-edge/ci-support/ci-cross-influxdb3`) without forking or extending its toolchain set. Linux binaries dynamically link glibc; macOS and Windows binaries have no non-OS runtime dependencies. Alpine Linux, Intel macOS, and Windows-on-ARM are out of scope for pre-built v1 binaries; users on those platforms install from crates.io, use `cargo install --git` while crates.io publication is not yet live, or rebuild from source. Dropping any target from the matrix is a major-version change of `influxdb3-plugin-cli`; adding targets is minor-version additive.
+The matrix mirrors `influxdb_pro`'s release matrix exactly so that the SDK's release pipeline can reuse the org's existing cross-builder image (`us-east1-docker.pkg.dev/influxdata-team-edge/ci-support/ci-cross-influxdb3`) without forking or extending its toolchain set. Linux binaries dynamically link glibc; macOS and Windows binaries have no non-OS runtime dependencies. Alpine Linux, Intel macOS, and Windows-on-ARM are out of scope for pre-built v1 binaries; users on those platforms install from crates.io, use `cargo install --git` for unreleased commits or tags, or rebuild from source. Dropping any target from the matrix is a major-version change of `influxdb3-plugin-cli`; adding targets is minor-version additive.
 
 Problems: none directly — the matrix covers the org's actual deployment footprint, and source installation covers the long tail. Cross-builder image reuse is the explicit constraint that defines the matrix shape; widening it would either fork the image (significant maintenance burden) or split the release pipeline across multiple build environments.
 
@@ -985,7 +985,7 @@ For public go-live, `cargo install influxdb3-plugin-cli --locked` is the default
 - A `SHA256SUMS` file covering every asset.
 - Release notes.
 
-`cargo install --git https://github.com/influxdata/influxdb3-plugin-sdk --tag vX.Y.Z influxdb3-plugin-cli` is the transitional/current-state source-install path while crates.io publication is not yet live, and remains a fallback for testing unreleased commits or tags.
+`cargo install --git https://github.com/influxdata/influxdb3-plugin-sdk --tag vX.Y.Z influxdb3-plugin-cli` remains a fallback for testing unreleased commits or tags.
 
 The four-layer SHA precedence in [[#S2-21 --version Output Shape|S2-21]] ensures source builds carry an authoritative revision where possible. For crates.io installs, `.cargo_vcs_info.json` identifies the published artifact's commit. For `--git` installs, Cargo preserves `.git` metadata, so the `git rev-parse HEAD` layer fires.
 
@@ -1009,7 +1009,7 @@ The format aligns with the `influxdb3` binary's `build_version_string` (`{produc
 The `<sha>` value is sourced by the following precedence, evaluated at compile time:
 
 1. The `GIT_HASH` environment variable, when set non-empty. Lets release pipelines bake an authoritative SHA from CI's checkout.
-2. The `git.sha1` field of `.cargo_vcs_info.json` at `$CARGO_MANIFEST_DIR`. This file is written by `cargo publish` and ships inside the published `.crate` tarball; reading it identifies the published artifact's commit even when the consumer has no `.git` directory (the future crates.io `cargo install` case, post-Group-H). For the v1 `cargo install --git` path, this layer does not fire — Cargo preserves `.git` metadata in `--git` checkouts, so layer 3 (`git rev-parse HEAD`) is what actually returns the SHA.
+2. The `git.sha1` field of `.cargo_vcs_info.json` at `$CARGO_MANIFEST_DIR`. This file is written by `cargo publish` and ships inside the published `.crate` tarball; reading it identifies the published artifact's commit even when the consumer has no `.git` directory. For the v1 `cargo install --git` path, this layer does not fire — Cargo preserves `.git` metadata in `--git` checkouts, so layer 3 (`git rev-parse HEAD`) is what actually returns the SHA.
 3. `git rev-parse HEAD` from the build environment. The local-development case.
 4. The literal `unknown`. Final fallback for genuinely uncontrolled rebuilds — Homebrew, Nix, hand-unpacked tarballs rebuilt outside `cargo install`. Preserves the one-line overall shape so downstream regex parsers do not need to branch.
 

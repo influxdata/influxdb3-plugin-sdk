@@ -161,8 +161,8 @@ to a JSON output schema is a minor bump; renaming, removing,
 repurposing, or narrowing the type of an existing field is a major
 bump.
 
-The crate is licensed `MIT OR Apache-2.0`. It is currently
-unpublished pending the SDK's go-public timing.
+The crate is licensed `MIT OR Apache-2.0` and is published to crates.io
+as the source-install channel for the `influxdb3-plugin` binary.
 
 ## Dependency summary
 

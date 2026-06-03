@@ -68,9 +68,9 @@ Schema formats evolve independently via `manifest_schema_version` and
 `index_schema_version` fields; this crate exposes those version types as
 first-class.
 
-The crate is licensed `MIT OR Apache-2.0`. It is currently unpublished
-pending the SDK's go-public timing; the stability commitment applies to
-the types defined here and will be anchored at first publish.
+The crate is licensed `MIT OR Apache-2.0`. The stability commitment
+applies to the types defined here and is anchored at first crates.io
+publish.
 
 ## Spec Coverage
 
