@@ -20,6 +20,16 @@ The SDK workspace has three crates, each with its own version:
 
 The `vX.Y.Z` git tag is **always anchored to cli's version**. cli is the user-facing binary release; the tag matches its version. The library crates may be at different versions internally — that's fine and is the deliberate consequence of the per-crate versioning model documented in `CONTRIBUTING.md`.
 
+Crates.io publication follows the workspace dependency order. Release automation must publish the actual versions in each crate's `Cargo.toml`; do not assume the three crate versions are identical:
+
+1. `influxdb3-plugin-schemas`
+2. `influxdb3-plugin-sdk`
+3. `influxdb3-plugin-cli`
+
+Crates.io versions are immutable. If a publish succeeds and a later release step fails, you must recover with a new version; yanking prevents new dependency resolution but does not delete the uploaded crate.
+
+Crates.io publishing is intentionally not part of the standard release procedure until CI publishing is wired. The first public crates.io bootstrap is a one-time operation outside this runbook and requires explicit authorization.
+
 In addition to the per-release `vX.Y.Z` tag, the repo carries a single floating `latest` release. The CircleCI release pipeline recreates `latest` at the commit of each newly-published **stable** release, attaching the same assets as that `vX.Y.Z` release. Prereleases (`vX.Y.Z-N.(alpha|beta|rc).N`) do **not** update `latest`. The `latest` release is marked `--latest=false` so the `vX.Y.Z` release keeps GitHub's "Latest" badge.
 
 Users who want to track the most recent stable release without pinning a version can build from source:
@@ -85,7 +95,7 @@ gh release download latest --repo influxdata/influxdb3-plugin-sdk
 
 6. **Watch the CircleCI release workflow** at <https://app.circleci.com/pipelines/github/influxdata/influxdb3-plugin-sdk?branch=vX.Y.Z>. Expected runtime: ~30 minutes (4 cross-compile builds + checksums + verification + upload).
 
-7. **Verify the published release**:
+7. **Verify the published GitHub Release**:
 
    ```bash
    just verify-version X.Y.Z

@@ -295,12 +295,7 @@ jobs:
                 cargo package --list -p "$crate"
             done
       - run:
-          name: cargo package --no-verify -p schemas (full check; only viable for the leaf crate)
-          # sdk and cli depend on schemas via path; cargo package resolves
-          # the path-dep's version constraint from crates.io during "prepare
-          # local package for uploading" (which `--no-verify` does NOT skip),
-          # and the unpublished schemas dep makes that lookup fail. Group H
-          # lifts this; until then, only schemas can be fully packaged.
+          name: cargo package --no-verify -p schemas (bootstrap full check)
           command: cargo package --no-verify -p influxdb3-plugin-schemas
       - cleanup-current-workspace
 

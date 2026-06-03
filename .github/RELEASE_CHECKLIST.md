@@ -25,7 +25,7 @@ Copy this into the release-prep PR description and check off each item as you go
 - [ ] All 9 CI checks pass
 - [ ] PR reviewed and squash-merged
 
-## Tag + publish
+## Tag + publish GitHub Release
 
 - [ ] Pull the squash-merge commit: `git checkout main && git pull --ff-only origin main`
 - [ ] Create tag: `just tag-version X.Y.Z` (validates clean tree + HEAD == origin/main + version match)
@@ -54,5 +54,5 @@ Copy this into the release-prep PR description and check off each item as you go
 
 - [ ] **Build fails:** fix in a follow-up PR, delete the tag (`git push origin --delete vX.Y.Z && git tag -d vX.Y.Z`), re-tag after merge
 - [ ] **Verify fails but builds succeeded:** check `docs/ci-cd-lessons-learned.md` for known gotchas; likely a script bug, not a binary bug
-- [ ] **Publish fails (PAT scope, gh CLI):** check the `influxdb3-plugin-sdk-github` CircleCI context has a valid `GH_TOKEN`
+- [ ] **GitHub Release publish fails (PAT scope, gh CLI):** check the `influxdb3-plugin-sdk-github` CircleCI context has a valid `GH_TOKEN`
 - [ ] **`latest` release stale, missing, or has no assets after a stable release:** the `publish-github-release` job's "Update floating 'latest' release" step failed. See `RELEASE.md` "What to do if things go wrong" for manual recovery.

@@ -74,8 +74,6 @@ Unknown fields are ignored within a supported schema major. Do not use unknown f
 manifest_schema_version = "1.2"
 ```
 
-The current manifest schema version is `1.2`. This is an additive minor bump from `1.1`; existing `1.x` manifests remain valid and the parser does not branch `exclude` support on the minor version.
-
 The value uses `<major>.<minor>` form. Consumers accept known major version `1`, including newer minor versions such as `1.2`, and reject unsupported majors instead of guessing.
 
 If `manifest_schema_version` is malformed or uses an unsupported major, parsing stops with that schema-version error before field-level validation.
@@ -213,22 +211,12 @@ to the plugin root:
 exclude = [".git/", ".venv/", "__pycache__/", "*.pyc", "tests/**"]
 ```
 
-- Optional. Missing or `exclude = []` means no manifest-level exclusions.
 - Patterns use gitignore-style glob semantics. Directory-style patterns such as
   `__pycache__/` exclude every file beneath that directory at any depth.
 - `!` negation is honored: a later negation can re-include a file removed by an
   earlier pattern, but cannot add a file that was never discovered.
 - Excluded files are omitted from the packaged archive and are ignored when
   detecting the Python entry point.
-- `exclude` is a plain file filter. It can remove required files (an entry
-  point, every `.py`, or `manifest.toml`). Commands then validate the resulting
-  selected set normally — removing the entry point yields the ordinary
-  "no entry point" error, not a special exclude-rule error.
-- Invalid pattern syntax is reported by `package`/`validate` when source files
-  are selected (a `*_exclude_pattern` error naming the offending pattern), not
-  by manifest parsing.
-- No `.gitignore`, `.ignore`, git exclude file, or global gitignore in or above
-  the plugin directory affects selection — only `[plugin].exclude` does.
 
 ## The `[dependencies]` Section
 

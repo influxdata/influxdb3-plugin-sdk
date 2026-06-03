@@ -5,13 +5,9 @@ authors.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "InfluxDB 3 plugin SDK CLI — the `influxdb3-plugin` binary."
-readme = "README.md"
+description = "InfluxDB 3 author-side CLI for templating, validating, and packaging InfluxDB 3 plugins."
 repository = "https://github.com/influxdata/influxdb3-plugin-sdk"
-build = "build.rs"
-# publish = false until SDK ships to a public registry. License declared via
-# [workspace.package]; no deny.toml carve-out required.
-publish = false
+publish = true
 
 [lib]
 path = "src/lib.rs"

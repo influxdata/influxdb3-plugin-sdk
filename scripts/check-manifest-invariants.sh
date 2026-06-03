@@ -4,7 +4,6 @@
 #   - root Cargo.toml has [workspace.package].version (lockstep versioning)
 #   - any member crate uses version.workspace = true (lockstep inheritance)
 #   - any path-dep in [workspace.dependencies] lacks a version constraint
-#   - any member crate has publish = true before Group H
 #
 # Note on `errors=$((errors+1))` with `set -e`: arithmetic expansion that
 # evaluates to non-zero is treated as success by the shell — the
@@ -56,14 +55,6 @@ if ! awk '
 ' Cargo.toml ; then
     errors=$((errors+1))
 fi
-
-# Check 4: all member crates must have publish = false until Group H.
-for crate_toml in influxdb3-plugin-cli/Cargo.toml influxdb3-plugin-sdk/Cargo.toml influxdb3-plugin-schemas/Cargo.toml; do
-    if ! grep -qE '^publish = false$' "$crate_toml"; then
-        echo "FAIL: $crate_toml does not have 'publish = false' (Group H gate not yet flipped)" >&2
-        errors=$((errors+1))
-    fi
-done
 
 if [ "$errors" -gt 0 ]; then
     echo "" >&2

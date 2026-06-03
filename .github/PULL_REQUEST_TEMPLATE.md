@@ -37,6 +37,7 @@
 - [ ] `cargo doc --workspace --no-deps --locked` builds without warnings (`RUSTDOCFLAGS="-D warnings"`)
 - [ ] `cargo-semver-checks` passes for `cli` + `schemas` compared against the latest tag
 - [ ] `cargo package --list` succeeds for all 3 crates
+- [ ] `cargo package --no-verify -p influxdb3-plugin-schemas` succeeds
 - [ ] Manifest invariants pass (`scripts/check-manifest-invariants.sh`)
 - [ ] Changelog format passes (`scripts/check-changelog-format.sh`)
 - [ ] Changelog update gate passes (`scripts/check-changelog-updated.sh`)
