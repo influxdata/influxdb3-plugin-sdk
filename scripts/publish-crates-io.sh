@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Overridable for tests / mirrors.
+INDEX_BASE="${INDEX_BASE:-https://index.crates.io}"
+
 # Sparse-index path for a crate name, per cargo's layout:
 #   len 1     -> 1/<name>
 #   len 2     -> 2/<name>
@@ -32,6 +35,23 @@ crate_version() {
 version_published() {
     local body="$1" version="$2"
     printf '%s\n' "$body" | grep -qF "\"vers\":\"$version\""
+}
+
+# Echo the sparse-index body for a crate. Empty if the crate is not yet in the
+# index (HTTP 404 = never published → publishable). Aborts (non-zero) on any
+# other HTTP/transport error so a transient failure is never misread as
+# "not published" (which would trigger a spurious publish attempt).
+fetch_index_versions() {
+    local name="$1" url body code
+    url="$INDEX_BASE/$(index_path "$name")"
+    body="$(mktemp)"
+    code="$(curl -sS -o "$body" -w '%{http_code}' "$url" || echo 000)"
+    case "$code" in
+        200) cat "$body" ;;
+        404) : ;;
+        *)   rm -f "$body"; echo "ERROR: crates.io index returned HTTP $code for $url" >&2; return 1 ;;
+    esac
+    rm -f "$body"
 }
 
 if [ "${BASH_SOURCE[0]}" = "${0}" ]; then main "$@"; fi
