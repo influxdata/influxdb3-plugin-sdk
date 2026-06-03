@@ -20,6 +20,29 @@
 //! files after discovery so a later `!` negation can re-include a file beneath
 //! a directory removed by an earlier pattern. Trade-off: excluded directories
 //! are still traversed and walk errors inside them may still surface.
+//!
+//! # Negation / match resolution
+//!
+//! [`select`] calls [`Gitignore::matched_path_or_any_parents`] which evaluates
+//! the file's own matching rules before walking ancestors. This means a
+//! file-level `!` whitelist pattern short-circuits the ancestor traversal and
+//! **takes precedence over a later directory exclude**, deviating from strict
+//! gitignore last-match-wins semantics for that pattern ordering. Concretely:
+//!
+//! - `["__pycache__/", "!__pycache__/keep.pyc"]` — the spec-required order:
+//!   dir-exclude first, then `!` re-include. Works as expected: `keep.pyc` is
+//!   re-included (see test `negation_re_includes_a_file_beneath_an_excluded_dir`).
+//! - `["!__pycache__/keep.pyc", "__pycache__/"]` — reversed order: the `!`
+//!   whitelist appears first. Despite the later `__pycache__/` pattern,
+//!   `keep.pyc` is still **kept** because its own file-level match takes
+//!   precedence over the ancestor directory result (see test
+//!   `reversed_order_whitelist_then_dir_exclude_is_characterized`).
+//!
+//! **Practical guidance:** a file-level `!` whitelist for a path takes
+//! precedence over a directory exclude covering it in *either* order — both
+//! examples above keep `keep.pyc`. No pattern ordering makes a directory
+//! exclude override a file-level whitelist for that specific file; to exclude
+//! such a file, simply omit its `!` whitelist.
 
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use std::path::{Component, Path, PathBuf};
@@ -337,6 +360,37 @@ mod tests {
             "nested pkg/tests/ must be kept (pattern anchored to root): {got:?}"
         );
         assert!(got.iter().any(|p| p == "__init__.py"), "got {got:?}");
+    }
+
+    /// Characterizes how the selector resolves a file whitelist that appears
+    /// BEFORE a directory exclude covering the same file
+    /// (`["!__pycache__/keep.pyc", "__pycache__/"]`). This pins the actual
+    /// `matched_path_or_any_parents` behavior so a future `ignore`-crate change
+    /// is caught. (The spec's required order — dir-exclude then `!` re-include —
+    /// is covered by `negation_re_includes_a_file_beneath_an_excluded_dir`.)
+    #[test]
+    fn reversed_order_whitelist_then_dir_exclude_is_characterized() {
+        let td = tempfile::tempdir().unwrap();
+        write(td.path(), "__init__.py", "y");
+        write(td.path(), "__pycache__/keep.pyc", "k");
+        let got: Vec<String> = select(
+            td.path(),
+            &[
+                "!__pycache__/keep.pyc".to_string(),
+                "__pycache__/".to_string(),
+            ],
+        )
+        .unwrap()
+        .into_iter()
+        .map(|f| f.normalized)
+        .collect();
+        // OBSERVED: keep.pyc IS present — the file-level `!` whitelist
+        // short-circuits `matched_path_or_any_parents` before the later
+        // directory exclude can win, deviating from strict last-match-wins.
+        assert!(
+            got.contains(&"__pycache__/keep.pyc".to_string()),
+            "expected keep.pyc present (whitelist short-circuits dir exclude): {got:?}"
+        );
     }
 
     #[cfg(unix)]
