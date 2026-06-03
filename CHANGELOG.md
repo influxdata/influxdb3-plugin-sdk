@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-06-02
+
 ### Added
 - `influxdb3-plugin-schemas`: added the pure plugin-directory validation contract (`validate` module) used by the SDK validator — entry-point classification, trigger binding, the `TopLevelFunctionDef` extraction rules, the `ValidatedPluginDefinition` success payload, and an executable conformance corpus. The `ValidationError` diagnostic type now lives here.
 - New `docs/src/reference/plugin-format.md` documenting the plugin-directory layout contract.
