@@ -157,7 +157,7 @@ The procedure is identical to the standard release with one difference: in step 
   ```
 
   Do not improvise tag manipulation on `vX.Y.Z` tags — `latest` is the only release operators may recreate manually.
-- **crates.io publish failed or was partial:** crates.io versions are immutable — never reuse a version. Re-running the release workflow is safe: already-published crates are skipped and only the missing ones are retried. If a *bad* version was published, `cargo yank --version X.Y.Z -p <crate>` (stops new resolution) and ship a corrected new version. For manual recovery with the token in your environment: `just publish-crates-io`. Check the `influxdb3-plugin-sdk-cratesio` context has a valid `CARGO_REGISTRY_TOKEN` if the job failed on auth.
+- **crates.io publish failed or was partial:** crates.io versions are immutable — never reuse a version. Re-running the release workflow is safe: already-published crates are skipped and only the missing ones are retried. If a *bad* version was published, `cargo yank <crate>@X.Y.Z` (stops new resolution) and ship a corrected new version. For manual recovery with the token in your environment: `just publish-crates-io`. Check the `influxdb3-plugin-sdk-cratesio` context has a valid `CARGO_REGISTRY_TOKEN` if the job failed on auth.
 
 ## Post-release follow-ups
 
