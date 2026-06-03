@@ -743,7 +743,7 @@ S2-3 requires byte-identical outputs given identical inputs. This section define
 
 **What counts as an input** (contributes to output bytes):
 - Plugin directory contents: file paths, file bytes, filesystem executable bit.
-- The file-exclusion artifact (when present). The specific mechanism is deferred — candidates are a `.pluginignore` pattern file alongside `manifest.toml`, or an explicit include list in `manifest.toml` (e.g., `plugin.files = [...]`). Whichever mechanism lands, its contents are an input to the archive bytes. See [[#TODOs]].
+- The manifest `[plugin].exclude` patterns (when present). `exclude` is the file-selection mechanism: gitignore-style patterns, relative to the plugin root, compiled by the SDK (via the `ignore` crate). The selected file set determines which files contribute to the archive bytes, so `exclude` is an input to reproducibility.
 - Input `index.json` contents (when `--index` is provided).
 - Publication time for any newly added index entry. Production packaging uses current UTC. Tests and automation that need byte-identical derived indexes must inject a fixed timestamp through the SDK library path.
 - SDK version (implicit).
@@ -1023,7 +1023,7 @@ Problems: none directly — supports bug-report attribution and CI-side reproduc
 
 ### TODOs
 
-- File-exclusion model: decision deferred. Candidates are (1) an explicit include list in `manifest.toml` (e.g., `plugin.files = ["__init__.py", "handler.py", "data/**/*.json"]`), (2) a `.pluginignore` pattern file alongside `manifest.toml`, or (3) relying on the author to keep the plugin directory clean. Current lean: explicit include list (fails closed; harder to accidentally bundle test fixtures or OS detritus). Whichever option is chosen, the chosen artifact must be an input to reproducibility (see [[#Reproducibility]]).
+- File-selection model: **decided** — manifest `[plugin].exclude` (gitignore-style patterns, compiled by the SDK via the `ignore` crate; relative to the plugin root). No `.pluginignore` file, no include list, and no VCS-ignore seeding. The same selection feeds packaging and validation. `manifest_schema_version` is `1.2` (additive minor bump). See `docs/src/reference/manifest.md`.
 - Local dev with git workflow details
 - Registry-side conditional-upload requirement: should Spec 3 mandate that configured registry backends support a conditional-write primitive (e.g., declare in registry config, reject configs that don't), or leave it as a best-practice recommendation? Protocol-level decision is open.
 - Operations / CI guide (out of Spec 2 scope): pipeline orchestration — fetch input index, upload derived outputs, backend concurrency primitives (Git fast-forward, S3 conditional PUT, GitHub Releases tag uniqueness, advisory file locks), artifact-first upload ordering, reference PR/merge flows. Track as a separate author-facing document.

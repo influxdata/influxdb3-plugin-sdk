@@ -43,6 +43,13 @@ Detection rules:
 - Matching is case-sensitive: `Foo.PY` and `__INIT__.py` are not treated as
   `foo.py`/`__init__.py`.
 
+**Interaction with [`[plugin].exclude`](./manifest.md#pluginexclude).** Source-file
+selection applies `exclude` patterns *before* entry-point detection runs. Only
+the files that survive selection are considered when classifying the entry point;
+excluded top-level `.py` files do not count. This means `exclude` can remove
+what would otherwise be the sole entry point, yielding the ordinary "no entry
+point" validation error.
+
 ## Trigger binding
 
 Each trigger declared in `manifest.toml`'s `plugin.triggers` must be
