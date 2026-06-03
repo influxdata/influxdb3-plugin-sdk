@@ -20,7 +20,7 @@ Sections covering database-side behavior (Spec 3: Registry & Resolution, Spec 4:
 Format: TOML. Lives at the root of the plugin directory as `manifest.toml`. Author-owned; never generated.
 
 ```toml
-manifest_schema_version = "1.1"
+manifest_schema_version = "1.2"
 
 [plugin]
 name          = "downsampler"              # validated: [a-zA-Z][a-zA-Z0-9_-]* (1-64)

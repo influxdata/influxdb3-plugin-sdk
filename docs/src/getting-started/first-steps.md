@@ -56,7 +56,7 @@ This is all we need to get started. First, let's check out `manifest.toml`:
 
 
 ```console
-manifest_schema_version = "1.1"
+manifest_schema_version = "1.2"
 
 [plugin]
 name = "hello-world"
@@ -170,7 +170,7 @@ def process_scheduled_call(influxdb3_local, schedule_time, args):
 Then bump the version in `manifest.toml`:
 
 ```console
-manifest_schema_version = "1.1"
+manifest_schema_version = "1.2"
 
 [plugin]
 name = "hello-world"
