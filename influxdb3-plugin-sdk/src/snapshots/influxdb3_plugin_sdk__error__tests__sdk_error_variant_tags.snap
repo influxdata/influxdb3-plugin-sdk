@@ -1,6 +1,5 @@
 ---
 source: influxdb3-plugin-sdk/src/error.rs
-assertion_line: 315
 expression: tags
 ---
 - Io
@@ -12,3 +11,4 @@ expression: tags
 - AlreadyPublished
 - CanonicalCollision
 - EntryNotFound
+- InvalidExcludePattern

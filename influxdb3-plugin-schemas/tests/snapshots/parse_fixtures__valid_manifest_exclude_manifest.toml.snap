@@ -5,11 +5,11 @@ expression: manifest
 Manifest {
     manifest_schema_version: ManifestSchemaVersion {
         major: 1,
-        minor: 0,
+        minor: 2,
     },
     plugin: PluginMetadata {
         name: PluginName(
-            "minimal",
+            "excludes",
         ),
         version: Version {
             major: 0,
@@ -17,7 +17,7 @@ Manifest {
             patch: 0,
         },
         description: Description(
-            "The smallest well-formed plugin.",
+            "A plugin exercising the exclude field.",
         ),
         triggers: [
             ProcessWrites,
@@ -25,7 +25,13 @@ Manifest {
         homepage: None,
         repository: None,
         documentation: None,
-        exclude: [],
+        exclude: [
+            ".git/",
+            ".venv/",
+            "__pycache__/",
+            "*.pyc",
+            "tests/**",
+        ],
     },
     dependencies: Dependencies {
         database_version: VersionReq {

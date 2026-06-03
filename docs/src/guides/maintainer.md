@@ -36,7 +36,7 @@ Author `plugins/downsampler/manifest.toml`. If you followed the New path, the sc
 Minimal shape:
 
 ```toml
-manifest_schema_version = "1.1"
+manifest_schema_version = "1.2"
 
 [plugin]
 name = "downsampler"

@@ -50,6 +50,8 @@ pub struct PackageOutput {
 ///
 /// - [`SdkError::Io`] — read failure on `manifest.toml` or any source file.
 /// - [`SdkError::ValidationErrors`] — manifest or cross-file checks failed.
+/// - [`SdkError::InvalidExcludePattern`] — a `[plugin].exclude` entry is not
+///   a valid gitignore pattern.
 /// - [`SdkError::Archive`] — archive construction failed (e.g. path overflow).
 /// - [`SdkError::AlreadyPublished`] — `(name, version)` already in the index.
 /// - [`SdkError::CanonicalCollision`] — `name` canonicalizes to an existing
@@ -65,8 +67,12 @@ fn package_plugin_with_published_at(
 ) -> Result<PackageOutput, SdkError> {
     let manifest = validate::plugin_dir(plugin_dir)?.manifest;
 
-    let archive_bytes =
-        archive::canonical_tar_gz(plugin_dir, &manifest.plugin.name, &manifest.plugin.version)?;
+    let archive_bytes = archive::canonical_tar_gz(
+        plugin_dir,
+        &manifest.plugin.name,
+        &manifest.plugin.version,
+        &manifest.plugin.exclude,
+    )?;
 
     let hash_value = hash::sha256_of_bytes(&archive_bytes);
 

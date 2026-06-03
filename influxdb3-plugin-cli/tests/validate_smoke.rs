@@ -48,11 +48,10 @@ fn validate_happy_path_emits_empty_diagnostics_array() {
     insta::assert_json_snapshot!("validate_happy_path_json", payload);
 }
 
-/// Empty plugin directory: both a Python entry point and `manifest.toml` are
-/// missing. All validation errors must be collected, so both
-/// `NoEntryPoint` and `MissingRequiredFile` diagnostics must surface in one run.
+/// Empty plugin directory: `manifest.toml` is the gate, so only the missing
+/// manifest is reported (entry-point detection does not run without it).
 #[test]
-fn validate_empty_plugin_dir_reports_both_missing_files_in_json() {
+fn validate_empty_plugin_dir_reports_missing_manifest_only() {
     let td = tempfile::tempdir().unwrap();
     let dir = td.path().join("empty");
     std::fs::create_dir_all(&dir).unwrap();
@@ -66,23 +65,14 @@ fn validate_empty_plugin_dir_reports_both_missing_files_in_json() {
     assert_eq!(payload["status"], "error");
     let diags = payload["error"]["diagnostics"]
         .as_array()
-        .expect("diagnostics array");
-    assert_eq!(diags.len(), 2, "expected two diagnostics, got {payload}");
-    let codes: Vec<&str> = diags.iter().map(|d| d["code"].as_str().unwrap()).collect();
-    assert!(
-        codes.contains(&"validate::no_entry_point"),
-        "expected no_entry_point diagnostic, got {codes:?}"
+        .expect("diagnostics");
+    assert_eq!(
+        diags.len(),
+        1,
+        "expected only the missing manifest, got {payload}"
     );
-    assert!(
-        codes.contains(&"validate::missing_required_file"),
-        "expected missing_required_file diagnostic, got {codes:?}"
-    );
-    // The missing_required_file diagnostic should point at manifest.toml
-    let manifest_diag = diags
-        .iter()
-        .find(|d| d["code"] == "validate::missing_required_file")
-        .unwrap();
-    assert_eq!(manifest_diag["field"], "manifest.toml");
+    assert_eq!(diags[0]["code"], "validate::missing_required_file");
+    assert_eq!(diags[0]["field"], "manifest.toml");
 }
 
 /// Validator idiom: failure path emits a single JSON envelope on STDOUT
@@ -585,6 +575,34 @@ fn validate_single_file_missing_trigger_json() {
         "field must name the single-file entry point"
     );
     insta::assert_json_snapshot!("validate_single_file_missing_trigger_json", payload);
+}
+
+/// An invalid glob pattern in `manifest.toml`'s `exclude` list surfaces as a
+/// top-level `validate::invalid_exclude_pattern` error (NOT inside a
+/// `diagnostics[]` array), because the CLI maps it via `json_error_from_sdk`
+/// directly to a `CliError::runtime(je)`.
+#[test]
+fn validate_invalid_exclude_pattern_reports_named_error() {
+    let td = tempfile::tempdir().unwrap();
+    let dir = td.path().join("p");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("manifest.toml"),
+        "manifest_schema_version = \"1.2\"\n[plugin]\nname=\"p\"\nversion=\"0.1.0\"\n\
+         description=\"x\"\ntriggers=[\"process_writes\"]\nexclude=[\"[z-a]\"]\n\
+         [dependencies]\ndatabase_version=\">=3.0.0\"\n",
+    )
+    .unwrap();
+    std::fs::write(dir.join("__init__.py"), "def process_writes(a,b,c): pass\n").unwrap();
+
+    let assert = spawn_validate(&dir, &["--output", "json"]).failure();
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
+    let payload: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(
+        payload["error"]["code"],
+        "validate::invalid_exclude_pattern"
+    );
+    assert_eq!(payload["error"]["field"], "[z-a]");
 }
 
 /// Multi-error case: an index with two distinct schema defects (bad URL

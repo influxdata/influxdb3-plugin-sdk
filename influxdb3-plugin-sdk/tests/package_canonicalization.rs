@@ -36,7 +36,7 @@ fn gunzip(bytes: &[u8]) -> Vec<u8> {
 fn rule1_tar_format_is_ustar() {
     let td = tempfile::tempdir().unwrap();
     let dir = minimal_plugin_dir(td.path(), "plugin");
-    let bytes = canonical_tar_gz(&dir, &plugin_name(), &plugin_version()).unwrap();
+    let bytes = canonical_tar_gz(&dir, &plugin_name(), &plugin_version(), &[]).unwrap();
     let tar_bytes = gunzip(&bytes);
     // ustar magic at offset 257, version at offset 263.
     assert_eq!(&tar_bytes[257..263], b"ustar\0", "expected ustar magic");
@@ -58,7 +58,7 @@ fn rule2_entries_sorted_by_path() {
     fs::write(dir.join("zebra.py"), "# z\n").unwrap();
     fs::write(dir.join("alpha.py"), "# a\n").unwrap();
 
-    let bytes = canonical_tar_gz(&dir, &plugin_name(), &plugin_version()).unwrap();
+    let bytes = canonical_tar_gz(&dir, &plugin_name(), &plugin_version(), &[]).unwrap();
     let paths: Vec<String> = list_paths(&bytes);
     let without_root: Vec<String> = paths
         .iter()
@@ -76,7 +76,7 @@ fn rule2_entries_sorted_by_path() {
 fn rule3_every_entry_mtime_zero() {
     let td = tempfile::tempdir().unwrap();
     let dir = minimal_plugin_dir(td.path(), "plugin");
-    let bytes = canonical_tar_gz(&dir, &plugin_name(), &plugin_version()).unwrap();
+    let bytes = canonical_tar_gz(&dir, &plugin_name(), &plugin_version(), &[]).unwrap();
     let mut archive = tar::Archive::new(std::io::Cursor::new(gunzip(&bytes)));
     for entry in archive.entries_with_seek().unwrap() {
         let entry = entry.unwrap();
@@ -89,7 +89,7 @@ fn rule3_every_entry_mtime_zero() {
 fn rule4_uid_gid_and_names_canonical() {
     let td = tempfile::tempdir().unwrap();
     let dir = minimal_plugin_dir(td.path(), "plugin");
-    let bytes = canonical_tar_gz(&dir, &plugin_name(), &plugin_version()).unwrap();
+    let bytes = canonical_tar_gz(&dir, &plugin_name(), &plugin_version(), &[]).unwrap();
     let mut archive = tar::Archive::new(std::io::Cursor::new(gunzip(&bytes)));
     for entry in archive.entries_with_seek().unwrap() {
         let entry = entry.unwrap();
@@ -106,7 +106,7 @@ fn rule4_uid_gid_and_names_canonical() {
 fn rule5_non_exec_files_are_0644() {
     let td = tempfile::tempdir().unwrap();
     let dir = minimal_plugin_dir(td.path(), "plugin");
-    let bytes = canonical_tar_gz(&dir, &plugin_name(), &plugin_version()).unwrap();
+    let bytes = canonical_tar_gz(&dir, &plugin_name(), &plugin_version(), &[]).unwrap();
     let mut archive = tar::Archive::new(std::io::Cursor::new(gunzip(&bytes)));
     for entry in archive.entries_with_seek().unwrap() {
         let entry = entry.unwrap();
@@ -139,7 +139,7 @@ fn archive_contains_no_directory_entries() {
     // directory even though it has no children.
     std::fs::create_dir_all(dir.join("empty_subdir")).unwrap();
 
-    let bytes = canonical_tar_gz(&dir, &plugin_name(), &plugin_version()).unwrap();
+    let bytes = canonical_tar_gz(&dir, &plugin_name(), &plugin_version(), &[]).unwrap();
     let mut archive = tar::Archive::new(std::io::Cursor::new(gunzip(&bytes)));
     for entry in archive.entries_with_seek().unwrap() {
         let entry = entry.unwrap();
@@ -163,7 +163,7 @@ fn rule5_exec_files_are_0755() {
     fs::write(&script, "#!/bin/sh\necho hi\n").unwrap();
     fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
 
-    let bytes = canonical_tar_gz(&dir, &plugin_name(), &plugin_version()).unwrap();
+    let bytes = canonical_tar_gz(&dir, &plugin_name(), &plugin_version(), &[]).unwrap();
     let mut archive = tar::Archive::new(std::io::Cursor::new(gunzip(&bytes)));
     let mut seen_exec = false;
     for entry in archive.entries_with_seek().unwrap() {
@@ -202,7 +202,7 @@ fn rule6_rejects_archive_path_over_ustar_limit() {
     fs::create_dir_all(&nested).unwrap();
     fs::write(nested.join("leaf"), "data").unwrap();
 
-    let err = canonical_tar_gz(&dir, &plugin_name(), &plugin_version()).unwrap_err();
+    let err = canonical_tar_gz(&dir, &plugin_name(), &plugin_version(), &[]).unwrap_err();
     assert!(
         matches!(err, SdkError::PathTooLong { limit: 255, .. }),
         "expected SdkError::PathTooLong, got {err:?}"
@@ -214,7 +214,7 @@ fn rule6_rejects_archive_path_over_ustar_limit() {
 fn rule7_gzip_mtime_zero() {
     let td = tempfile::tempdir().unwrap();
     let dir = minimal_plugin_dir(td.path(), "plugin");
-    let bytes = canonical_tar_gz(&dir, &plugin_name(), &plugin_version()).unwrap();
+    let bytes = canonical_tar_gz(&dir, &plugin_name(), &plugin_version(), &[]).unwrap();
     // Bytes 4..8, little-endian, per RFC 1952.
     let mtime = u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
     assert_eq!(mtime, 0, "expected gzip MTIME=0; got {mtime}");
@@ -225,7 +225,7 @@ fn rule7_gzip_mtime_zero() {
 fn rule8_gzip_fname_flag_clear() {
     let td = tempfile::tempdir().unwrap();
     let dir = minimal_plugin_dir(td.path(), "plugin");
-    let bytes = canonical_tar_gz(&dir, &plugin_name(), &plugin_version()).unwrap();
+    let bytes = canonical_tar_gz(&dir, &plugin_name(), &plugin_version(), &[]).unwrap();
     // FLG byte at offset 3; FNAME is bit 3 (0x08). MUST be clear.
     let flg = bytes[3];
     assert_eq!(flg & 0x08, 0, "expected FNAME bit clear; FLG={flg:08b}");

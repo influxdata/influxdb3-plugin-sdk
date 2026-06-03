@@ -1,0 +1,11 @@
+manifest_schema_version = "1.2"
+
+[plugin]
+name = "bad-exclude"
+version = "0.1.0"
+description = "exclude must be an array"
+triggers = ["process_writes"]
+exclude = "tests"
+
+[dependencies]
+database_version = ">=3.0.0"

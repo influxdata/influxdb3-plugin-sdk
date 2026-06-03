@@ -5,6 +5,7 @@ name = "{{name}}"
 version = "0.1.0"
 description = "A new write-processing plugin."
 triggers = ["process_writes"]
+exclude = [".git/", ".venv/", "__pycache__/", "*.pyc", "tests/**"]
 
 [dependencies]
 database_version = "{{database_version}}"

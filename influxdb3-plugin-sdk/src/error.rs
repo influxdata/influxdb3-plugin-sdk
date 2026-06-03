@@ -4,7 +4,9 @@
 //! - [`SdkError`] — crate-level error returned by every public function.
 //! - [`ValidationFailure`] — the focused, validation-only error returned by
 //!   the `validate::plugin_dir` wrapper. Either [`ValidationFailure::Invalid`]
-//!   (a batch of [`ValidationError`]s) or [`ValidationFailure::Io`].
+//!   (a batch of [`ValidationError`]s), [`ValidationFailure::Io`], or
+//!   [`ValidationFailure::InvalidExcludePattern`] (a `[plugin].exclude` entry
+//!   that is not a valid gitignore pattern).
 //! - [`ValidationReport`] — accumulator that collects [`ValidationError`]s
 //!   during a pass and converts to a [`ValidationFailure`].
 //!
@@ -80,6 +82,11 @@ pub enum SdkError {
 
     #[error("plugin ({name:?}, {version:?}) is not present in the target index")]
     EntryNotFound { name: String, version: String },
+
+    /// A manifest `[plugin].exclude` entry is not a valid gitignore pattern.
+    /// Surfaces from any command that performs source-file selection.
+    #[error("invalid exclude pattern {pattern:?}: {message}")]
+    InvalidExcludePattern { pattern: String, message: String },
 }
 
 impl SdkError {
@@ -96,6 +103,7 @@ impl SdkError {
             Self::AlreadyPublished { .. } => "AlreadyPublished",
             Self::CanonicalCollision { .. } => "CanonicalCollision",
             Self::EntryNotFound { .. } => "EntryNotFound",
+            Self::InvalidExcludePattern { .. } => "InvalidExcludePattern",
         }
     }
 }
@@ -151,6 +159,22 @@ impl From<influxdb3_plugin_schemas::IndexInsertError> for SdkError {
     }
 }
 
+impl From<crate::plugin_source_files::SelectError> for SdkError {
+    fn from(err: crate::plugin_source_files::SelectError) -> Self {
+        use crate::plugin_source_files::SelectError;
+        match err {
+            SelectError::InvalidExcludePattern { pattern, message } => {
+                SdkError::InvalidExcludePattern { pattern, message }
+            }
+            SelectError::Io { source, path } => SdkError::Io { source, path },
+            // Preserve historical archive behavior: walk errors → Archive.
+            SelectError::Walk { message } => SdkError::Archive {
+                message: format!("walkdir error: {message}"),
+            },
+        }
+    }
+}
+
 /// The error returned by the `validate::plugin_dir` wrapper.
 ///
 /// A focused, validation-only error type that separates validation failures
@@ -174,6 +198,10 @@ pub enum ValidationFailure {
         source: std::io::Error,
         path: Option<PathBuf>,
     },
+
+    /// A manifest `[plugin].exclude` entry is not a valid gitignore pattern.
+    #[error("invalid exclude pattern {pattern:?}: {message}")]
+    InvalidExcludePattern { pattern: String, message: String },
 }
 
 /// `Invalid → SdkError::ValidationErrors`, `Io → SdkError::Io`. Keeps
@@ -183,6 +211,26 @@ impl From<ValidationFailure> for SdkError {
         match failure {
             ValidationFailure::Invalid(errs) => SdkError::ValidationErrors(errs),
             ValidationFailure::Io { source, path } => SdkError::Io { source, path },
+            ValidationFailure::InvalidExcludePattern { pattern, message } => {
+                SdkError::InvalidExcludePattern { pattern, message }
+            }
+        }
+    }
+}
+
+impl From<crate::plugin_source_files::SelectError> for ValidationFailure {
+    fn from(err: crate::plugin_source_files::SelectError) -> Self {
+        use crate::plugin_source_files::SelectError;
+        match err {
+            SelectError::InvalidExcludePattern { pattern, message } => {
+                ValidationFailure::InvalidExcludePattern { pattern, message }
+            }
+            SelectError::Io { source, path } => ValidationFailure::Io { source, path },
+            // validate has no Archive surface; fold walk errors into Io.
+            SelectError::Walk { message } => ValidationFailure::Io {
+                source: std::io::Error::other(message),
+                path: None,
+            },
         }
     }
 }
@@ -288,6 +336,10 @@ mod tests {
                 name: "downsampler".into(),
                 version: "1.2.0".into(),
             },
+            SdkError::InvalidExcludePattern {
+                pattern: "tests/**[".into(),
+                message: "unclosed character class".into(),
+            },
         ]
     }
 
@@ -391,10 +443,46 @@ mod tests {
         ));
     }
 
-    /// Schemas errors wrapped in `SdkError::Schema` must preserve the
-    /// structured payload. With `#[error(transparent)]`, pattern-matching
-    /// on the wrapper variant is the correct propagation test, and
-    /// `Error::source()` still reaches any nested `#[source]` at the bottom.
+    #[test]
+    fn select_error_maps_to_validation_failure_invalid_exclude_pattern() {
+        use crate::plugin_source_files::SelectError;
+        let se = SelectError::InvalidExcludePattern {
+            pattern: "[z-a]".into(),
+            message: "bad".into(),
+        };
+        match ValidationFailure::from(se) {
+            ValidationFailure::InvalidExcludePattern { pattern, .. } => {
+                assert_eq!(pattern, "[z-a]")
+            }
+            other => panic!("expected InvalidExcludePattern, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn validation_invalid_exclude_pattern_converts_to_sdk_invalid_exclude_pattern() {
+        let vf = ValidationFailure::InvalidExcludePattern {
+            pattern: "[z-a]".into(),
+            message: "bad".into(),
+        };
+        match SdkError::from(vf) {
+            SdkError::InvalidExcludePattern { pattern, .. } => assert_eq!(pattern, "[z-a]"),
+            other => panic!("expected InvalidExcludePattern, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn select_error_invalid_pattern_maps_to_sdk_invalid_exclude_pattern() {
+        use crate::plugin_source_files::SelectError;
+        let se = SelectError::InvalidExcludePattern {
+            pattern: "[z-a]".into(),
+            message: "bad glob".into(),
+        };
+        match SdkError::from(se) {
+            SdkError::InvalidExcludePattern { pattern, .. } => assert_eq!(pattern, "[z-a]"),
+            other => panic!("expected InvalidExcludePattern, got {other:?}"),
+        }
+    }
+
     #[test]
     fn schemas_error_structured_payload_preserved_via_sdk_schema() {
         use std::error::Error as _;

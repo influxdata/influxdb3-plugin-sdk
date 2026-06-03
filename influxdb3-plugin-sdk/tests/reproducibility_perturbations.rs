@@ -22,7 +22,7 @@ use std::path::Path;
 fn build(dir: &Path) -> Vec<u8> {
     let name = "p".parse().unwrap();
     let version = Version::new(0, 1, 0);
-    canonical_tar_gz(dir, &name, &version).unwrap()
+    canonical_tar_gz(dir, &name, &version, &[]).unwrap()
 }
 
 fn plant(dir: &Path) {

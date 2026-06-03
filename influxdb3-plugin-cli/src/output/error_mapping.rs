@@ -611,6 +611,15 @@ pub(crate) fn json_error_from_sdk(err: &SdkError, ctx: ErrorContext) -> JsonErro
             cause: vec![],
         },
 
+        SdkError::InvalidExcludePattern { pattern, message } => JsonError {
+            code: namespace_for(ctx, "invalid_exclude_pattern"),
+            message: err.to_string(),
+            field: Some(pattern.clone()),
+            details: Some(serde_json::json!({ "pattern": pattern, "message": message })),
+            diagnostics: vec![],
+            cause: vec![],
+        },
+
         _ => JsonError {
             code: namespace_for(ctx, "sdk_error"),
             message: err.to_string(),
@@ -950,6 +959,13 @@ mod tests {
                 },
                 "yank::entry_not_found",
             ),
+            (
+                SdkError::InvalidExcludePattern {
+                    pattern: "[z-a]".into(),
+                    message: "bad".into(),
+                },
+                "package::invalid_exclude_pattern",
+            ),
         ];
 
         for (err, expected_code) in &cases {
@@ -1099,5 +1115,21 @@ mod tests {
         );
         let je = json_error_from_clap(&err);
         assert_eq!(je.code, "usage::invalid_target");
+    }
+
+    #[test]
+    fn invalid_exclude_pattern_uses_namespace() {
+        let err = SdkError::InvalidExcludePattern {
+            pattern: "[z-a]".into(),
+            message: "bad".into(),
+        };
+        assert_eq!(
+            json_error_from_sdk(&err, ErrorContext::Package).code,
+            "package::invalid_exclude_pattern"
+        );
+        assert_eq!(
+            json_error_from_sdk(&err, ErrorContext::Validate).code,
+            "validate::invalid_exclude_pattern"
+        );
     }
 }

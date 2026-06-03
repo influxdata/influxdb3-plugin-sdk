@@ -20,11 +20,11 @@
 //! 7. **Gzip header timestamp**: `0`.
 //! 8. **Original filename header**: omitted (FNAME flag not set).
 //!
-//! # File exclusion
+//! # File selection
 //!
-//! These patterns are skipped during walk: `target/`, `.git/`, `__pycache__/`,
-//! `*.pyc`. A configurable mechanism (`.pluginignore` / manifest `plugin.files`)
-//! is out of scope for v1.
+//! File selection (including `[plugin].exclude` filtering) is delegated to
+//! [`crate::plugin_source_files`]; this module turns an already-selected file
+//! set into canonical archive bytes.
 //!
 //! # Compression
 //!
@@ -53,30 +53,16 @@
 use flate2::{Compression, GzBuilder};
 use influxdb3_plugin_schemas::PluginName;
 use semver::Version;
-use std::path::{Component, Path, PathBuf};
+use std::path::Path;
 
 use crate::SdkError;
 
-/// Joins a relative path's components with `/` for use as a tar entry path.
-///
-/// Tar archives canonically use `/`. On Windows, `Path::display()` emits `\`,
-/// which produces malformed archive paths — so we iterate components and
-/// join explicitly. Input must be a normalized relative path (no root, no
-/// `..`); the archive pipeline strips the plugin-dir prefix before calling.
-fn to_archive_path(relative: &Path) -> String {
-    let mut parts: Vec<String> = Vec::new();
-    for component in relative.components() {
-        if let Component::Normal(os) = component {
-            parts.push(os.to_string_lossy().into_owned());
-        }
-    }
-    parts.join("/")
-}
-
 /// Packages `plugin_dir` into a canonical gzipped tar archive.
 ///
-/// The archive's top-level directory is `{name}-{version}/`; all files under
-/// `plugin_dir` are placed beneath it, preserving their relative paths.
+/// The archive's top-level directory is `{name}-{version}/`; the selected
+/// source files (after `[plugin].exclude` filtering via
+/// [`crate::plugin_source_files`]) are placed beneath it, preserving their
+/// relative paths.
 ///
 /// Returns the archive bytes. Consumers are expected to feed them into
 /// [`crate::hash::sha256_of_bytes`] and write them out; this function
@@ -85,8 +71,9 @@ pub fn canonical_tar_gz(
     plugin_dir: &Path,
     name: &PluginName,
     version: &Version,
+    exclude: &[String],
 ) -> Result<Vec<u8>, SdkError> {
-    let entries = collect_entries(plugin_dir)?;
+    let files = crate::plugin_source_files::select(plugin_dir, exclude).map_err(SdkError::from)?;
 
     let archive_root = format!("{}-{}", name.as_str(), version);
 
@@ -95,8 +82,8 @@ pub fn canonical_tar_gz(
     // surface a domain-typed `SdkError::PathTooLong` earlier so callers
     // can pattern-match without string-scraping.
     const USTAR_PATH_LIMIT: usize = 255;
-    for entry in &entries {
-        let archive_path = format!("{}/{}", archive_root, to_archive_path(&entry.relative));
+    for file in &files {
+        let archive_path = format!("{}/{}", archive_root, file.normalized);
         if archive_path.len() > USTAR_PATH_LIMIT {
             return Err(SdkError::PathTooLong {
                 archive_path,
@@ -111,16 +98,16 @@ pub fn canonical_tar_gz(
         .write(&mut buf, Compression::new(6));
     let mut tarball = tar::Builder::new(gz);
 
-    for entry in entries {
-        let archive_path = format!("{}/{}", archive_root, to_archive_path(&entry.relative));
-        let data = std::fs::read(&entry.absolute).map_err(|source| SdkError::Io {
+    for file in files {
+        let archive_path = format!("{}/{}", archive_root, file.normalized);
+        let data = std::fs::read(&file.absolute).map_err(|source| SdkError::Io {
             source,
-            path: Some(entry.absolute.clone()),
+            path: Some(file.absolute.clone()),
         })?;
 
         let mut header = tar::Header::new_ustar();
         header.set_size(data.len() as u64);
-        header.set_mode(if entry.is_exec { 0o755 } else { 0o644 });
+        header.set_mode(if file.is_exec { 0o755 } else { 0o644 });
         header.set_mtime(0);
         header.set_uid(0);
         header.set_gid(0);
@@ -149,154 +136,6 @@ pub fn canonical_tar_gz(
         message: e.to_string(),
     })?;
     Ok(buf)
-}
-
-struct Entry {
-    absolute: PathBuf,
-    relative: PathBuf,
-    is_exec: bool,
-}
-
-fn collect_entries(plugin_dir: &Path) -> Result<Vec<Entry>, SdkError> {
-    let plugin_dir = std::fs::canonicalize(plugin_dir).map_err(|source| SdkError::Io {
-        source,
-        path: Some(plugin_dir.to_path_buf()),
-    })?;
-
-    let mut entries = Vec::new();
-    // `follow_links(false)` makes walkdir report symlinks as themselves
-    // (not files/dirs); the is_file filter below then excludes them.
-    let walk = walkdir::WalkDir::new(&plugin_dir)
-        .sort_by_file_name()
-        .follow_links(false);
-
-    for result in walk {
-        let entry = result.map_err(|e| SdkError::Archive {
-            message: format!("walkdir error: {e}"),
-        })?;
-        let absolute = entry.path().to_path_buf();
-        if entry.file_type().is_dir() {
-            continue;
-        }
-        // Skip symlinks, sockets, and other non-regular files.
-        if !entry.file_type().is_file() {
-            continue;
-        }
-        let relative = absolute
-            .strip_prefix(&plugin_dir)
-            .map_err(|e| SdkError::Archive {
-                message: format!("path outside plugin_dir: {e}"),
-            })?
-            .to_path_buf();
-        if should_exclude(&relative) {
-            continue;
-        }
-        let is_exec = is_executable(&absolute).map_err(|source| SdkError::Io {
-            source,
-            path: Some(absolute.clone()),
-        })?;
-        entries.push(Entry {
-            absolute,
-            relative,
-            is_exec,
-        });
-    }
-
-    // Canonical order: lexicographic byte order on the archive path.
-    // `as_encoded_bytes()` is WTF-8 on Windows and UTF-8 on Unix; for ASCII
-    // paths (plugin files in practice) the two are byte-identical. Sorting
-    // by relative path is equivalent to sorting by full archive path because
-    // the `archive_root` prefix is shared by every entry.
-    entries.sort_by(|a, b| {
-        a.relative
-            .as_os_str()
-            .as_encoded_bytes()
-            .cmp(b.relative.as_os_str().as_encoded_bytes())
-    });
-
-    Ok(entries)
-}
-
-fn should_exclude(relative: &Path) -> bool {
-    // Exclude any component named `target`, `.git`, or `__pycache__`, plus
-    // any `.pyc` file — standard author-side dev detritus.
-    for component in relative.components() {
-        if let Some("target" | ".git" | "__pycache__") = component.as_os_str().to_str() {
-            return true;
-        }
-    }
-    relative
-        .extension()
-        .and_then(|e| e.to_str())
-        .is_some_and(|ext| ext == "pyc")
-}
-
-#[cfg(unix)]
-fn is_executable(path: &Path) -> std::io::Result<bool> {
-    use std::os::unix::fs::PermissionsExt;
-    Ok(std::fs::metadata(path)?.permissions().mode() & 0o111 != 0)
-}
-
-#[cfg(not(unix))]
-fn is_executable(_path: &Path) -> std::io::Result<bool> {
-    // No Unix-style exec bit on non-Unix; every file ships as 0644.
-    Ok(false)
-}
-
-#[cfg(test)]
-mod archive_path_tests {
-    use super::to_archive_path;
-    use std::path::PathBuf;
-
-    #[test]
-    fn single_component_returns_component_string() {
-        assert_eq!(
-            to_archive_path(&PathBuf::from("manifest.toml")),
-            "manifest.toml"
-        );
-    }
-
-    #[test]
-    fn nested_components_joined_with_forward_slash() {
-        let p: PathBuf = ["a", "b", "c.py"].iter().collect();
-        assert_eq!(to_archive_path(&p), "a/b/c.py");
-    }
-
-    #[test]
-    fn empty_path_returns_empty_string() {
-        assert_eq!(to_archive_path(&PathBuf::new()), "");
-    }
-
-    /// Even a path component containing a literal backslash byte (which is a
-    /// valid filename byte on Unix) must produce a forward-slash-separated
-    /// archive path. Unix-only: Windows parses `\` as a path separator, so
-    /// the same input would split into different components.
-    #[cfg(unix)]
-    #[test]
-    fn backslash_byte_in_component_does_not_leak_into_archive_path() {
-        // Single component whose name contains a literal `\` byte.
-        let p = PathBuf::from("sub\\leaf");
-        let result = to_archive_path(&p);
-        assert_eq!(result, "sub\\leaf", "single component preserved verbatim");
-        assert!(
-            !result.contains('/'),
-            "single component must not introduce `/`"
-        );
-
-        // Multi-component path with a backslash in one component: the component
-        // separator is `/`, component content is preserved byte-for-byte.
-        // On Unix, `PathBuf::from_iter` treats each string as a single
-        // component and backslashes are ordinary filename bytes, so the middle
-        // component's name is literally `sub\leaf` (8 bytes including the
-        // backslash). `to_archive_path` joins the three components with `/`,
-        // yielding the bytes `a/sub\leaf/c`.
-        let p: PathBuf = ["a", "sub\\leaf", "c"].iter().collect();
-        let result = to_archive_path(&p);
-        assert_eq!(
-            result, "a/sub\\leaf/c",
-            "backslash byte inside a component is preserved; `/` only appears as component separator"
-        );
-    }
 }
 
 #[cfg(test)]
@@ -333,13 +172,13 @@ mod tests {
     fn builds_deterministic_bytes_across_calls() {
         let td = tempfile::tempdir().unwrap();
         let dir = minimal_plugin_dir(td.path());
-        let a = canonical_tar_gz(&dir, &name(), &version()).unwrap();
-        let b = canonical_tar_gz(&dir, &name(), &version()).unwrap();
+        let a = canonical_tar_gz(&dir, &name(), &version(), &[]).unwrap();
+        let b = canonical_tar_gz(&dir, &name(), &version(), &[]).unwrap();
         assert_eq!(a, b, "same inputs must produce byte-identical output");
     }
 
     #[test]
-    fn skips_excluded_paths() {
+    fn skips_paths_matched_by_manifest_exclude() {
         let td = tempfile::tempdir().unwrap();
         let dir = minimal_plugin_dir(td.path());
         fs::create_dir_all(dir.join("target")).unwrap();
@@ -348,7 +187,12 @@ mod tests {
         fs::write(dir.join("__pycache__/foo.pyc"), "junk").unwrap();
         fs::write(dir.join("compiled.pyc"), "also junk").unwrap();
 
-        let bytes = canonical_tar_gz(&dir, &name(), &version()).unwrap();
+        let exclude = vec![
+            "target/".to_string(),
+            "__pycache__/".to_string(),
+            "*.pyc".to_string(),
+        ];
+        let bytes = canonical_tar_gz(&dir, &name(), &version(), &exclude).unwrap();
         let listing = list_tar_paths(&bytes);
         for entry in &listing {
             assert!(!entry.contains("/target/"), "unexpected target/: {entry}");
@@ -358,6 +202,40 @@ mod tests {
             );
             assert!(!entry.ends_with(".pyc"), "unexpected .pyc: {entry}");
         }
+    }
+
+    #[test]
+    fn no_exclude_keeps_formerly_hardcoded_paths() {
+        // Behavior change: with no exclude, nothing is auto-removed — not the
+        // old hard-coded `*.pyc`, `target/`, or `__pycache__/` patterns.
+        let td = tempfile::tempdir().unwrap();
+        let dir = minimal_plugin_dir(td.path());
+        fs::write(dir.join("compiled.pyc"), "kept now").unwrap();
+        fs::create_dir_all(dir.join("target")).unwrap();
+        fs::write(dir.join("target/some_file"), "kept").unwrap();
+        fs::create_dir_all(dir.join("__pycache__")).unwrap();
+        fs::write(dir.join("__pycache__/cache.pyc"), "kept").unwrap();
+        fs::create_dir_all(dir.join(".git")).unwrap();
+        fs::write(dir.join(".git/config"), "[core]\n").unwrap();
+
+        let bytes = canonical_tar_gz(&dir, &name(), &version(), &[]).unwrap();
+        let listing = list_tar_paths(&bytes);
+        assert!(
+            listing.iter().any(|p| p.ends_with("compiled.pyc")),
+            "no-exclude must keep root .pyc; got {listing:?}"
+        );
+        assert!(
+            listing.iter().any(|p| p.contains("target/some_file")),
+            "no-exclude must keep target/ files; got {listing:?}"
+        );
+        assert!(
+            listing.iter().any(|p| p.contains("__pycache__/cache.pyc")),
+            "no-exclude must keep __pycache__/ files; got {listing:?}"
+        );
+        assert!(
+            listing.iter().any(|p| p.contains(".git/config")),
+            "no-exclude must keep .git/ files; got {listing:?}"
+        );
     }
 
     #[test]
@@ -375,7 +253,7 @@ mod tests {
         fs::write(dir.join("zebra.py"), "# z\n").unwrap();
         fs::write(dir.join("alpha.py"), "# a\n").unwrap();
 
-        let bytes = canonical_tar_gz(&dir, &name(), &version()).unwrap();
+        let bytes = canonical_tar_gz(&dir, &name(), &version(), &[]).unwrap();
         let listing = list_tar_paths(&bytes);
         let without_root: Vec<String> = listing
             .iter()
@@ -393,7 +271,7 @@ mod tests {
     fn tar_format_is_ustar() {
         let td = tempfile::tempdir().unwrap();
         let dir = minimal_plugin_dir(td.path());
-        let bytes = canonical_tar_gz(&dir, &name(), &version()).unwrap();
+        let bytes = canonical_tar_gz(&dir, &name(), &version(), &[]).unwrap();
         let tar_bytes = gunzip(&bytes);
         // ustar magic at offset 257 ("ustar\0"), version "00" at 263.
         let magic = &tar_bytes[257..263];
@@ -406,7 +284,7 @@ mod tests {
     fn every_entry_mtime_is_zero() {
         let td = tempfile::tempdir().unwrap();
         let dir = minimal_plugin_dir(td.path());
-        let bytes = canonical_tar_gz(&dir, &name(), &version()).unwrap();
+        let bytes = canonical_tar_gz(&dir, &name(), &version(), &[]).unwrap();
         let mut archive = tar::Archive::new(std::io::Cursor::new(gunzip(&bytes)));
         for entry in archive.entries_with_seek().unwrap() {
             let entry = entry.unwrap();
@@ -419,7 +297,7 @@ mod tests {
     fn every_entry_uid_gid_and_names_canonical() {
         let td = tempfile::tempdir().unwrap();
         let dir = minimal_plugin_dir(td.path());
-        let bytes = canonical_tar_gz(&dir, &name(), &version()).unwrap();
+        let bytes = canonical_tar_gz(&dir, &name(), &version(), &[]).unwrap();
         let mut archive = tar::Archive::new(std::io::Cursor::new(gunzip(&bytes)));
         for entry in archive.entries_with_seek().unwrap() {
             let entry = entry.unwrap();
@@ -437,7 +315,7 @@ mod tests {
     fn file_modes_are_0644_for_non_exec() {
         let td = tempfile::tempdir().unwrap();
         let dir = minimal_plugin_dir(td.path());
-        let bytes = canonical_tar_gz(&dir, &name(), &version()).unwrap();
+        let bytes = canonical_tar_gz(&dir, &name(), &version(), &[]).unwrap();
         let mut archive = tar::Archive::new(std::io::Cursor::new(gunzip(&bytes)));
         for entry in archive.entries_with_seek().unwrap() {
             let entry = entry.unwrap();
@@ -461,7 +339,7 @@ mod tests {
         fs::write(&script, "#!/bin/sh\necho hi\n").unwrap();
         fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
 
-        let bytes = canonical_tar_gz(&dir, &name(), &version()).unwrap();
+        let bytes = canonical_tar_gz(&dir, &name(), &version(), &[]).unwrap();
         let mut archive = tar::Archive::new(std::io::Cursor::new(gunzip(&bytes)));
         let mut seen_exec = false;
         for entry in archive.entries_with_seek().unwrap() {
@@ -498,7 +376,7 @@ mod tests {
         fs::create_dir_all(&nested).unwrap();
         fs::write(nested.join("leaf"), "data").unwrap();
 
-        let err = canonical_tar_gz(&dir, &name(), &version()).unwrap_err();
+        let err = canonical_tar_gz(&dir, &name(), &version(), &[]).unwrap_err();
         assert!(
             matches!(err, SdkError::PathTooLong { limit: 255, .. }),
             "expected SdkError::PathTooLong, got {err:?}"
@@ -509,7 +387,7 @@ mod tests {
     fn gzip_mtime_is_zero() {
         let td = tempfile::tempdir().unwrap();
         let dir = minimal_plugin_dir(td.path());
-        let bytes = canonical_tar_gz(&dir, &name(), &version()).unwrap();
+        let bytes = canonical_tar_gz(&dir, &name(), &version(), &[]).unwrap();
         // Gzip MTIME is bytes 4..8 (little-endian).
         let mtime = u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
         assert_eq!(mtime, 0, "expected gzip MTIME=0; got {mtime}");
@@ -519,7 +397,7 @@ mod tests {
     fn gzip_fname_flag_is_not_set() {
         let td = tempfile::tempdir().unwrap();
         let dir = minimal_plugin_dir(td.path());
-        let bytes = canonical_tar_gz(&dir, &name(), &version()).unwrap();
+        let bytes = canonical_tar_gz(&dir, &name(), &version(), &[]).unwrap();
         // FLG byte is at offset 3. FNAME is bit 3 (0x08). MUST be clear.
         let flg = bytes[3];
         assert_eq!(flg & 0x08, 0, "expected FNAME bit clear; FLG={flg:08b}");
@@ -530,7 +408,7 @@ mod tests {
         // Sanity check: the archive is extractable and carries expected files.
         let td = tempfile::tempdir().unwrap();
         let dir = minimal_plugin_dir(td.path());
-        let bytes = canonical_tar_gz(&dir, &name(), &version()).unwrap();
+        let bytes = canonical_tar_gz(&dir, &name(), &version(), &[]).unwrap();
         let listing = list_tar_paths(&bytes);
         assert!(listing.contains(&"p-0.1.0/manifest.toml".to_owned()));
         assert!(listing.contains(&"p-0.1.0/__init__.py".to_owned()));

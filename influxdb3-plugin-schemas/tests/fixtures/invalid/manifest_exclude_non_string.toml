@@ -1,0 +1,11 @@
+manifest_schema_version = "1.2"
+
+[plugin]
+name = "bad-exclude"
+version = "0.1.0"
+description = "exclude items must be strings"
+triggers = ["process_writes"]
+exclude = [1, 2]
+
+[dependencies]
+database_version = ">=3.0.0"

@@ -9,9 +9,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Added
 - `influxdb3-plugin-schemas`: added the pure plugin-directory validation contract (`validate` module) used by the SDK validator — entry-point classification, trigger binding, the `TopLevelFunctionDef` extraction rules, the `ValidatedPluginDefinition` success payload, and an executable conformance corpus. The `ValidationError` diagnostic type now lives here.
 - New `docs/src/reference/plugin-format.md` documenting the plugin-directory layout contract.
+- Optional `[plugin].exclude` manifest field: an array of gitignore-style patterns, relative to the plugin root, that omits files from packaging and validation. Patterns are compiled by the SDK (via the `ignore` crate); the same selection feeds both `package` and `validate`. `manifest_schema_version` bumps to `1.2` (additive minor; existing `1.x` manifests remain valid). Generated plugin templates now ship a recommended `exclude` list. Documented in `docs/src/reference/manifest.md`.
 
 ### Changed
 - `influxdb3-plugin-sdk`: validation now returns structured success metadata (`ValidatedPluginDefinition`) and a focused `ValidationFailure` error, while preserving CLI diagnostics and JSON codes. The `tree-sitter` extractor is exposed as `validate::extract_top_level_defs`. `ValidationError` is re-imported from `influxdb3-plugin-schemas` and no longer re-exported by the SDK.
+- Source-file selection is now driven solely by `[plugin].exclude`. The previously hard-coded packaging excludes (`target/`, `.git/`, `__pycache__/`, `*.pyc`) are removed — a plugin with no `exclude` packages every regular file. Those defaults now live in generated template manifests as editable recommendations.
+- `influxdb3-plugin` `validate`/`package`: validation now parses `manifest.toml` before detecting the entry point. A missing or malformed manifest is reported on its own; entry-point detection runs only against the manifest-selected (post-`exclude`) top-level files, so excluded `.py` files no longer count toward entry-point ambiguity. Invalid `exclude` patterns surface as the `validate::invalid_exclude_pattern` / `package::invalid_exclude_pattern` error codes, naming the offending pattern.
 
 ## [0.4.2] - 2026-05-28
 

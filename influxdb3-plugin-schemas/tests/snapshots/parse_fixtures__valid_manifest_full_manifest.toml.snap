@@ -1,5 +1,6 @@
 ---
 source: influxdb3-plugin-schemas/tests/parse_fixtures.rs
+assertion_line: 53
 expression: manifest
 ---
 Manifest {
@@ -74,6 +75,7 @@ Manifest {
                 fragment: None,
             },
         ),
+        exclude: [],
     },
     dependencies: Dependencies {
         database_version: VersionReq {

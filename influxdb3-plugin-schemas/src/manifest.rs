@@ -19,7 +19,7 @@ pub struct ManifestSchemaVersion {
 }
 
 impl ManifestSchemaVersion {
-    pub const CURRENT: Self = Self { major: 1, minor: 1 };
+    pub const CURRENT: Self = Self { major: 1, minor: 2 };
 
     pub fn new(major: u32, minor: u32) -> Self {
         Self { major, minor }
@@ -389,6 +389,7 @@ impl Manifest {
                 homepage,
                 repository,
                 documentation,
+                exclude: raw.plugin.exclude,
             },
             dependencies: Dependencies {
                 database_version: database_version_ok.unwrap(),
@@ -455,6 +456,12 @@ pub struct PluginMetadata {
     pub repository: Option<url::Url>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub documentation: Option<url::Url>,
+    /// Gitignore-style patterns, relative to the plugin root, naming files to
+    /// omit from source-file selection (packaging + validation). Optional;
+    /// missing or `[]` means no manifest-level exclusions. Pattern *syntax* is
+    /// validated by the SDK at selection time, not here.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub exclude: Vec<String>,
 }
 
 /// `[dependencies]` section of the manifest.
@@ -526,6 +533,17 @@ mod schema_version_tests {
         let s = ManifestSchemaVersion::CURRENT.to_string();
         let parsed: ManifestSchemaVersion = s.parse().unwrap();
         assert_eq!(parsed, ManifestSchemaVersion::CURRENT);
+    }
+
+    #[test]
+    fn current_is_one_two() {
+        assert_eq!(
+            (
+                ManifestSchemaVersion::CURRENT.major(),
+                ManifestSchemaVersion::CURRENT.minor()
+            ),
+            (1, 2)
+        );
     }
 }
 
@@ -870,6 +888,73 @@ database_version = ">=3.0.0"
             errors.errors()[0].error,
             SchemaError::UnsupportedManifestMajor { .. }
         );
+    }
+
+    #[test]
+    fn accepts_missing_exclude_defaults_empty() {
+        let m = Manifest::parse_toml(MINIMAL).unwrap();
+        assert!(m.plugin.exclude.is_empty());
+    }
+
+    #[test]
+    fn accepts_empty_exclude() {
+        let src = MINIMAL.replace(
+            r#"triggers = ["process_writes"]"#,
+            "triggers = [\"process_writes\"]\nexclude = []",
+        );
+        let m = Manifest::parse_toml(&src).unwrap();
+        assert!(m.plugin.exclude.is_empty());
+    }
+
+    #[test]
+    fn accepts_exclude_patterns_verbatim() {
+        let src = MINIMAL.replace(
+            r#"triggers = ["process_writes"]"#,
+            "triggers = [\"process_writes\"]\nexclude = [\"tests/**\", \"*.pyc\"]",
+        );
+        let m = Manifest::parse_toml(&src).unwrap();
+        assert_eq!(
+            m.plugin.exclude,
+            vec!["tests/**".to_string(), "*.pyc".to_string()]
+        );
+    }
+
+    #[test]
+    fn exclude_works_regardless_of_minor_version() {
+        // Parser must not branch exclude support on the minor version.
+        for ver in ["1.0", "1.1"] {
+            let src = MINIMAL
+                .replace(
+                    r#"manifest_schema_version = "1.0""#,
+                    &format!("manifest_schema_version = \"{ver}\""),
+                )
+                .replace(
+                    r#"triggers = ["process_writes"]"#,
+                    "triggers = [\"process_writes\"]\nexclude = [\"tests/**\"]",
+                );
+            let m = Manifest::parse_toml(&src).unwrap_or_else(|e| panic!("ver {ver}: {e}"));
+            assert_eq!(m.plugin.exclude, vec!["tests/**".to_string()], "ver {ver}");
+        }
+    }
+
+    #[test]
+    fn rejects_non_array_exclude() {
+        let src = MINIMAL.replace(
+            r#"triggers = ["process_writes"]"#,
+            "triggers = [\"process_writes\"]\nexclude = \"tests\"",
+        );
+        let errs = Manifest::parse_toml(&src).unwrap_err();
+        assert_matches!(errs.errors()[0].error, SchemaError::TomlParse { .. });
+    }
+
+    #[test]
+    fn rejects_non_string_exclude_item() {
+        let src = MINIMAL.replace(
+            r#"triggers = ["process_writes"]"#,
+            "triggers = [\"process_writes\"]\nexclude = [1, 2]",
+        );
+        let errs = Manifest::parse_toml(&src).unwrap_err();
+        assert_matches!(errs.errors()[0].error, SchemaError::TomlParse { .. });
     }
 
     /// A triple-quoted TOML string with embedded newlines must be rejected
