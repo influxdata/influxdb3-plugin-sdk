@@ -49,6 +49,9 @@ Copy this into the release-prep PR description and check off each item as you go
   ```
 - [ ] `--version` output shows `influxdb3-plugin X.Y.Z, revision <40-hex-sha>`
 - [ ] Revision SHA matches the tagged commit: `git rev-parse vX.Y.Z^{commit}`
+- [ ] **Stable releases only:** `publish-crates-io` job succeeded in the release pipeline
+- [ ] **Stable releases only:** `just verify-crates-io` reports every crate's current version live on crates.io
+- [ ] **Stable releases only:** clean install works: `cargo install influxdb3-plugin-cli --version X.Y.Z --locked --root /tmp/i3pc-verify --force && /tmp/i3pc-verify/bin/influxdb3-plugin --version`
 
 ## If something goes wrong
 
@@ -56,3 +59,4 @@ Copy this into the release-prep PR description and check off each item as you go
 - [ ] **Verify fails but builds succeeded:** check `docs/ci-cd-lessons-learned.md` for known gotchas; likely a script bug, not a binary bug
 - [ ] **GitHub Release publish fails (PAT scope, gh CLI):** check the `influxdb3-plugin-sdk-github` CircleCI context has a valid `GH_TOKEN`
 - [ ] **`latest` release stale, missing, or has no assets after a stable release:** the `publish-github-release` job's "Update floating 'latest' release" step failed. See `RELEASE.md` "What to do if things go wrong" for manual recovery.
+- [ ] **crates.io publish failed/partial:** versions are immutable; re-run the workflow (published crates are skipped). Bad version → `cargo yank` + new version. Check the `influxdb3-plugin-sdk-cratesio` context's `CARGO_REGISTRY_TOKEN`. See `RELEASE.md`.
