@@ -649,6 +649,18 @@ jobs:
               artifacts/*
             echo "Updated 'latest' release to $CIRCLE_TAG ($CIRCLE_SHA1)."
 
+  publish-crates-io:
+    executor: self-hosted-amd
+    working_directory: /tmp/workspace/<< pipeline.id >>/publish-crates-io
+    steps:
+      - checkout
+      - restore-cargo-cache
+      - setup-rust   # cargo publish verifies (recompiles) each crate
+      - run:
+          name: scripts/publish-crates-io.sh
+          command: ./scripts/publish-crates-io.sh
+      - cleanup-current-workspace
+
 workflows:
   ci:
     jobs:
@@ -701,5 +713,14 @@ workflows:
           filters:
             tags:
               only: /^v\d+\.\d+\.\d+(-[0-9]+\.(alpha|beta|rc)\.[0-9]+)?$/
+            branches:
+              ignore: /.*/
+      - publish-crates-io:
+          requires:
+            - publish-github-release
+          context: [influxdb3-plugin-sdk-cratesio]
+          filters:
+            tags:
+              only: /^v\d+\.\d+\.\d+$/
             branches:
               ignore: /.*/
