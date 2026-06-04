@@ -10,7 +10,7 @@ This document is the canonical release runbook for `influxdb3-plugin-sdk`. It mi
 - Push permission on `main` (you'll be opening a PR, but you also need to push tags).
 - The CircleCI release pipeline is wired and these contexts exist (one-time setup; see `.circleci/config.yml`):
   - `influxdb3-plugin-sdk-github` with a `GH_TOKEN` PAT (GitHub Release + floating `latest`).
-  - `influxdb3-plugin-sdk-cratesio` with a scoped `CARGO_REGISTRY_TOKEN` (crates.io publish; scope restricted to the three crate names).
+  - `influxdb3-plugin-sdk-cratesio` with a scoped `CARGO_REGISTRY_TOKEN` (crates.io publish; scope restricted to the three crate names). The CI runners are shared and non-ephemeral, and the token is exposed to crate build scripts during the publish-verify build, so give the token a **short expiry** and **rotate it on a routine cadence** (and immediately if a runner is suspected compromised). Once all three crates exist on crates.io, the token only needs publish-update (not publish-new) scope.
 
 ## Versioning model
 
@@ -30,7 +30,9 @@ Crates.io publication follows the workspace dependency order. Release automation
 
 Crates.io versions are immutable. If a publish succeeds and a later release step fails, you must recover with a new version; yanking prevents new dependency resolution but does not delete the uploaded crate.
 
-Crates.io publishing is automated. On a **stable** `vX.Y.Z` tag, the CircleCI `publish-crates-io` job runs after `publish-github-release` and publishes any crate whose `Cargo.toml` version is not yet on crates.io, in the dependency order above (`scripts/publish-crates-io.sh`). It is idempotent: re-running a release publishes nothing new, and a cli-only bump publishes only cli. RC tags (`vX.Y.Z-N.(alpha|beta|rc).N`) do **not** publish to crates.io — they ship GitHub Release binaries only. Do not run `cargo publish` by hand except for the documented recovery below. To preview what a publish would do for the current tree without touching crates.io, run `just publish-crates-io-dry-run`.
+Crates.io publishing is automated. On a **stable** `vX.Y.Z` tag, the CircleCI `publish-crates-io` job runs after the versioned `publish-github-release` job (independently of the floating-`latest` update, so a `latest` failure cannot block it) and publishes any crate whose `Cargo.toml` version is not yet on crates.io, in the dependency order above (`scripts/publish-crates-io.sh`). It is idempotent: re-running a release publishes nothing new, and a cli-only bump publishes only cli. RC tags (`vX.Y.Z-N.(alpha|beta|rc).N`) do **not** publish to crates.io — they ship GitHub Release binaries only. Do not run `cargo publish` by hand except for the documented recovery below. To preview what a publish would do for the current tree without touching crates.io, run `just publish-crates-io-dry-run`.
+
+Note that `just publish-crates-io-dry-run` (and the CI pre-flight test) validate only the index-diff logic — they do **not** package the crates, run the publish-verify recompile, or exercise cross-crate registry propagation. The three crates are already on crates.io at their current versions, so a release at unchanged versions is a no-op (all three skip) and the publish mechanics have run at least once. The first time the **automated CI job** uploads will be the next version bump — supervise that release, watch the `publish-crates-io` job, and be ready to recover (see "What to do if things go wrong"). If the verify build ever fails resolving a just-published sibling under `--locked`, drop `--locked` from the `cargo publish` step in `scripts/publish-crates-io.sh`.
 
 In addition to the per-release `vX.Y.Z` tag, the repo carries a single floating `latest` release. The CircleCI release pipeline recreates `latest` at the commit of each newly-published **stable** release, attaching the same assets as that `vX.Y.Z` release. Prereleases (`vX.Y.Z-N.(alpha|beta|rc).N`) do **not** update `latest`. The `latest` release is marked `--latest=false` so the `vX.Y.Z` release keeps GitHub's "Latest" badge.
 
@@ -114,7 +116,7 @@ gh release download latest --repo influxdata/influxdb3-plugin-sdk
      --jq '.assets | length'   # expect 5
    ```
 
-   The CircleCI `publish-github-release` job recreates `latest` automatically; this check verifies it succeeded.
+   The CircleCI `update-latest-release` job recreates `latest` automatically; this check verifies it succeeded.
 
    Then manually: download the `x86_64-unknown-linux-gnu` tarball from the release page, extract, run `./influxdb3-plugin --version`, confirm the revision SHA matches the commit `vX.Y.Z` points at.
 
@@ -143,7 +145,7 @@ The procedure is identical to the standard release with one difference: in step 
 - **`just tag-version` refuses with "HEAD != origin/main"**: you forgot to pull main after the squash merge. Run `git checkout main && git pull --ff-only origin main` and retry.
 - **`just tag-version` refuses with "Cargo.toml version mismatch"**: the merged commit doesn't have the version bump you expected. Investigate before re-tagging — likely the version-bump PR was merged with stale Cargo.toml content.
 - **Anything else unexpected**: stop, capture the output, surface to the team. Don't improvise tag manipulation.
-- **`latest` release missing, stale, or has no assets**: the update step in `publish-github-release` failed (most commonly, the `influxdb3-plugin-sdk-github` context lacks a valid `GH_TOKEN`, or the token lacks `contents:write` on the repo). Inspect the failed step's logs. To recover manually after fixing the underlying issue, download the `vX.Y.Z` assets and recreate `latest` from them:
+- **`latest` release missing, stale, or has no assets**: the `update-latest-release` job failed (most commonly, the `influxdb3-plugin-sdk-github` context lacks a valid `GH_TOKEN`, or the token lacks `contents:write` on the repo). It is a sibling of `publish-crates-io`, so the versioned release and the crates.io publish are unaffected. Inspect the failed job's logs. To recover manually after fixing the underlying issue, download the `vX.Y.Z` assets and recreate `latest` from them:
 
   ```bash
   rm -rf /tmp/latest-assets && mkdir -p /tmp/latest-assets
@@ -157,7 +159,7 @@ The procedure is identical to the standard release with one difference: in step 
   ```
 
   Do not improvise tag manipulation on `vX.Y.Z` tags — `latest` is the only release operators may recreate manually.
-- **crates.io publish failed or was partial:** crates.io versions are immutable — never reuse a version. Re-running the release workflow is safe: already-published crates are skipped and only the missing ones are retried. If a *bad* version was published, `cargo yank <crate>@X.Y.Z` (stops new resolution) and ship a corrected new version. For manual recovery with the token in your environment: `just publish-crates-io`. Check the `influxdb3-plugin-sdk-cratesio` context has a valid `CARGO_REGISTRY_TOKEN` if the job failed on auth.
+- **crates.io publish failed or was partial:** crates.io versions are immutable — never reuse a version. To recover, use CircleCI's **Rerun workflow from failed** — *not* a fresh `vX.Y.Z` tag push (the tag already exists and re-pushing it does nothing). Rerun-from-failed repeats only the failed jobs, and both are safe to repeat: `publish-github-release` is idempotent (it re-uploads assets when the release already exists instead of erroring), and `publish-crates-io` skips already-published crates and retries only the missing ones. crates.io publishing requires only the versioned `publish-github-release` job (not the floating-`latest` update), so a `latest` failure never blocks it. Alternatively, recover by hand with the token in your environment: `just publish-crates-io`. If a *bad* version was published, `cargo yank <crate>@X.Y.Z` (stops new resolution) and ship a corrected new version. Check the `influxdb3-plugin-sdk-cratesio` context has a valid `CARGO_REGISTRY_TOKEN` if the job failed on auth.
 
 ## Post-release follow-ups
 

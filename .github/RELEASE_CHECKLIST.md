@@ -34,7 +34,7 @@ Copy this into the release-prep PR description and check off each item as you go
 
 ## Verify
 
-- [ ] All release pipeline jobs pass (build-release × 4, generate-checksums, verify-release-binaries, publish-github-release)
+- [ ] All release pipeline jobs pass (build-release × 4, generate-checksums, verify-release-binaries, publish-github-release, update-latest-release)
 - [ ] `just verify-version X.Y.Z` reports all 5 assets present
 - [ ] GitHub Release page exists at `https://github.com/influxdata/influxdb3-plugin-sdk/releases/tag/vX.Y.Z`
 - [ ] Release is marked as prerelease (if RC) or latest (if stable)
@@ -58,5 +58,5 @@ Copy this into the release-prep PR description and check off each item as you go
 - [ ] **Build fails:** fix in a follow-up PR, delete the tag (`git push origin --delete vX.Y.Z && git tag -d vX.Y.Z`), re-tag after merge
 - [ ] **Verify fails but builds succeeded:** check `docs/ci-cd-lessons-learned.md` for known gotchas; likely a script bug, not a binary bug
 - [ ] **GitHub Release publish fails (PAT scope, gh CLI):** check the `influxdb3-plugin-sdk-github` CircleCI context has a valid `GH_TOKEN`
-- [ ] **`latest` release stale, missing, or has no assets after a stable release:** the `publish-github-release` job's "Update floating 'latest' release" step failed. See `RELEASE.md` "What to do if things go wrong" for manual recovery.
-- [ ] **crates.io publish failed/partial:** versions are immutable; re-run the workflow (published crates are skipped). Bad version → `cargo yank` + new version. Check the `influxdb3-plugin-sdk-cratesio` context's `CARGO_REGISTRY_TOKEN`. See `RELEASE.md`.
+- [ ] **`latest` release stale, missing, or has no assets after a stable release:** the `update-latest-release` job failed (the versioned release and crates.io publish are unaffected). See `RELEASE.md` "What to do if things go wrong" for manual recovery.
+- [ ] **crates.io publish failed/partial:** versions are immutable; use CircleCI **Rerun from failed** (not a fresh tag) — published crates are skipped and `publish-github-release` is idempotent. crates.io depends only on the versioned release, so a `latest` failure won't block it. Bad version → `cargo yank crate@X.Y.Z` + new version. Check the `influxdb3-plugin-sdk-cratesio` context's `CARGO_REGISTRY_TOKEN`. See `RELEASE.md`.

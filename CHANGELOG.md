@@ -7,7 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ## [Unreleased]
 
 ### Added
-- Automated crates.io publishing on stable releases (`publish-crates-io` CircleCI job + `scripts/publish-crates-io.sh`).
+- Automated, idempotent crates.io publishing on stable releases (`publish-crates-io` CircleCI job + `scripts/publish-crates-io.sh`). Decoupled from the floating-`latest` update (now its own `update-latest-release` job) so a `latest` failure never blocks it, and safe to re-run via CircleCI "Rerun from failed".
 
 ## [0.5.0] - 2026-06-02
 
