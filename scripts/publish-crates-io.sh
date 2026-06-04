@@ -56,18 +56,18 @@ crate_version() {
     printf '%s\n' "$ver"
 }
 
-# Return 0 if <version> ($2) is published as a "vers" entry in the index body
-# ($1). Yanked versions still count — crates.io versions are immutable and a
-# yanked version cannot be republished. Parses each NDJSON index line with jq
-# and compares .vers exactly, so it neither depends on the index's compact
-# spacing nor prefix-matches ("0.3" != "0.3.0"). Fed via a here-string, not a
-# pipe into jq, so there is no SIGPIPE/pipefail interaction on large bodies.
-# fromjson? skips a malformed line rather than aborting the scan.
+# Return 0 if <version> ($2) appears as a "vers" entry in the index body ($1).
+# Yanked versions still count — crates.io versions are immutable and a yanked
+# version cannot be republished. The crates.io sparse index is compact (one
+# minified JSON object per line, no spaces), so a fixed-string match on
+# "vers":"<version>" is exact; the trailing quote blocks prefix matches ("0.3"
+# must not match "0.3.0"). Fed via a here-string, not a pipe, so grep -q
+# closing the input early cannot SIGPIPE a writer under pipefail. (Plain grep,
+# not jq -e: jq -e's exit status over a multi-line stream is version-dependent
+# — older jq keys it off the last input's output, not whether any matched.)
 version_published() {
     local body="$1" version="$2"
-    [ -n "$body" ] || return 1
-    jq -e -R --arg v "$version" 'fromjson? | select(.vers == $v)' \
-        <<<"$body" >/dev/null 2>&1
+    grep -qF "\"vers\":\"$version\"" <<<"$body"
 }
 
 # Echo the sparse-index body for a crate. Empty if the crate is not yet in the
