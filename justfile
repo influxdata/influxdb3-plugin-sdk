@@ -201,3 +201,19 @@ verify-version VERSION:
     fi
     echo "All 5 expected assets present on v{{VERSION}} (4 tarballs + SHA256SUMS)."
     echo "Manual follow-up: download Linux x86_64 binary, extract, run --version, confirm revision matches v{{VERSION}}'s commit SHA."
+
+# Dry-run the crates.io publish plan for the current working tree.
+# Prints what would be published; publishes nothing. Safe to run anytime.
+publish-crates-io-dry-run:
+    ./scripts/publish-crates-io.sh --dry-run
+
+# Verify every crate's current Cargo.toml version is live on crates.io.
+# Post-release check; non-zero exit if any version is missing.
+verify-crates-io:
+    ./scripts/publish-crates-io.sh --verify
+
+# Manually publish unpublished crate versions to crates.io. EMERGENCY /
+# RECOVERY ONLY — CI does this automatically on a stable vX.Y.Z tag. Requires
+# CARGO_REGISTRY_TOKEN in the environment. crates.io versions are immutable.
+publish-crates-io:
+    ./scripts/publish-crates-io.sh

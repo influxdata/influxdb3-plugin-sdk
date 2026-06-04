@@ -111,6 +111,18 @@ commands:
                 ;;
             esac
 
+  install-gh-cli:
+    description: "Install a pinned gh CLI to /usr/local/bin (shared by the GitHub-release jobs)."
+    steps:
+      - run:
+          name: Install gh CLI
+          command: |
+            GH_VERSION="2.65.0"
+            curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_amd64.tar.gz" \
+              | tar xz -C /tmp
+            sudo mv "/tmp/gh_${GH_VERSION}_linux_amd64/bin/gh" /usr/local/bin/gh
+            gh --version
+
 jobs:
   cargo-build:
     executor: self-hosted-amd
@@ -226,6 +238,9 @@ jobs:
       - run:
           name: scripts/check-changelog-updated.sh
           command: ./scripts/check-changelog-updated.sh
+      - run:
+          name: scripts/test-publish-crates-io.sh
+          command: ./scripts/test-publish-crates-io.sh
       - cleanup-current-workspace
 
   cargo-semver-checks:
@@ -562,14 +577,7 @@ jobs:
       - checkout
       - attach_workspace:
           at: .
-      - run:
-          name: Install gh CLI
-          command: |
-            GH_VERSION="2.65.0"
-            curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_amd64.tar.gz" \
-              | tar xz -C /tmp
-            sudo mv "/tmp/gh_${GH_VERSION}_linux_amd64/bin/gh" /usr/local/bin/gh
-            gh --version
+      - install-gh-cli
       - run:
           name: Extract release notes from CHANGELOG.md
           command: |
@@ -594,12 +602,40 @@ jobs:
               PRERELEASE_FLAG="--prerelease"
               echo "Tag $CIRCLE_TAG is a prerelease (contains '-')."
             fi
-            gh release create "$CIRCLE_TAG" \
-              --repo influxdata/influxdb3-plugin-sdk \
-              --title "$CIRCLE_TAG" \
-              --notes-file /tmp/release-notes.md \
-              $PRERELEASE_FLAG \
-              artifacts/*
+            # Idempotent so "Rerun workflow from failed" (the documented
+            # crates.io/latest recovery path) is safe: `gh release create` errors
+            # if the release already exists, which would abort a re-run of this
+            # job. If the release is already there, re-upload assets with
+            # --clobber instead of recreating it.
+            if gh release view "$CIRCLE_TAG" --repo influxdata/influxdb3-plugin-sdk >/dev/null 2>&1; then
+              echo "Release $CIRCLE_TAG already exists — re-uploading assets (idempotent re-run)."
+              gh release upload "$CIRCLE_TAG" \
+                --repo influxdata/influxdb3-plugin-sdk \
+                --clobber \
+                artifacts/*
+            else
+              gh release create "$CIRCLE_TAG" \
+                --repo influxdata/influxdb3-plugin-sdk \
+                --title "$CIRCLE_TAG" \
+                --notes-file /tmp/release-notes.md \
+                $PRERELEASE_FLAG \
+                artifacts/*
+            fi
+
+  # Floating 'latest' update is a SEPARATE job, downstream of the versioned
+  # release and a sibling of publish-crates-io. Keeping it out of
+  # publish-github-release means a 'latest' failure no longer fails the
+  # versioned-release job and therefore no longer blocks crates.io publishing
+  # (which requires publish-github-release). Both this job and publish-crates-io
+  # fan out from publish-github-release and run in parallel.
+  update-latest-release:
+    docker:
+      - image: cimg/base:current
+    steps:
+      - checkout
+      - attach_workspace:
+          at: .
+      - install-gh-cli
       - run:
           name: Update floating 'latest' release (stable releases only)
           # Recreates the floating 'latest' release at this release's commit so
@@ -645,6 +681,23 @@ jobs:
               --notes "Floating pointer to the newest stable release ($CIRCLE_TAG). Assets mirror that release. Pin to vX.Y.Z for reproducible installs." \
               artifacts/*
             echo "Updated 'latest' release to $CIRCLE_TAG ($CIRCLE_SHA1)."
+
+  publish-crates-io:
+    executor: self-hosted-amd
+    working_directory: /tmp/workspace/<< pipeline.id >>/publish-crates-io
+    steps:
+      - checkout
+      - restore-cargo-cache
+      - setup-rust   # cargo publish verifies (recompiles) each crate
+      - run:
+          name: scripts/publish-crates-io.sh
+          # Publishes up to 3 crates, each with a from-cold verify recompile
+          # plus cargo's post-publish index-propagation wait. The default 10m
+          # no_output_timeout is too tight for a silent verify-compile stretch
+          # across all three; 30m matches the headroom the other long jobs use.
+          no_output_timeout: 30m
+          command: ./scripts/publish-crates-io.sh
+      - cleanup-current-workspace
 
 workflows:
   ci:
@@ -698,5 +751,26 @@ workflows:
           filters:
             tags:
               only: /^v\d+\.\d+\.\d+(-[0-9]+\.(alpha|beta|rc)\.[0-9]+)?$/
+            branches:
+              ignore: /.*/
+      # Sibling of publish-crates-io: both require the versioned release only,
+      # so a 'latest' failure cannot block crates.io. Runs on all tags; the
+      # step self-skips on prereleases.
+      - update-latest-release:
+          requires:
+            - publish-github-release
+          context: [influxdb3-plugin-sdk-github]
+          filters:
+            tags:
+              only: /^v\d+\.\d+\.\d+(-[0-9]+\.(alpha|beta|rc)\.[0-9]+)?$/
+            branches:
+              ignore: /.*/
+      - publish-crates-io:
+          requires:
+            - publish-github-release
+          context: [influxdb3-plugin-sdk-cratesio]
+          filters:
+            tags:
+              only: /^v\d+\.\d+\.\d+$/
             branches:
               ignore: /.*/
