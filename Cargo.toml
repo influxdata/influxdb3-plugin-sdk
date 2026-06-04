@@ -20,8 +20,8 @@ license = "MIT OR Apache-2.0"
 # schemas types via cli/src/lib.rs); breaking bumps in sdk cascade
 # through cli. Update the version constraints below in lockstep with any
 # breaking bump; patch bumps resolve automatically under caret semantics.
-influxdb3-plugin-schemas = { path = "influxdb3-plugin-schemas", version = "0.3.0" }
-influxdb3-plugin-sdk = { path = "influxdb3-plugin-sdk", version = "0.4.0" }
+influxdb3-plugin-schemas = { path = "influxdb3-plugin-schemas", version = "0.3.1" }
+influxdb3-plugin-sdk = { path = "influxdb3-plugin-sdk", version = "0.4.1" }
 
 # crates.io dependencies
 anstyle = "1"
