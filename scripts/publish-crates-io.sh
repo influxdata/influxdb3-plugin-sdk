@@ -1,11 +1,25 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Requires on PATH: bash, cargo (verify build + metadata), jq (metadata/index
+# parsing), curl (sparse-index queries). All are assumed present on the
+# self-hosted CI runner — cargo via setup-rust; jq is also relied on by the
+# build-release job and the justfile.
+
 # Overridable for tests / mirrors.
 INDEX_BASE="${INDEX_BASE:-https://index.crates.io}"
 
+# Workspace metadata, resolved once (lazily) and reused across crates by
+# crate_version instead of re-shelling cargo per crate. Empty until first use.
+WORKSPACE_METADATA=""
+
 # Dependency order. A downstream crate's publish-verify build resolves the
-# just-published upstream from the registry, so order matters.
+# just-published upstream from the registry, so order matters. This relies on
+# cargo >= 1.66, which blocks after each publish until the new version is
+# visible in the index; on older cargo the downstream verify could race the
+# index and fail. The toolchain is pinned in rust-toolchain.toml (currently
+# 1.94) — keep it >= 1.66. If a verify build ever fails resolving a
+# just-published sibling under --locked, drop --locked from the publish step.
 CRATES=(influxdb3-plugin-schemas influxdb3-plugin-sdk influxdb3-plugin-cli)
 
 # Sparse-index path for a crate name, per cargo's layout:
@@ -26,9 +40,14 @@ index_path() {
 
 # Echo a crate's version from its Cargo.toml via cargo metadata. Per crate —
 # never assumes the three crate versions are equal (per-crate versioning model).
+# cargo metadata is resolved once and cached in WORKSPACE_METADATA; later crates
+# filter the same JSON rather than re-invoking cargo (3 calls -> 1).
 crate_version() {
     local name="$1" ver
-    ver="$(cargo metadata --format-version 1 --no-deps \
+    if [ -z "$WORKSPACE_METADATA" ]; then
+        WORKSPACE_METADATA="$(cargo metadata --format-version 1 --no-deps)"
+    fi
+    ver="$(printf '%s' "$WORKSPACE_METADATA" \
         | jq -r --arg n "$name" '.packages[] | select(.name == $n) | .version')"
     if [ -z "$ver" ]; then
         echo "ERROR: crate '$name' not found in workspace" >&2
@@ -37,13 +56,18 @@ crate_version() {
     printf '%s\n' "$ver"
 }
 
-# Return 0 if <version> ($2) appears as a "vers" entry in the index body ($1).
-# Yanked versions still count — crates.io versions are immutable and a yanked
-# version cannot be republished. The trailing quote in the pattern prevents
-# prefix matches (e.g. "0.3" must not match "0.3.0").
+# Return 0 if <version> ($2) is published as a "vers" entry in the index body
+# ($1). Yanked versions still count — crates.io versions are immutable and a
+# yanked version cannot be republished. Parses each NDJSON index line with jq
+# and compares .vers exactly, so it neither depends on the index's compact
+# spacing nor prefix-matches ("0.3" != "0.3.0"). Fed via a here-string, not a
+# pipe into jq, so there is no SIGPIPE/pipefail interaction on large bodies.
+# fromjson? skips a malformed line rather than aborting the scan.
 version_published() {
     local body="$1" version="$2"
-    printf '%s\n' "$body" | grep -qF "\"vers\":\"$version\""
+    [ -n "$body" ] || return 1
+    jq -e -R --arg v "$version" 'fromjson? | select(.vers == $v)' \
+        <<<"$body" >/dev/null 2>&1
 }
 
 # Echo the sparse-index body for a crate. Empty if the crate is not yet in the
@@ -54,7 +78,11 @@ fetch_index_versions() {
     local name="$1" url body code
     url="$INDEX_BASE/$(index_path "$name")"
     body="$(mktemp)"
-    code="$(curl -sS -o "$body" -w '%{http_code}' "$url" || true)"
+    # --retry/--retry-all-errors ride out transient index blips (5xx, dropped
+    # connections) so a single flaky response doesn't abort the whole publish
+    # run. A genuine transport failure still ends non-zero after the retries and
+    # is caught by the case below.
+    code="$(curl --retry 3 --retry-all-errors -sS -o "$body" -w '%{http_code}' "$url" || true)"
     case "$code" in
         200) cat "$body" ;;
         404) : ;;
