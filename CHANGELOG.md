@@ -9,6 +9,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Added
 - Automated, idempotent crates.io publishing on stable releases (`publish-crates-io` CircleCI job + `scripts/publish-crates-io.sh`). Decoupled from the floating-`latest` update (now its own `update-latest-release` job) so a `latest` failure never blocks it, and safe to re-run via CircleCI "Rerun from failed".
 
+## [0.5.1-1.rc.0] - 2026-06-04
+
+### Changed
+- Release-pipeline rehearsal RC for the automated crates.io publishing release. Exercises the GitHub Release path end to end — the idempotent `publish-github-release` job and the split `update-latest-release` job — without publishing to crates.io (RC tags are excluded from `publish-crates-io`). No code changes since 0.5.0.
+
 ## [0.5.0] - 2026-06-02
 
 ### Added
