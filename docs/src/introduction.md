@@ -4,7 +4,6 @@ The InfluxDB 3 Plugin SDK is a CLI tool and set of libraries to help author and 
 
 ## Why Use The Plugin SDK?
 
-### A Registry Solves Versioning
 The most common way to install plugins is to fetch them directly from GitHub using the `gh:` prefix with the `influxdb3` CLI. E.g. `influxdb3 create trigger --path gh:influxdata/downsampler/downsampler.py`. This install path has several problems:
 
 - **No plugin versioning** 
@@ -18,7 +17,7 @@ The most common way to install plugins is to fetch them directly from GitHub usi
 - **Multifile plugins are not supported** 
     - Plugin authors cannot create plugins that span multiple files
 
-Using the plugin SDK, plugin repository maintainers can solve these problems by publishing a [plugin registry](./reference/registry.md). This will result in the following benefits for plugin authors and users:
+Using the plugin SDK, plugin repository maintainers can solve these problems by publishing a [plugin registry](./explanation/registry.md). This will result in the following benefits for plugin authors and users:
 
 - **Plugins are versioned**
     - Each published plugin version is an immutable artifact with a stable `(registry, name, version)` identity.
@@ -37,4 +36,4 @@ Using the plugin SDK, plugin repository maintainers can solve these problems by 
 
 ---
 
-Next: [Getting Started](./getting-started/README.md)
+Next: [Tutorials](./tutorials/README.md)

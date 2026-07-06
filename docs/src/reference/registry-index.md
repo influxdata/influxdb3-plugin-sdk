@@ -307,4 +307,4 @@ The SDK writes index JSON in canonical form:
 
 ---
 
-Back: [The Plugin Directory Format](./plugin-format.md) | Next: None
+Back: [The Manifest Format](./manifest.md) | Next: None

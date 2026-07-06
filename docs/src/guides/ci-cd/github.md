@@ -1,26 +1,34 @@
-# Guide - Plugin Repository Maintainer
+# GitHub + GitHub Actions + GitHub Releases
 
-As a maintainer, you must make the following decisions:
-- where to host the plugin repository
-- where to host the plugin registry
+As a maintainer, you must decide the following:
+- where to host the plugin repository and should it be public or private
+- where to host the plugin registry and should it be public or private
 - which CI/CD tools to use for packaging and publishing plugins
-- should the repository and registry be public or private
 
 The SDK and registry are flexible and agnostic to hosting solutions, so you could use any combination of the following:
 
 - Repo Hosts: GitHub, GitLab, Azure DevOps, or any code hosting platform or VCS.
 - CI Runners: GitHub Actions, GitLab CI, Azure Pipelines, CircleCI, Jenkins, Buildkite, or any CI that can run CLI commands.
-- Registry Hosts: S3, GitHub Releases, GitLab Releases, Azure DevOps Artifacts, or any HTTP server ([supported URL schemes documented here](../reference/registry.md#supported-url-schemes)).
-- Both the repo and registry can be private or public. 
+- Registry Hosts: S3, GitHub Releases, GitLab Releases, Azure DevOps Artifacts, or any HTTP server ([supported URL schemes documented here](../../explanation/registry.md#supported-url-schemes)).
 
 If you already have a repo, that's ok, you can use it as-is without breaking existing plugin consumers. 
 
-This guide assumes that you already have a GitHub plugin repo and want to publish a registry to GitHub Releases using GitHub Actions.
+This guide uses GitHub for the repository, GitHub Releases for the registry, and GitHub Actions for CI/CD. Both the repository and registry are public.
+
+Initialize the registry 
+- create release
+- add the index
+Set up CI/CD
+- add the github actions workflow
+
+
 
 
 initialize
 - access tokens
 - create registry release
+
+
 plugin repo shape
 - directory per plugin (single file vs multi-file?)
 - manifest
@@ -48,7 +56,7 @@ triggers = ["process_writes"]
 database_version = ">=3.2.0,<4.0.0"
 ```
 
-The `triggers` array must match the functions implemented by the Python file. See [The Manifest Format](../reference/manifest.md) for all fields and validation rules.
+The `triggers` array must match the functions implemented by the Python file. See [The Manifest Format](../../reference/manifest.md) for all fields and validation rules.
 
 Validate locally before wiring CI:
 
@@ -81,7 +89,7 @@ influxdb3-plugin new index "${SEED_DIR}" --artifacts-url "${ARTIFACTS_URL}"
 gh release upload "${REGISTRY_TAG}" "${SEED_DIR}/index.json" --repo "${REGISTRY_REPO}"
 ```
 
-See [The Registry Index Format](../reference/registry-index.md) for the index schema.
+See [The Registry Index Format](../../reference/registry-index.md) for the index schema.
 
 ### Step 4: Add the GitHub Actions workflow
 
@@ -217,9 +225,9 @@ A repository either has no existing plugin distribution (`new`) or already distr
 
 ## What stays the same across every pipeline
 
-- The registry concept itself — see [The Registry](../reference/registry.md).
-- Manifest format (`manifest.toml`) — see [The Manifest Format](../reference/manifest.md).
-- Index format (`index.json`) — see [The Registry Index Format](../reference/registry-index.md).
+- The registry concept itself — see [The Registry](../../explanation/registry.md).
+- Manifest format (`manifest.toml`) — see [The Manifest Format](../../reference/manifest.md).
+- Index format (`index.json`) — see [The Registry Index Format](../../reference/registry-index.md).
 - The four-step pipeline shape listed at the top of this page.
 - The immutability rule: once `(name, version)` is published, only `yanked` can change.
 
@@ -390,4 +398,4 @@ jobs:
 ```
 ---
 
-Back: [Guides](./README.md) | Next: [Plugin Author](./author.md)
+Back: [CI/CD](./README.md) | Next: [Explanation](../../explanation/README.md)

@@ -1,8 +1,11 @@
 # Guides
-- [Plugin Repository Maintainer](./maintainer.md)
-- [Plugin Author](./author.md)
-- [Plugin Consumer](./consumer.md)
+
+- [Install the CLI](./install.md)
+- [Initialize a Registry](./initialize-registry.md)
+- [Publish a New Plugin Version](./publish-new-version.md)
+- [Publish an Existing Plugin](./publish-existing-plugin.md)
+- [CI/CD](./ci-cd/README.md)
 
 ---
 
-Back: [First Steps with the InfluxDB 3 Plugin SDK](../getting-started/first-steps.md) | Next: [Plugin Repository Maintainer](./maintainer.md)
+Back: [Getting Started](../tutorials/getting-started.md) | Next: [Install the CLI](./install.md)

@@ -1,14 +1,14 @@
 # The Registry
 
-A registry is a single `index.json` file and its collection of plugin artifacts. The index lists every published plugin version and points at the location where the archives are served; the artifacts contain the executable plugins.
+A registry is a collection of plugin artifacts and a plugin index. The index lists every published plugin version and points at the location where the artifacts are served; the artifacts contain everything needed to execute a plugin.
 
-This page defines what a registry is and how its two halves relate. The on-disk format of `index.json` is specified in [The Registry Index Format](./registry-index.md).
+This page defines what a registry is and how its two halves relate. The on-disk format of `index.json` is specified in [The Registry Index Format](../reference/registry-index.md).
 
 A registry has two parts:
 
 | Part | Form | Role |
 |---|---|---|
-| Index | One `index.json` file. | Catalog of published plugin versions. |
+| Index | An `index.json` file. | Catalog of published plugin versions. |
 | Artifacts | One `{name}-{version}.tar.gz` artifact per published plugin version. | Plugin files required to execute on db. |
 
 ## Globally Unique Identity
@@ -18,7 +18,7 @@ A plugin's identity is globally defined by the tuple `(index_url, name, version)
 - `index_url` is the location of the registry's `index.json`. It is supplied by the consumer's registry configuration; the index does not declare its own URL.
 - `name` and `version` are defined in a plugin's `manifest.toml` and recorded in the matching index entry.
 
-Two registries with different `index_url` values are distinct, even when they list the same `(name, version)` pair. Within one registry, `(name, version)` is unique, and names that share a canonical form (`lowercase(name).replace('-', '_')`) cannot coexist regardless of version.
+Two registries with different `index_url` values are distinct, even when they list the same `(name, version)` pair. Within one registry, `(name, version)` is unique, and names that share a canonical form cannot coexist regardless of version.
 
 ## Index and Artifacts Can Be Hosted Separately
 
@@ -28,26 +28,19 @@ The index file and the artifacts do not need to live at the same location, on th
 {artifacts_url}/{name}-{version}.tar.gz
 ```
 
-Valid topologies include:
+A non-exhaustive list of valid topologies includes:
 
 - Index and artifacts hosted together (for example, both under one S3 bucket prefix or one GitHub Release).
 - Index hosted on a CDN or static site; artifacts hosted on a separate object store.
-- Index hosted under `file://` for offline or air-gapped use; artifacts hosted under `https://`, or vice versa.
 - Index served from one origin and mirrored to another, with `artifacts_url` rewritten per mirror.
 
 ## Supported URL Schemes
 
-`artifacts_url` accepts the following schemes:
+Schemes for `index_url` are governed by the consumer, not by the index format, so any scheme can be used.
 
-| Scheme | Use |
-|---|---|
-| `https://` | Recommended default for public and private registries. |
-| `http://` | Local development or trusted internal networks. |
-| `file://` | Offline, air-gapped, or appliance-style deployments. |
+Schemes for `artifacts_url` are documented in in the [registry index format](../reference/registry-index.md#artifacts_url) and are limited to `https`, `http`, and `file`. 
 
-Unsupported schemes are rejected at registry-configuration time, including `oci://`, `s3://`, `git://`, `git+https://`, `git+ssh://`, `ftp://`, and `sftp://`. Use an object store's HTTPS endpoint rather than a native storage URI such as `s3://`.
-
-Schemes for `index_url` are governed by the consumer, not by the index format.
+The `http` and `file` schemes are intended for local development and testing. 
 
 ## Publication and Immutability
 
@@ -73,4 +66,4 @@ The hash is used to verify the integrity between the index and the artifact. Do 
 
 ---
 
-Back: [Reference](./README.md) | Next: [The Manifest Format](./manifest.md)
+Back: [Explanation](./README.md) | Next: [The Plugin Directory Format](./plugin-format.md)

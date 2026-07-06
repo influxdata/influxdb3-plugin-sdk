@@ -20,4 +20,4 @@ influxdb3-plugin --version
 
 ---
 
-Back: [Getting Started](./README.md) | Next: [First Steps with the InfluxDB 3 Plugin SDK](./first-steps.md)
+Back: [Guides](./README.md) | Next: [Initialize a Registry](./initialize-registry.md)
