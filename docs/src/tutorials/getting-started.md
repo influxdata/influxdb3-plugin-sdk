@@ -1,4 +1,4 @@
-# First Steps with the InfluxDB 3 Plugin SDK
+# Getting Started
 
 This section provides a quick sense for the `influxdb3-plugin` command line tool. We demonstrate its ability to create a local registry, create a plugin from a template, package the plugin, and view the plugin in the registry's index.
 
@@ -15,7 +15,7 @@ Process Request Plugin  process_request
 Index                   index
 ```
 
-A [registry](../reference/registry.md) is a collection of plugins and an `index.json` file. Let's create an index using `influxdb3-plugin new index`:
+A [registry](../explanation/registry.md) is a collection of plugins and an `index.json` file. Let's create an index using `influxdb3-plugin new index`:
 
 ```console
 $ influxdb3-plugin new index registry
@@ -266,4 +266,4 @@ Normally, a registry is hosted on a remote server so that plugins can be shared 
 
 ---
 
-Back: [Install the CLI](./install.md) | Next: [Guides](../guides/README.md)
+Back: [Tutorials](./README.md) | Next: [Guides](../guides/README.md)

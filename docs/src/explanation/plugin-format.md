@@ -5,14 +5,14 @@ implements the triggers the manifest declares. This page specifies the
 directory-layout contract the SDK validates: which file is the entry point, and
 how declared triggers bind to Python functions.
 
-This is a format contract in the same sense as the [manifest](./manifest.md)
-and [registry index](./registry-index.md) formats: every consumer — the CLI
+This is a format contract in the same sense as the [manifest](../reference/manifest.md)
+and [registry index](../reference/registry-index.md) formats: every consumer — the CLI
 that packages a plugin and the runtime that loads it — must agree on it.
 
 ## Required files
 
 - `manifest.toml` at the plugin root is **required**. See
-  [The Manifest Format](./manifest.md).
+  [The Manifest Format](../reference/manifest.md).
 - A Python entry point at the plugin root (see below) is **required**.
 
 ## Entry-point detection
@@ -43,7 +43,7 @@ Detection rules:
 - Matching is case-sensitive: `Foo.PY` and `__INIT__.py` are not treated as
   `foo.py`/`__init__.py`.
 
-**Interaction with [`[plugin].exclude`](./manifest.md#pluginexclude).** Source-file
+**Interaction with [`[plugin].exclude`](../reference/manifest.md#pluginexclude).** Source-file
 selection applies `exclude` patterns *before* entry-point detection runs. Only
 the files that survive selection are considered when classifying the entry point;
 excluded top-level `.py` files do not count. This means `exclude` can remove
@@ -81,4 +81,4 @@ collected together so authors can fix everything in one pass.
 
 ---
 
-Back: [The Manifest Format](./manifest.md) | Next: [The Registry Index Format](./registry-index.md)
+Back: [The Registry](./registry.md) | Next: [Reference](../reference/README.md)
