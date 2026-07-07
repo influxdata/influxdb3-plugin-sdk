@@ -81,4 +81,4 @@ collected together so authors can fix everything in one pass.
 
 ---
 
-Back: [The Registry](./registry.md) | Next: [Reference](../reference/README.md)
+Back: [The Registry](./registry.md) | Next: [Reference](../reference/)

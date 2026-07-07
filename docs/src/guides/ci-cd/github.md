@@ -398,4 +398,4 @@ jobs:
 ```
 ---
 
-Back: [CI/CD](./README.md) | Next: [Explanation](../../explanation/README.md)
+Back: [CI/CD](./) | Next: [Explanation](../../explanation/)

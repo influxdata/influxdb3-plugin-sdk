@@ -36,4 +36,4 @@ Using the plugin SDK, plugin repository maintainers can solve these problems by 
 
 ---
 
-Next: [Tutorials](./tutorials/README.md)
+Next: [Tutorials](./tutorials/)

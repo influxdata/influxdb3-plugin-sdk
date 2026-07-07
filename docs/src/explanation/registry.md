@@ -66,4 +66,4 @@ The hash is used to verify the integrity between the index and the artifact. Do 
 
 ---
 
-Back: [Explanation](./README.md) | Next: [The Plugin Directory Format](./plugin-format.md)
+Back: [Explanation](./) | Next: [The Plugin Directory Format](./plugin-format.md)

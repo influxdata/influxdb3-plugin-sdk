@@ -266,4 +266,4 @@ Normally, a registry is hosted on a remote server so that plugins can be shared 
 
 ---
 
-Back: [Tutorials](./README.md) | Next: [Guides](../guides/README.md)
+Back: [Tutorials](./) | Next: [Guides](../guides/)
