@@ -6,9 +6,9 @@ The InfluxDB 3 Plugin SDK is a CLI tool and set of libraries to help author and 
 
 ## [Why Use The Plugin SDK?](docs/src/introduction.md)
 
-## [Installation](docs/src/getting-started/install.md)
+## [Installation](docs/src/guides/install.md)
 
-## [Getting Started](docs/src/getting-started/first-steps.md)
+## [Getting Started](docs/src/tutorials/getting-started.md)
 
 ## Development
 
