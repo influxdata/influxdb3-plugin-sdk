@@ -20,4 +20,4 @@ influxdb3-plugin --version
 
 ---
 
-Back: [Guides](./README.md) | Next: [Initialize a Registry](./initialize-registry.md)
+Back: [Guides](./) | Next: [Initialize a Registry](./initialize-registry.md)

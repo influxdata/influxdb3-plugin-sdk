@@ -270,4 +270,4 @@ Within a supported major version, fields may be added and unknown fields are ign
 
 ---
 
-Back: [Reference](./README.md) | Next: [The Registry Index Format](./registry-index.md)
+Back: [Reference](./) | Next: [The Registry Index Format](./registry-index.md)
