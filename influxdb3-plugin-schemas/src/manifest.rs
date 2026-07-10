@@ -571,7 +571,7 @@ pub struct Dependencies {
     /// Inter-plugin dependencies. Deliberately not the `python` serde pattern
     /// (always emitted): omitting the empty field keeps pre-existing index
     /// entries byte-identical when legacy indexes are rewritten by newer
-    /// tooling (design doc D4).
+    /// tooling.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub plugins: Vec<PluginDependency>,
 }
