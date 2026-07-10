@@ -16,7 +16,7 @@ disallowed-methods = [
     { path = "tracing_subscriber::util::SubscriberInitExt::init", reason = "installs a global tracing subscriber; the embedding host must own subscriber installation" },
     { path = "tracing_subscriber::util::SubscriberInitExt::try_init", reason = "installs a global tracing subscriber; the embedding host must own subscriber installation" },
     { path = "env_logger::init", reason = "installs a global log implementation; the embedding host must own logger installation" },
-    { path = "log::set_boxed_logger", reason = "installs a global log implementation; the embedding host must own logger installation" },
+    { path = "log::set_boxed_logger", reason = "installs a global log implementation; the embedding host must own logger installation", allow-invalid = true },
     { path = "console_subscriber::init", reason = "installs a global tracing subscriber; the embedding host must own subscriber installation" },
 
     # No global OpenTelemetry provider installation

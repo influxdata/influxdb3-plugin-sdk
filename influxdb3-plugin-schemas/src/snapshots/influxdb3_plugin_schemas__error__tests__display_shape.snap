@@ -1,6 +1,5 @@
 ---
 source: influxdb3-plugin-schemas/src/error.rs
-assertion_line: 427
 expression: rendered
 ---
 - "plugin name \"Bad Name\" must match `[a-zA-Z][a-zA-Z0-9_-]*` (1-64 chars, ASCII alphanumerics / `-` / `_`, starting with a letter)"
@@ -16,6 +15,9 @@ expression: rendered
 - "database_version \">=bad\" is not a valid SemVer range: unexpected character 'b' while parsing major version number"
 - "python requirement \"requests>>=2.0\" is not PEP 508-parseable: no such comparison operator \">>=\", must be one of ~= == != <= >= < > ===\nrequests>>=2.0\n        ^^^^^^"
 - "artifacts_url \"s3://bucket/foo\" uses unsupported scheme \"s3\"; allowed: http, https, file"
+- "index_url \"s3://registry/index.json\" uses unsupported scheme \"s3\"; allowed: http, https, file"
+- "plugin dependency version \">=bad\" is not a valid SemVer range: unexpected character 'b' while parsing major version number"
+- "duplicate plugin dependency (\"https://plugins.example.com/index.json\", \"geo-lookup\"); entries must be unique by (index_url, canonical name)"
 - "hash \"notahash\" must be formatted as sha256:<64 lowercase hex chars>"
 - "published_at \"2026-04-29T18:45:12.123Z\" must be formatted as YYYY-MM-DDTHH:MM:SSZ in UTC"
 - "duplicate plugin entry (\"dup\", \"1.0.0\") in index"

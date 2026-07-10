@@ -22,15 +22,15 @@ pub mod plugin_format;
 mod raw;
 
 pub use error::{IndexInsertError, ReportedError, SchemaError, SchemaErrors};
-pub use identity::{PluginId, PluginName};
+pub use identity::{IndexUrl, PluginId, PluginName};
 pub use index::{ArtifactHash, ArtifactsUrl, Index, IndexEntry, IndexSchemaVersion, PublishedAt};
 pub use index_query::{
     IndexInfo, IndexInfoQuery, IndexInfoResult, IndexSearchHit, IndexSearchQuery,
     IndexSearchResult, IndexVersionVisibility, IndexVisibilityReason,
 };
 pub use manifest::{
-    Dependencies, Description, Manifest, ManifestSchemaVersion, PluginMetadata, PythonRequirement,
-    TriggerType,
+    Dependencies, Description, Manifest, ManifestSchemaVersion, PluginDependency, PluginMetadata,
+    PythonRequirement, TriggerType,
 };
 pub use path::FieldPath;
 pub use plugin_format::ValidationError;

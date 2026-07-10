@@ -1,6 +1,5 @@
 ---
 source: influxdb3-plugin-schemas/src/manifest.rs
-assertion_line: 741
 expression: m
 ---
 Manifest {
@@ -112,5 +111,6 @@ Manifest {
                 "pydantic~=2.0",
             ),
         ],
+        plugins: [],
     },
 }

@@ -325,6 +325,15 @@ fn dependencies_output(deps: Dependencies) -> IndexDependenciesOutput {
             .into_iter()
             .map(|p| p.as_str().to_owned())
             .collect(),
+        plugins: deps
+            .plugins
+            .into_iter()
+            .map(|dep| crate::output::json::PluginDependencyOutput {
+                index_url: dep.index_url.as_url().as_str().to_owned(),
+                name: dep.name.as_str().to_owned(),
+                version: dep.version.to_string(),
+            })
+            .collect(),
     }
 }
 
@@ -418,6 +427,23 @@ fn render_info_human(
                     "<none>".to_owned()
                 } else {
                     plugin.dependencies.python.join(", ")
+                }
+            )?;
+            writeln!(
+                writer,
+                "plugins: {}",
+                if plugin.dependencies.plugins.is_empty() {
+                    "<none>".to_owned()
+                } else {
+                    plugin
+                        .dependencies
+                        .plugins
+                        .iter()
+                        .map(|dep| format!("{} {} ({})", dep.name, dep.version, dep.index_url))
+                        .collect::<Vec<_>>()
+                        // "; " between entries: the version range itself
+                        // renders comparators with ", ".
+                        .join("; ")
                 }
             )?;
             if let Some(homepage) = &plugin.homepage {

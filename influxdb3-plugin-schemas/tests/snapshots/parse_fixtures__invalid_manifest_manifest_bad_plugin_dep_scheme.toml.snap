@@ -1,0 +1,5 @@
+---
+source: influxdb3-plugin-schemas/tests/parse_fixtures.rs
+expression: errors.to_string()
+---
+dependencies.plugins[0].index_url: index_url "s3://bucket/index.json" uses unsupported scheme "s3"; allowed: http, https, file

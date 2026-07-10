@@ -326,6 +326,7 @@ mod tests {
             dependencies: Dependencies {
                 database_version: ">=3.0.0".parse().unwrap(),
                 python: vec![],
+                plugins: vec![],
             },
             hash: ArtifactHash::try_new(
                 "sha256:0000000000000000000000000000000000000000000000000000000000000000",
@@ -1117,6 +1118,7 @@ mod tests {
         entry.dependencies = Dependencies {
             database_version: ">=3.2.0,<4.0.0".parse().unwrap(),
             python: vec![PythonRequirement::try_new("requests>=2.31").unwrap()],
+            plugins: vec![],
         };
         entry.hash = ArtifactHash::try_new(
             "sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",

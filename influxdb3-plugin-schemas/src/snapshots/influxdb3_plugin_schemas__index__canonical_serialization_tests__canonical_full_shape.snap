@@ -1,10 +1,9 @@
 ---
 source: influxdb3-plugin-schemas/src/index.rs
-assertion_line: 1429
 expression: idx.to_canonical_json().unwrap()
 ---
 {
-  "index_schema_version": "2.0",
+  "index_schema_version": "2.1",
   "artifacts_url": "https://example.com/artifacts",
   "plugins": [
     {
@@ -31,7 +30,14 @@ expression: idx.to_canonical_json().unwrap()
       ],
       "dependencies": {
         "database_version": ">=3.0.0",
-        "python": []
+        "python": [],
+        "plugins": [
+          {
+            "index_url": "https://plugins.example.com/index.json",
+            "name": "geo-lookup",
+            "version": ">=1.0.0, <2.0.0"
+          }
+        ]
       },
       "hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
       "yanked": true

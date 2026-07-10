@@ -150,6 +150,7 @@ fn validate_with_index_reports_name_version_conflict() {
             dependencies: Dependencies {
                 database_version: ">=3.0.0".parse().unwrap(),
                 python: vec![],
+                plugins: vec![],
             },
             hash: ArtifactHash::try_new(
                 "sha256:0000000000000000000000000000000000000000000000000000000000000000",

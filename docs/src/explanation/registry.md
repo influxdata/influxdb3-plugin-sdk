@@ -36,7 +36,7 @@ A non-exhaustive list of valid topologies includes:
 
 ## Supported URL Schemes
 
-Schemes for `index_url` are governed by the consumer, not by the index format, so any scheme can be used.
+Schemes for `index_url` are limited to `https`, `http`, and `file` — the same set as `artifacts_url`. The SDK validates this wherever it stores an `index_url` (plugin identity, [`dependencies.plugins`](../reference/manifest.md#dependenciesplugins) entries); the set may widen in a future release. How an index is fetched remains governed by the consumer's registry configuration.
 
 Schemes for `artifacts_url` are documented in in the [registry index format](../reference/registry-index.md#artifacts_url) and are limited to `https`, `http`, and `file`. 
 

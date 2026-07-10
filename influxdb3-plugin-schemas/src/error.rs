@@ -83,6 +83,25 @@ pub enum SchemaError {
     )]
     UnsupportedArtifactScheme { url: String, scheme: String },
 
+    #[error(
+        "index_url {url:?} uses unsupported scheme {scheme:?}; \
+         allowed: http, https, file"
+    )]
+    UnsupportedIndexUrlScheme { url: String, scheme: String },
+
+    #[error("plugin dependency version {range:?} is not a valid SemVer range: {source}")]
+    InvalidPluginDependencyVersion {
+        range: String,
+        #[source]
+        source: semver::Error,
+    },
+
+    #[error(
+        "duplicate plugin dependency ({index_url:?}, {name:?}); \
+         entries must be unique by (index_url, canonical name)"
+    )]
+    DuplicatePluginDependency { index_url: String, name: String },
+
     #[error("hash {value:?} must be formatted as sha256:<64 lowercase hex chars>")]
     InvalidHash { value: String },
 
@@ -158,6 +177,9 @@ impl SchemaError {
             Self::InvalidDatabaseVersion { .. } => "InvalidDatabaseVersion",
             Self::InvalidPythonRequirement { .. } => "InvalidPythonRequirement",
             Self::UnsupportedArtifactScheme { .. } => "UnsupportedArtifactScheme",
+            Self::UnsupportedIndexUrlScheme { .. } => "UnsupportedIndexUrlScheme",
+            Self::InvalidPluginDependencyVersion { .. } => "InvalidPluginDependencyVersion",
+            Self::DuplicatePluginDependency { .. } => "DuplicatePluginDependency",
             Self::InvalidHash { .. } => "InvalidHash",
             Self::InvalidPublishedAt { .. } => "InvalidPublishedAt",
             Self::DuplicateIndexEntry { .. } => "DuplicateIndexEntry",
@@ -380,6 +402,18 @@ mod tests {
             SchemaError::UnsupportedArtifactScheme {
                 url: "s3://bucket/foo".into(),
                 scheme: "s3".into(),
+            },
+            SchemaError::UnsupportedIndexUrlScheme {
+                url: "s3://registry/index.json".into(),
+                scheme: "s3".into(),
+            },
+            SchemaError::InvalidPluginDependencyVersion {
+                range: ">=bad".into(),
+                source: semver::VersionReq::parse(">=bad").unwrap_err(),
+            },
+            SchemaError::DuplicatePluginDependency {
+                index_url: "https://plugins.example.com/index.json".into(),
+                name: "geo-lookup".into(),
             },
             SchemaError::InvalidHash {
                 value: "notahash".into(),

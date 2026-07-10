@@ -13,7 +13,7 @@ This page specifies the on-disk format of `index.json`: required fields, validat
 
 ```json
 {
-  "index_schema_version": "2.0",
+  "index_schema_version": "2.1",
   "artifacts_url": "https://plugins.example.com/artifacts",
   "plugins": []
 }
@@ -23,7 +23,7 @@ This page specifies the on-disk format of `index.json`: required fields, validat
 
 ```json
 {
-  "index_schema_version": "2.0",
+  "index_schema_version": "2.1",
   "artifacts_url": "https://plugins.example.com/artifacts",
   "plugins": [
     {
@@ -37,7 +37,14 @@ This page specifies the on-disk format of `index.json`: required fields, validat
       "documentation": "https://github.com/influxdata/plugin-downsampler/readme.md",
       "dependencies": {
         "database_version": ">=3.2.0,<4.0.0",
-        "python": ["requests>=2.31,<3", "pydantic~=2.0"]
+        "python": ["requests>=2.31,<3", "pydantic~=2.0"],
+        "plugins": [
+          {
+            "index_url": "https://plugins.example.com/index.json",
+            "name": "geo-lookup",
+            "version": ">=1.0.0, <2.0.0"
+          }
+        ]
       },
       "hash": "sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
     }
@@ -60,11 +67,11 @@ Every index file consists of these fields and sections:
   - `homepage` - Optional project homepage URL.
   - `repository` - Optional source repository URL.
   - `documentation` - Optional documentation URL.
-  - `dependencies` - Runtime compatibility and Python package requirements.
+  - `dependencies` - Runtime compatibility, Python package requirements, and inter-plugin dependencies.
   - `hash` - SHA-256 hash of the published archive.
   - `yanked` - Optional flag marking a version unavailable for new resolution.
 
-Unknown fields are ignored within a supported schema major. Do not use unknown fields for durable custom metadata: a future schema version may define them. The key `dependencies.plugins` is reserved for a future inter-plugin dependency format.
+Unknown fields are ignored within a supported schema major. Do not use unknown fields for durable custom metadata: a future schema version may define them.
 
 ## Top-Level Entries
 
@@ -79,7 +86,7 @@ Unknown fields are ignored within a supported schema major. Do not use unknown f
 `index_schema_version` must be a root-level string:
 
 ```json
-"index_schema_version": "2.0"
+"index_schema_version": "2.1"
 ```
 
 The value uses `<major>.<minor>` form. Consumers accept known major version `2`, including newer minor versions such as `2.1`, and reject unsupported majors instead of guessing.
@@ -229,7 +236,14 @@ When present, the URL must parse and use the `http` or `https` scheme.
 ```json
 "dependencies": {
   "database_version": ">=3.2.0,<4.0.0",
-  "python": ["requests>=2.31,<3", "pydantic~=2.0"]
+  "python": ["requests>=2.31,<3", "pydantic~=2.0"],
+  "plugins": [
+    {
+      "index_url": "https://plugins.example.com/index.json",
+      "name": "geo-lookup",
+      "version": ">=1.0.0, <2.0.0"
+    }
+  ]
 }
 ```
 
@@ -237,10 +251,11 @@ When present, the URL must parse and use the `http` or `https` scheme.
 |---|---|---:|---|
 | `database_version` | string | Yes | SemVer version requirement for compatible InfluxDB 3 database versions. |
 | `python` | array of strings | No | PEP 508 Python package requirement strings. Omitted or empty means no Python dependencies. |
+| `plugins` | array of objects | No | Inter-plugin dependencies copied from the manifest. Omitted when the plugin has none. |
 
 `database_version` parses as a Rust `semver` version requirement. Each `python` entry parses as a PEP 508 requirement. The SDK preserves the original requirement strings.
 
-There is no field for plugin-to-plugin dependencies. The key `dependencies.plugins` is reserved in the manifest for a future inter-plugin dependency format and is correspondingly absent from the index.
+Each `plugins` entry is a fully-resolved reference `{index_url, name, version}` where `version` is a SemVer range — see [Manifest: `dependencies.plugins`](./manifest.md#dependenciesplugins) for field rules. `index_url` must parse as an absolute URL with scheme `https`, `http`, or `file`, and serializes in normalized URL form. `version` serializes in the normalized `semver` display form — comparators joined with `", "`, so a manifest's `>=1.0.0,<2.0.0` is written as `>=1.0.0, <2.0.0`. Entries must be unique by `(index_url, canonical name)`. Canonical serialization omits the `plugins` key entirely when the array is empty, so entries published before this field existed keep their serialized form unchanged.
 
 ### `plugins.hash`
 
@@ -291,7 +306,9 @@ Syntax errors, missing required fields, or wrong JSON container shape are report
 
 Within a supported major version, fields may be added and unknown fields are ignored. Breaking changes require a new major version. Consumers reject unsupported majors instead of guessing.
 
-Indexes using schema `1.x` must be backfilled with a required `published_at` field on every `plugins[]` entry before they can be parsed by schema `2.0` consumers.
+Canonical serialization always writes the current schema version, whatever version the input file declared. A `2.0` index rewritten by newer tooling upgrades implicitly on write — no migration step is needed, and because empty `dependencies.plugins` is omitted, existing entries serialize unchanged.
+
+Indexes using schema `1.x` must be backfilled with a required `published_at` field on every `plugins[]` entry before they can be parsed by schema `2.x` consumers.
 
 ## Canonical Serialization
 
@@ -304,6 +321,8 @@ The SDK writes index JSON in canonical form:
 - Description strings are normalized to Unicode NFC.
 - Optional fields are omitted when absent.
 - `yanked` is omitted when false.
+- `dependencies.plugins` is omitted when empty.
+- `index_schema_version` is written as the current schema version.
 
 ---
 

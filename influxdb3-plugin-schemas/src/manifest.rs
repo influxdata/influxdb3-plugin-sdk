@@ -1,6 +1,6 @@
 //! Plugin manifest (`manifest.toml`) types and parsing.
 
-use crate::{PluginName, SchemaError};
+use crate::{IndexUrl, PluginName, SchemaError};
 use std::fmt;
 use std::str::FromStr;
 
@@ -19,7 +19,7 @@ pub struct ManifestSchemaVersion {
 }
 
 impl ManifestSchemaVersion {
-    pub const CURRENT: Self = Self { major: 1, minor: 2 };
+    pub const CURRENT: Self = Self { major: 1, minor: 3 };
 
     pub fn new(major: u32, minor: u32) -> Self {
         Self { major, minor }
@@ -230,6 +230,16 @@ impl serde::Serialize for PythonRequirement {
     }
 }
 
+/// One `[[dependencies.plugins]]` entry: a fully-resolved reference to a
+/// plugin at another (or the same) registry. `version` is a SemVer range —
+/// "any version of `name` at `index_url` that satisfies `version`".
+#[derive(Debug, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
+pub struct PluginDependency {
+    pub index_url: IndexUrl,
+    pub name: crate::PluginName,
+    pub version: semver::VersionReq,
+}
+
 /// A parsed plugin manifest.
 #[derive(Debug, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct Manifest {
@@ -374,6 +384,9 @@ impl Manifest {
             }
         }
 
+        let plugins_ok =
+            validate_raw_plugin_dependencies(&raw.dependencies.plugins, &deps_path, &mut errors);
+
         if !errors.is_empty() {
             return Err(SchemaErrors::new(errors));
         }
@@ -394,6 +407,7 @@ impl Manifest {
             dependencies: Dependencies {
                 database_version: database_version_ok.unwrap(),
                 python: python_ok,
+                plugins: plugins_ok,
             },
         })
     }
@@ -438,6 +452,90 @@ pub(crate) fn parse_optional_http_url_from_path(
     }
 }
 
+/// Validates `dependencies.plugins` entries, pushing errors into `errors`
+/// with paths relative to `deps_path` (the `dependencies` table). Returns the
+/// successfully validated entries. Shared by `Manifest::parse_toml` and
+/// `Index::parse_json` so both parsers apply identical rules.
+///
+/// Entries must be unique by `(index_url, canonical(name))`: `index_url`
+/// compares by parsed-URL equality (normalized) and `name` by the existing
+/// lowercase-and-underscore folding. The duplicate check considers only
+/// entries whose `index_url` and `name` parsed cleanly, so one malformed
+/// field never cascades into spurious duplicate errors.
+pub(crate) fn validate_raw_plugin_dependencies(
+    raw: &[crate::raw::RawPluginDependency],
+    deps_path: &crate::FieldPath,
+    errors: &mut Vec<crate::ReportedError>,
+) -> Vec<PluginDependency> {
+    use crate::ReportedError;
+    use std::collections::HashSet;
+
+    let mut out: Vec<PluginDependency> = Vec::with_capacity(raw.len());
+    let mut seen: HashSet<(String, String)> = HashSet::new();
+
+    for (i, dep) in raw.iter().enumerate() {
+        let entry_path = deps_path.field("plugins").index(i);
+
+        let index_url = match IndexUrl::try_new(&dep.index_url) {
+            Ok(u) => Some(u),
+            Err(e) => {
+                errors.push(ReportedError::new(entry_path.field("index_url"), e));
+                None
+            }
+        };
+
+        let name = match crate::PluginName::from_str(&dep.name) {
+            Ok(n) => Some(n),
+            Err(e) => {
+                errors.push(ReportedError::new(entry_path.field("name"), e));
+                None
+            }
+        };
+
+        let version = match semver::VersionReq::parse(&dep.version) {
+            Ok(v) => Some(v),
+            Err(source) => {
+                errors.push(ReportedError::new(
+                    entry_path.field("version"),
+                    SchemaError::InvalidPluginDependencyVersion {
+                        range: dep.version.clone(),
+                        source,
+                    },
+                ));
+                None
+            }
+        };
+
+        let duplicate = if let (Some(u), Some(n)) = (&index_url, &name) {
+            let key = (u.as_url().as_str().to_owned(), n.canonical());
+            let is_dup = !seen.insert(key);
+            if is_dup {
+                errors.push(ReportedError::new(
+                    entry_path,
+                    SchemaError::DuplicatePluginDependency {
+                        index_url: u.as_url().as_str().to_owned(),
+                        name: n.as_str().to_owned(),
+                    },
+                ));
+            }
+            is_dup
+        } else {
+            false
+        };
+
+        if let (Some(index_url), Some(name), Some(version), false) =
+            (index_url, name, version, duplicate)
+        {
+            out.push(PluginDependency {
+                index_url,
+                name,
+                version,
+            });
+        }
+    }
+    out
+}
+
 // No TOML serializer: manifests are author-written and the SDK never emits
 // them. If one is added later, introduce a dedicated
 // `SchemaError::TomlSerialize { source: toml::ser::Error }` variant rather
@@ -470,6 +568,12 @@ pub struct Dependencies {
     pub database_version: semver::VersionReq,
     #[serde(default)]
     pub python: Vec<PythonRequirement>,
+    /// Inter-plugin dependencies. Deliberately not the `python` serde pattern
+    /// (always emitted): omitting the empty field keeps pre-existing index
+    /// entries byte-identical when legacy indexes are rewritten by newer
+    /// tooling (design doc D4).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub plugins: Vec<PluginDependency>,
 }
 
 #[cfg(test)]
@@ -536,13 +640,13 @@ mod schema_version_tests {
     }
 
     #[test]
-    fn current_is_one_two() {
+    fn current_is_one_three() {
         assert_eq!(
             (
                 ManifestSchemaVersion::CURRENT.major(),
                 ManifestSchemaVersion::CURRENT.minor()
             ),
-            (1, 2)
+            (1, 3)
         );
     }
 }
@@ -982,6 +1086,216 @@ database_version = ">=3.0.0"
         let e = &errors.errors()[0];
         assert_eq!(e.path.as_str(), "plugin.description");
         assert_matches!(e.error, SchemaError::DescriptionMultiline { .. });
+    }
+}
+
+#[cfg(test)]
+mod plugin_dependency_tests {
+    use super::*;
+    use assert_matches::assert_matches;
+    use rstest::rstest;
+
+    fn manifest_with_plugins(plugins_toml: &str) -> String {
+        format!(
+            r#"
+manifest_schema_version = "1.3"
+
+[plugin]
+name = "downsampler"
+version = "1.2.0"
+description = "Test plugin"
+triggers = ["process_writes"]
+
+[dependencies]
+database_version = ">=3.2.0,<4.0.0"
+{plugins_toml}
+"#
+        )
+    }
+
+    #[test]
+    fn parses_plugin_dependencies() {
+        let src = manifest_with_plugins(
+            r#"
+[[dependencies.plugins]]
+index_url = "https://plugins.example.com/index.json"
+name = "geo-lookup"
+version = ">=1.0.0,<2.0.0"
+
+[[dependencies.plugins]]
+index_url = "https://other.example.com/index.json"
+name = "geo-lookup"
+version = "2.1"
+"#,
+        );
+        let m = Manifest::parse_toml(&src).expect("plugin deps should parse");
+        assert_eq!(m.dependencies.plugins.len(), 2);
+        let dep = &m.dependencies.plugins[0];
+        assert_eq!(
+            dep.index_url.as_url().as_str(),
+            "https://plugins.example.com/index.json"
+        );
+        assert_eq!(dep.name.as_str(), "geo-lookup");
+        assert!(dep.version.matches(&semver::Version::new(1, 5, 0)));
+        // Cargo semantics: bare "2.1" means ^2.1.
+        assert!(
+            m.dependencies.plugins[1]
+                .version
+                .matches(&semver::Version::new(2, 5, 0))
+        );
+    }
+
+    #[test]
+    fn missing_plugins_defaults_empty() {
+        let src = manifest_with_plugins("");
+        let m = Manifest::parse_toml(&src).unwrap();
+        assert!(m.dependencies.plugins.is_empty());
+    }
+
+    #[rstest]
+    #[case(
+        r#"index_url = "s3://bucket/index.json""#,
+        "dependencies.plugins[0].index_url",
+        "UnsupportedIndexUrlScheme"
+    )]
+    #[case(
+        r#"index_url = "not a url""#,
+        "dependencies.plugins[0].index_url",
+        "InvalidUrl"
+    )]
+    #[case(
+        r#"name = "Bad Name""#,
+        "dependencies.plugins[0].name",
+        "InvalidPluginName"
+    )]
+    #[case(
+        r#"name = "con""#,
+        "dependencies.plugins[0].name",
+        "ReservedPluginName"
+    )]
+    #[case(
+        r#"version = ">=bad""#,
+        "dependencies.plugins[0].version",
+        "InvalidPluginDependencyVersion"
+    )]
+    fn rejects_invalid_entry_field(
+        #[case] override_line: &str,
+        #[case] expected_path: &str,
+        #[case] expected_variant: &str,
+    ) {
+        let (key, _) = override_line.split_once(" = ").unwrap();
+        let mut lines = vec![
+            r#"index_url = "https://plugins.example.com/index.json""#,
+            r#"name = "geo-lookup""#,
+            r#"version = ">=1.0.0""#,
+        ];
+        for line in &mut lines {
+            if line.starts_with(key) {
+                *line = override_line;
+            }
+        }
+        let src =
+            manifest_with_plugins(&format!("[[dependencies.plugins]]\n{}\n", lines.join("\n")));
+        let errors = Manifest::parse_toml(&src).expect_err("should reject");
+        assert_eq!(errors.errors().len(), 1, "errors: {errors}");
+        assert_eq!(errors.errors()[0].path.as_str(), expected_path);
+        assert_eq!(errors.errors()[0].error.variant_name(), expected_variant);
+    }
+
+    /// Duplicates fold the name (`geo-lookup` == `geo_lookup`) and compare
+    /// `index_url` by parsed-URL equality (`EXAMPLE.com` == `example.com`).
+    #[rstest]
+    #[case("https://plugins.example.com/index.json", "geo-lookup")]
+    #[case("https://plugins.example.com/index.json", "geo_lookup")]
+    #[case("https://plugins.EXAMPLE.com/index.json", "GEO-LOOKUP")]
+    fn rejects_duplicate_entries(#[case] second_url: &str, #[case] second_name: &str) {
+        let src = manifest_with_plugins(&format!(
+            r#"
+[[dependencies.plugins]]
+index_url = "https://plugins.example.com/index.json"
+name = "geo-lookup"
+version = ">=1.0.0"
+
+[[dependencies.plugins]]
+index_url = "{second_url}"
+name = "{second_name}"
+version = ">=2.0.0"
+"#
+        ));
+        let errors = Manifest::parse_toml(&src).expect_err("duplicate should reject");
+        assert_eq!(errors.errors().len(), 1, "errors: {errors}");
+        assert_eq!(errors.errors()[0].path.as_str(), "dependencies.plugins[1]");
+        assert_matches!(
+            errors.errors()[0].error,
+            SchemaError::DuplicatePluginDependency { .. }
+        );
+    }
+
+    /// The same canonical name at two different registries is legitimate —
+    /// different `index_url`s are distinct plugins by the identity model.
+    #[test]
+    fn same_name_at_different_registries_allowed() {
+        let src = manifest_with_plugins(
+            r#"
+[[dependencies.plugins]]
+index_url = "https://a.example.com/index.json"
+name = "geo-lookup"
+version = ">=1.0.0"
+
+[[dependencies.plugins]]
+index_url = "https://b.example.com/index.json"
+name = "geo-lookup"
+version = ">=1.0.0"
+"#,
+        );
+        let m = Manifest::parse_toml(&src).expect("distinct registries should parse");
+        assert_eq!(m.dependencies.plugins.len(), 2);
+    }
+
+    /// One malformed field must not cascade into spurious duplicate errors,
+    /// and defects across entries collect in one pass.
+    #[test]
+    fn collects_multiple_entry_defects_in_one_pass() {
+        let src = manifest_with_plugins(
+            r#"
+[[dependencies.plugins]]
+index_url = "s3://bucket/index.json"
+name = "geo-lookup"
+version = ">=1.0.0"
+
+[[dependencies.plugins]]
+index_url = "https://plugins.example.com/index.json"
+name = "geo-lookup"
+version = ">=bad"
+"#,
+        );
+        let errors = Manifest::parse_toml(&src).expect_err("should reject");
+        let paths: Vec<&str> = errors.errors().iter().map(|r| r.path.as_str()).collect();
+        assert_eq!(
+            paths,
+            vec![
+                "dependencies.plugins[0].index_url",
+                "dependencies.plugins[1].version"
+            ],
+            "no duplicate error should fire: entry 0's url never parsed"
+        );
+    }
+
+    /// A dependency entry missing a required key fails phase 1 as a
+    /// root-level TOML parse error, consistent with other required fields.
+    #[test]
+    fn missing_required_key_is_root_parse_error() {
+        let src = manifest_with_plugins(
+            r#"
+[[dependencies.plugins]]
+index_url = "https://plugins.example.com/index.json"
+version = ">=1.0.0"
+"#,
+        );
+        let errors = Manifest::parse_toml(&src).expect_err("missing name should reject");
+        assert_eq!(errors.errors().len(), 1);
+        assert_eq!(errors.errors()[0].path.as_str(), "");
+        assert_matches!(errors.errors()[0].error, SchemaError::TomlParse { .. });
     }
 }
 
