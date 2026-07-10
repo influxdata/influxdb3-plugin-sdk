@@ -18,7 +18,7 @@ pub struct IndexSchemaVersion {
 
 impl IndexSchemaVersion {
     pub const CURRENT_MAJOR: u32 = 2;
-    pub const CURRENT_MINOR: u32 = 0;
+    pub const CURRENT_MINOR: u32 = 1;
     pub const CURRENT: Self = Self {
         major: Self::CURRENT_MAJOR,
         minor: Self::CURRENT_MINOR,
@@ -89,17 +89,10 @@ pub struct ArtifactsUrl(url::Url);
 
 impl ArtifactsUrl {
     pub fn try_new(raw: &str) -> Result<Self, SchemaError> {
-        let url = url::Url::parse(raw).map_err(|source| SchemaError::InvalidUrl {
-            url: raw.to_owned(),
-            source,
+        let url = crate::identity::parse_registry_scheme_url(raw, |url, scheme| {
+            SchemaError::UnsupportedArtifactScheme { url, scheme }
         })?;
-        match url.scheme() {
-            "https" | "http" | "file" => Ok(Self(url)),
-            other => Err(SchemaError::UnsupportedArtifactScheme {
-                url: raw.to_owned(),
-                scheme: other.to_owned(),
-            }),
-        }
+        Ok(Self(url))
     }
 
     pub fn as_url(&self) -> &url::Url {
@@ -503,6 +496,10 @@ impl Index {
     ///   fields normalize via `url::Url` parse.
     pub fn to_canonical_json(&self) -> Result<String, SchemaError> {
         let mut normalized = self.clone();
+        // Canonical output always declares the writer's schema version: legacy
+        // indexes upgrade implicitly on write, with no migration step (design
+        // doc D7). Parsing stays minor-tolerant within the supported major.
+        normalized.index_schema_version = IndexSchemaVersion::CURRENT;
         // `cmp_precedence` ignores build metadata (SemVer 2.0.0 rule); plain
         // `Version::cmp` would lexically order build strings, violating that.
         normalized.plugins.sort_by(|a, b| {
@@ -706,6 +703,12 @@ fn validate_raw_entry(
         }
     }
 
+    let plugins_ok = crate::manifest::validate_raw_plugin_dependencies(
+        &raw.dependencies.plugins,
+        &path.field("dependencies"),
+        errors,
+    );
+
     let hash = match ArtifactHash::try_new(&raw.hash) {
         Ok(h) => Some(h),
         Err(e) => {
@@ -730,6 +733,7 @@ fn validate_raw_entry(
         dependencies: crate::Dependencies {
             database_version: database_version.unwrap(),
             python: python_ok,
+            plugins: plugins_ok,
         },
         hash: hash.unwrap(),
         yanked: raw.yanked,
@@ -782,8 +786,8 @@ mod schema_version_tests {
     }
 
     #[test]
-    fn current_serializes_as_schema_two_zero() {
-        assert_eq!(IndexSchemaVersion::CURRENT.to_string(), "2.0");
+    fn current_serializes_as_schema_two_one() {
+        assert_eq!(IndexSchemaVersion::CURRENT.to_string(), "2.1");
     }
 }
 
@@ -1581,6 +1585,7 @@ mod canonical_serialization_tests {
             dependencies: Dependencies {
                 database_version: ">=3.0.0".parse().unwrap(),
                 python: vec![],
+                plugins: vec![],
             },
             hash: ArtifactHash::try_new(
                 "sha256:0000000000000000000000000000000000000000000000000000000000000000",
@@ -1654,10 +1659,105 @@ mod canonical_serialization_tests {
             plugins: vec![make_entry("alpha", semver::Version::new(1, 0, 0)), {
                 let mut e = make_entry("beta", semver::Version::new(2, 1, 0));
                 e.yanked = true;
+                e.dependencies.plugins = vec![crate::PluginDependency {
+                    index_url: crate::IndexUrl::try_new("https://plugins.example.com/index.json")
+                        .unwrap(),
+                    name: "geo-lookup".parse().unwrap(),
+                    version: ">=1.0.0,<2.0.0".parse().unwrap(),
+                }];
                 e
             }],
         };
         insta::assert_snapshot!("canonical_full_shape", idx.to_canonical_json().unwrap());
+    }
+
+    /// D4: an entry with no plugin dependencies omits the `plugins` key from
+    /// its `dependencies` object entirely — legacy entries stay byte-identical
+    /// when a legacy index is rewritten by newer tooling.
+    #[test]
+    fn empty_plugin_dependencies_key_is_omitted() {
+        let idx = Index {
+            index_schema_version: IndexSchemaVersion::CURRENT,
+            artifacts_url: ArtifactsUrl::try_new("https://example.com/artifacts").unwrap(),
+            plugins: vec![make_entry("x", semver::Version::new(1, 0, 0))],
+        };
+        let out = idx.to_canonical_json().unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert!(
+            parsed["plugins"][0]["dependencies"]
+                .get("plugins")
+                .is_none(),
+            "empty dependencies.plugins must be omitted, got: {}",
+            parsed["plugins"][0]["dependencies"]
+        );
+        // `python` keeps its always-emitted pattern; the asymmetry is D4.
+        assert!(parsed["plugins"][0]["dependencies"].get("python").is_some());
+    }
+
+    /// A plugin dependency's `index_url` serializes in its normalized
+    /// `url::Url` form — scheme and host case-folded, default port dropped —
+    /// the same rule as every other URL field.
+    #[test]
+    fn plugin_dependency_index_url_serializes_normalized() {
+        let idx = Index {
+            index_schema_version: IndexSchemaVersion::CURRENT,
+            artifacts_url: ArtifactsUrl::try_new("https://example.com/artifacts").unwrap(),
+            plugins: vec![{
+                let mut e = make_entry("x", semver::Version::new(1, 0, 0));
+                e.dependencies.plugins = vec![crate::PluginDependency {
+                    index_url: crate::IndexUrl::try_new(
+                        "HTTPS://Plugins.EXAMPLE.com:443/index.json",
+                    )
+                    .unwrap(),
+                    name: "geo-lookup".parse().unwrap(),
+                    version: ">=1.0.0".parse().unwrap(),
+                }];
+                e
+            }],
+        };
+        let out = idx.to_canonical_json().unwrap();
+        assert!(
+            out.contains("\"index_url\": \"https://plugins.example.com/index.json\""),
+            "index_url must serialize in normalized form, got: {out}"
+        );
+    }
+
+    /// D7: canonical output always declares the writer's schema version — a
+    /// legacy `2.0` index upgrades implicitly on write, and (with D4) its
+    /// entries serialize byte-identically to the same content declared `2.1`.
+    #[test]
+    fn canonical_write_stamps_current_version_on_legacy_index() {
+        let legacy = r#"{
+          "index_schema_version": "2.0",
+          "artifacts_url": "https://example.com/artifacts",
+          "plugins": [
+            {
+              "name": "downsampler",
+              "version": "1.2.0",
+              "published_at": "2026-04-29T18:45:12Z",
+              "description": "desc",
+              "triggers": ["process_writes"],
+              "dependencies": { "database_version": ">=3.0.0", "python": [] },
+              "hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+            }
+          ]
+        }"#;
+        let current = legacy.replace("\"2.0\"", "\"2.1\"");
+
+        let from_legacy = Index::parse_json(legacy)
+            .unwrap()
+            .to_canonical_json()
+            .unwrap();
+        let from_current = Index::parse_json(&current)
+            .unwrap()
+            .to_canonical_json()
+            .unwrap();
+
+        assert!(from_legacy.contains("\"index_schema_version\": \"2.1\""));
+        assert_eq!(
+            from_legacy, from_current,
+            "legacy rewrite must differ only in the stamped version"
+        );
     }
 
     #[test]
@@ -1860,6 +1960,7 @@ mod insert_tests {
             dependencies: Dependencies {
                 database_version: ">=3.0.0".parse().unwrap(),
                 python: vec![],
+                plugins: vec![],
             },
             hash: ArtifactHash::try_new(
                 "sha256:0000000000000000000000000000000000000000000000000000000000000000",
@@ -2003,6 +2104,12 @@ mod from_manifest_tests {
             dependencies: Dependencies {
                 database_version: ">=3.2.0,<4.0.0".parse().unwrap(),
                 python: vec![PythonRequirement::try_new("requests>=2.31,<3").unwrap()],
+                plugins: vec![crate::PluginDependency {
+                    index_url: crate::IndexUrl::try_new("https://plugins.example.com/index.json")
+                        .unwrap(),
+                    name: "geo-lookup".parse().unwrap(),
+                    version: ">=1.0.0,<2.0.0".parse().unwrap(),
+                }],
             },
         }
     }
@@ -2072,6 +2179,13 @@ mod from_manifest_tests {
     fn copies_dependencies() {
         let entry = IndexEntry::from_manifest(sample_manifest(), sample_hash());
         assert_eq!(entry.dependencies.python.len(), 1);
+        assert_eq!(entry.dependencies.plugins.len(), 1);
+        let dep = &entry.dependencies.plugins[0];
+        assert_eq!(
+            dep.index_url.as_url().as_str(),
+            "https://plugins.example.com/index.json"
+        );
+        assert_eq!(dep.name.as_str(), "geo-lookup");
     }
 
     #[test]
@@ -2109,5 +2223,106 @@ mod from_manifest_tests {
     fn yanked_is_false() {
         let entry = IndexEntry::from_manifest(sample_manifest(), sample_hash());
         assert!(!entry.yanked);
+    }
+}
+
+#[cfg(test)]
+mod plugin_dependency_index_tests {
+    use super::*;
+    use assert_matches::assert_matches;
+
+    fn index_with_entry_deps(deps_json: &str) -> String {
+        format!(
+            r#"{{
+  "index_schema_version": "2.1",
+  "artifacts_url": "https://example.com/artifacts",
+  "plugins": [
+    {{
+      "name": "downsampler",
+      "version": "1.2.0",
+      "published_at": "2026-04-29T18:45:12Z",
+      "description": "desc",
+      "triggers": ["process_writes"],
+      "dependencies": {{ "database_version": ">=3.0.0", "python": []{deps_json} }},
+      "hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    }}
+  ]
+}}"#
+        )
+    }
+
+    #[test]
+    fn parses_entry_plugin_dependencies() {
+        let src = index_with_entry_deps(
+            r#", "plugins": [
+                {"index_url": "https://plugins.example.com/index.json",
+                 "name": "geo-lookup",
+                 "version": ">=1.0.0,<2.0.0"}
+            ]"#,
+        );
+        let idx = Index::parse_json(&src).expect("entry plugin deps should parse");
+        let deps = &idx.plugins[0].dependencies.plugins;
+        assert_eq!(deps.len(), 1);
+        assert_eq!(
+            deps[0].index_url.as_url().as_str(),
+            "https://plugins.example.com/index.json"
+        );
+        assert_eq!(deps[0].name.as_str(), "geo-lookup");
+    }
+
+    #[test]
+    fn missing_entry_plugins_defaults_empty() {
+        let src = index_with_entry_deps("");
+        let idx = Index::parse_json(&src).unwrap();
+        assert!(idx.plugins[0].dependencies.plugins.is_empty());
+    }
+
+    /// Same shared validator as the manifest parser, with index-side paths.
+    #[test]
+    fn rejects_invalid_entry_fields_with_index_paths() {
+        let src = index_with_entry_deps(
+            r#", "plugins": [
+                {"index_url": "https://plugins.example.com/index.json",
+                 "name": "geo-lookup",
+                 "version": ">=1.0.0"},
+                {"index_url": "s3://bucket/index.json",
+                 "name": "Bad Name",
+                 "version": ">=bad"}
+            ]"#,
+        );
+        let errors = Index::parse_json(&src).expect_err("should reject");
+        let paths: Vec<&str> = errors.errors().iter().map(|r| r.path.as_str()).collect();
+        assert_eq!(
+            paths,
+            vec![
+                "plugins[0].dependencies.plugins[1].index_url",
+                "plugins[0].dependencies.plugins[1].name",
+                "plugins[0].dependencies.plugins[1].version",
+            ]
+        );
+    }
+
+    #[test]
+    fn rejects_duplicate_entry_dependency() {
+        let src = index_with_entry_deps(
+            r#", "plugins": [
+                {"index_url": "https://plugins.example.com/index.json",
+                 "name": "geo-lookup",
+                 "version": ">=1.0.0"},
+                {"index_url": "https://plugins.EXAMPLE.com/index.json",
+                 "name": "geo_lookup",
+                 "version": ">=2.0.0"}
+            ]"#,
+        );
+        let errors = Index::parse_json(&src).expect_err("duplicate should reject");
+        assert_eq!(errors.errors().len(), 1, "errors: {errors}");
+        assert_eq!(
+            errors.errors()[0].path.as_str(),
+            "plugins[0].dependencies.plugins[1]"
+        );
+        assert_matches!(
+            errors.errors()[0].error,
+            SchemaError::DuplicatePluginDependency { .. }
+        );
     }
 }

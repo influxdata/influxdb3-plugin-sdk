@@ -9,6 +9,13 @@ expression: doc
       "artifact_url": "https://plugins.example.com/artifacts/downsampler-1.2.0.tar.gz",
       "dependencies": {
         "database_version": ">=3.0.0",
+        "plugins": [
+          {
+            "index_url": "https://plugins.example.com/index.json",
+            "name": "geo-lookup",
+            "version": ">=1.0.0, <2.0.0"
+          }
+        ],
         "python": [
           "requests>=2.31,<3"
         ]

@@ -132,6 +132,16 @@ pub(crate) struct IndexInfoPluginOutput {
 pub(crate) struct IndexDependenciesOutput {
     pub database_version: String,
     pub python: Vec<String>,
+    pub plugins: Vec<PluginDependencyOutput>,
+}
+
+/// One inter-plugin dependency row of [`IndexDependenciesOutput`].
+/// `index_url` is the normalized URL form; `version` is a SemVer range.
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct PluginDependencyOutput {
+    pub index_url: String,
+    pub name: String,
+    pub version: String,
 }
 
 /// `--output json` payload emitted by `new list`. Stable (semver-locked)

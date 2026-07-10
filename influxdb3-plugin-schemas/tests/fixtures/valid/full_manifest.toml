@@ -1,4 +1,4 @@
-manifest_schema_version = "1.0"
+manifest_schema_version = "1.3"
 
 [plugin]
 name = "downsampler"
@@ -12,3 +12,13 @@ documentation = "https://github.com/influxdata/plugin-downsampler/readme.md"
 [dependencies]
 database_version = ">=3.2.0,<4.0.0"
 python = ["requests>=2.31,<3", "pydantic~=2.0"]
+
+[[dependencies.plugins]]
+index_url = "https://plugins.example.com/index.json"
+name = "geo-lookup"
+version = ">=1.0.0,<2.0.0"
+
+[[dependencies.plugins]]
+index_url = "https://other-registry.example.com/index.json"
+name = "geo-lookup"
+version = "2.1"

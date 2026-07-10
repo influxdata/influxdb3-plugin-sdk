@@ -27,7 +27,7 @@
 
 use influxdb3_plugin_schemas::{
     ArtifactHash, ArtifactsUrl, Dependencies, Description, Index, IndexEntry, IndexSchemaVersion,
-    PluginName, PublishedAt, TriggerType,
+    IndexUrl, PluginDependency, PluginName, PublishedAt, TriggerType,
 };
 use proptest::prelude::*;
 use proptest::test_runner::{Config as ProptestConfig, RngAlgorithm};
@@ -42,29 +42,55 @@ fn arb_version() -> impl Strategy<Value = semver::Version> {
     (0u64..10, 0u64..20, 0u64..20).prop_map(|(a, b, c)| semver::Version::new(a, b, c))
 }
 
+fn arb_plugin_dependencies() -> impl Strategy<Value = Vec<PluginDependency>> {
+    // Distinct fixed registries per slot keep generated entries valid under
+    // the (index_url, canonical name) uniqueness rule without a filter.
+    proptest::collection::vec(arb_name(), 0..=2).prop_map(|names| {
+        names
+            .into_iter()
+            .enumerate()
+            .map(|(i, name)| PluginDependency {
+                index_url: IndexUrl::try_new(&format!(
+                    "https://registry{i}.example.com/index.json"
+                ))
+                .unwrap(),
+                name,
+                version: ">=1.0.0".parse().unwrap(),
+            })
+            .collect()
+    })
+}
+
 fn arb_entry() -> impl Strategy<Value = IndexEntry> {
     // Note: `arb_index` may emit duplicate (name, version) tuples. Because the
     // determinism test never re-parses the canonical output, the
     // `Index::validate` duplicate-rejection path is not exercised here — safe.
-    (arb_name(), arb_version(), any::<bool>()).prop_map(|(name, version, yanked)| IndexEntry {
-        name,
-        version,
-        published_at: PublishedAt::try_new("2026-04-29T18:45:12Z").unwrap(),
-        description: Description::try_new("desc").unwrap(),
-        triggers: vec![TriggerType::ProcessWrites],
-        homepage: None,
-        repository: None,
-        documentation: None,
-        dependencies: Dependencies {
-            database_version: ">=3.0.0".parse().unwrap(),
-            python: vec![],
-        },
-        hash: ArtifactHash::try_new(
-            "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-        )
-        .unwrap(),
-        yanked,
-    })
+    (
+        arb_name(),
+        arb_version(),
+        any::<bool>(),
+        arb_plugin_dependencies(),
+    )
+        .prop_map(|(name, version, yanked, plugin_deps)| IndexEntry {
+            name,
+            version,
+            published_at: PublishedAt::try_new("2026-04-29T18:45:12Z").unwrap(),
+            description: Description::try_new("desc").unwrap(),
+            triggers: vec![TriggerType::ProcessWrites],
+            homepage: None,
+            repository: None,
+            documentation: None,
+            dependencies: Dependencies {
+                database_version: ">=3.0.0".parse().unwrap(),
+                python: vec![],
+                plugins: plugin_deps,
+            },
+            hash: ArtifactHash::try_new(
+                "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+            )
+            .unwrap(),
+            yanked,
+        })
 }
 
 fn arb_index() -> impl Strategy<Value = Index> {

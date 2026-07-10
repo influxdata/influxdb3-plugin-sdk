@@ -7,7 +7,7 @@ Scaffolding a plugin with `influxdb3-plugin new <template>` writes an initial `m
 ## Minimal Example
 
 ```toml
-manifest_schema_version = "1.2"
+manifest_schema_version = "1.3"
 
 [plugin]
 name = "downsampler"
@@ -22,7 +22,7 @@ database_version = ">=3.2.0,<4.0.0"
 ## Complete Example
 
 ```toml
-manifest_schema_version = "1.2"
+manifest_schema_version = "1.3"
 
 [plugin]
 name = "downsampler"
@@ -36,6 +36,11 @@ documentation = "https://github.com/influxdata/plugin-downsampler/readme.md"
 [dependencies]
 database_version = ">=3.2.0,<4.0.0"
 python = ["requests>=2.31,<3", "pydantic~=2.0"]
+
+[[dependencies.plugins]]
+index_url = "https://plugins.example.com/index.json"
+name = "geo-lookup"
+version = ">=1.0.0,<2.0.0"
 ```
 
 ## Manifest Structure
@@ -52,11 +57,12 @@ Every manifest file consists of these fields and sections:
   - `repository` - Optional source repository URL.
   - `documentation` - Optional documentation URL.
   - `exclude` - Optional gitignore-style file exclusion patterns.
-- `[dependencies]` - Runtime compatibility and Python package requirements.
+- `[dependencies]` - Runtime compatibility, Python package requirements, and inter-plugin dependencies.
   - `database_version` - Compatible InfluxDB 3 database version range.
   - `python` - Optional Python package requirements.
+  - `plugins` - Optional inter-plugin dependencies.
 
-Unknown fields are ignored within a supported schema major. Do not use unknown fields for durable custom metadata: a future schema version may define them. The key `dependencies.plugins` is reserved for a future inter-plugin dependency format.
+Unknown fields are ignored within a supported schema major. Do not use unknown fields for durable custom metadata: a future schema version may define them.
 
 ## Top-Level Entries
 
@@ -71,7 +77,7 @@ Unknown fields are ignored within a supported schema major. Do not use unknown f
 `manifest_schema_version` must be a root-level string before any table header:
 
 ```toml
-manifest_schema_version = "1.2"
+manifest_schema_version = "1.3"
 ```
 
 The value uses `<major>.<minor>` form. Consumers accept known major version `1`, including newer minor versions such as `1.2`, and reject unsupported majors instead of guessing.
@@ -220,7 +226,7 @@ exclude = [".git/", ".venv/", "__pycache__/", "*.pyc", "tests/**"]
 
 ## The `[dependencies]` Section
 
-The `[dependencies]` section lists requirements needed to run the plugin and filter compatible database versions.
+The `[dependencies]` section lists requirements needed to run the plugin, filter compatible database versions, and declare other plugins the plugin builds on.
 
 ```toml
 [dependencies]
@@ -232,6 +238,7 @@ python = ["requests>=2.31,<3", "pydantic~=2.0"]
 |---|---|---:|---|
 | `database_version` | string | Yes | SemVer version requirement for compatible InfluxDB 3 database versions. |
 | `python` | array of strings | No | PEP 508 Python package requirement strings. Omitted or empty means no Python dependencies. |
+| `plugins` | array of tables | No | Inter-plugin dependencies. Omitted or empty means no plugin dependencies. |
 
 ### `dependencies.database_version`
 
@@ -252,6 +259,32 @@ python = ["requests>=2.31,<3", "pydantic~=2.0"]
 ```
 
 Omitting `python` or setting it to an empty array means the plugin has no declared Python package dependencies. Each entry must parse as a PEP 508 requirement. The SDK preserves the original requirement strings.
+
+### `dependencies.plugins`
+
+The `plugins` field is an optional array of inter-plugin dependencies. Each entry is a fully-resolved reference aligned with the `(index_url, name, version)` plugin-identity tuple, except that `version` is a SemVer range rather than an exact version: "any version of `name` at the registry `index_url` that satisfies `version`". Declare one `[[dependencies.plugins]]` table per dependency:
+
+```toml
+[[dependencies.plugins]]
+index_url = "https://plugins.example.com/index.json"
+name = "geo-lookup"
+version = ">=1.0.0,<2.0.0"
+
+[[dependencies.plugins]]
+index_url = "https://other-registry.example.com/index.json"
+name = "unit-convert"
+version = "2.1"
+```
+
+| Field | Type | Required | Description |
+|---|---|---:|---|
+| `index_url` | string | Yes | URL of the dependency's registry index. Must parse as an absolute URL with scheme `https`, `http`, or `file`. Stored and serialized in normalized URL form. |
+| `name` | string | Yes | Plugin name in the dependency's registry. Same validation rules as [`plugin.name`](#pluginname). |
+| `version` | string | Yes | SemVer version requirement, same syntax as `dependencies.database_version`. Note Cargo semantics: a bare `"1.2"` means `^1.2`. |
+
+Entries must be unique by `(index_url, canonical name)`: `index_url` compares by parsed-URL equality and `name` by its canonical form (lowercase, `-` folded to `_`). `geo-lookup` and `geo_lookup` at the same `index_url` are duplicates. The same name at two different `index_url`s is allowed — different registries are distinct plugins by the identity model.
+
+Validation is purely syntactic and local. The SDK performs no network I/O: it does not verify that the dependency exists in the referenced index. Resolution and installation of dependencies are the consumer's job.
 
 ## Validation
 

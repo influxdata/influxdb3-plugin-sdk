@@ -1,6 +1,5 @@
 ---
 source: influxdb3-plugin-schemas/src/error.rs
-assertion_line: 436
 expression: tags
 ---
 - InvalidPluginName
@@ -16,6 +15,9 @@ expression: tags
 - InvalidDatabaseVersion
 - InvalidPythonRequirement
 - UnsupportedArtifactScheme
+- UnsupportedIndexUrlScheme
+- InvalidPluginDependencyVersion
+- DuplicatePluginDependency
 - InvalidHash
 - InvalidPublishedAt
 - DuplicateIndexEntry

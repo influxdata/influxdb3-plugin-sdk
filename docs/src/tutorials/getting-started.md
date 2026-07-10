@@ -29,7 +29,7 @@ This creates an [index](../reference/registry-index.md) file at `registry/index.
 
 ```json
 {
-  "index_schema_version": "2.0",
+  "index_schema_version": "2.1",
   "artifacts_url": "file:///path/to/registry",
   "plugins": []
 }
@@ -56,7 +56,7 @@ This is all we need to get started. First, let's check out `manifest.toml`:
 
 
 ```console
-manifest_schema_version = "1.2"
+manifest_schema_version = "1.3"
 
 [plugin]
 name = "hello-world"
@@ -98,7 +98,7 @@ Now if we inspect the newly generated `build/index.json`, we can see that it con
 
 ```json
 {
-  "index_schema_version": "2.0",
+  "index_schema_version": "2.1",
   "artifacts_url": "file:///Users/rcater/.config/superpowers/worktrees/influxdb3-plugin-sdk/docs/design-spec/docs/superpowers/tmp/registry",
   "plugins": [
     {
@@ -170,7 +170,7 @@ def process_scheduled_call(influxdb3_local, schedule_time, args):
 Then bump the version in `manifest.toml`:
 
 ```console
-manifest_schema_version = "1.2"
+manifest_schema_version = "1.3"
 
 [plugin]
 name = "hello-world"
@@ -202,7 +202,7 @@ Our newly created index now has both plugin versions:
 
 ```json
 {
-  "index_schema_version": "2.0",
+  "index_schema_version": "2.1",
   "artifacts_url": "file:///Users/rcater/.config/superpowers/worktrees/influxdb3-plugin-sdk/docs/design-spec/docs/superpowers/tmp/registry",
   "plugins": [
     {

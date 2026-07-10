@@ -1,0 +1,5 @@
+---
+source: influxdb3-plugin-schemas/tests/parse_fixtures.rs
+expression: errors.to_string()
+---
+plugins[0].dependencies.plugins[1]: duplicate plugin dependency ("https://plugins.example.com/index.json", "geo_lookup"); entries must be unique by (index_url, canonical name)

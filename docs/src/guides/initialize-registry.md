@@ -25,7 +25,7 @@ This writes `registry-seed/index.json`:
 
 ```json
 {
-  "index_schema_version": "2.0",
+  "index_schema_version": "2.1",
   "artifacts_url": "https://plugins.example.com/artifacts",
   "plugins": []
 }

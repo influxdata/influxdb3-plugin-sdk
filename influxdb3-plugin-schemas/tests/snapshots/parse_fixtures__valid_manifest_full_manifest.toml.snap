@@ -1,12 +1,11 @@
 ---
 source: influxdb3-plugin-schemas/tests/parse_fixtures.rs
-assertion_line: 53
 expression: manifest
 ---
 Manifest {
     manifest_schema_version: ManifestSchemaVersion {
         major: 1,
-        minor: 0,
+        minor: 3,
     },
     plugin: PluginMetadata {
         name: PluginName(
@@ -111,6 +110,91 @@ Manifest {
             PythonRequirement(
                 "pydantic~=2.0",
             ),
+        ],
+        plugins: [
+            PluginDependency {
+                index_url: IndexUrl(
+                    Url {
+                        scheme: "https",
+                        cannot_be_a_base: false,
+                        username: "",
+                        password: None,
+                        host: Some(
+                            Domain(
+                                "plugins.example.com",
+                            ),
+                        ),
+                        port: None,
+                        path: "/index.json",
+                        query: None,
+                        fragment: None,
+                    },
+                ),
+                name: PluginName(
+                    "geo-lookup",
+                ),
+                version: VersionReq {
+                    comparators: [
+                        Comparator {
+                            op: GreaterEq,
+                            major: 1,
+                            minor: Some(
+                                0,
+                            ),
+                            patch: Some(
+                                0,
+                            ),
+                            pre: Prerelease(""),
+                        },
+                        Comparator {
+                            op: Less,
+                            major: 2,
+                            minor: Some(
+                                0,
+                            ),
+                            patch: Some(
+                                0,
+                            ),
+                            pre: Prerelease(""),
+                        },
+                    ],
+                },
+            },
+            PluginDependency {
+                index_url: IndexUrl(
+                    Url {
+                        scheme: "https",
+                        cannot_be_a_base: false,
+                        username: "",
+                        password: None,
+                        host: Some(
+                            Domain(
+                                "other-registry.example.com",
+                            ),
+                        ),
+                        port: None,
+                        path: "/index.json",
+                        query: None,
+                        fragment: None,
+                    },
+                ),
+                name: PluginName(
+                    "geo-lookup",
+                ),
+                version: VersionReq {
+                    comparators: [
+                        Comparator {
+                            op: Caret,
+                            major: 2,
+                            minor: Some(
+                                1,
+                            ),
+                            patch: None,
+                            pre: Prerelease(""),
+                        },
+                    ],
+                },
+            },
         ],
     },
 }

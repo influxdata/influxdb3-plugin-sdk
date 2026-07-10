@@ -7,7 +7,9 @@
 
 #![allow(unused_crate_dependencies)]
 
-use influxdb3_plugin_schemas::{Index, Manifest, ManifestSchemaVersion, TriggerType};
+use influxdb3_plugin_schemas::{
+    Index, IndexSchemaVersion, Manifest, ManifestSchemaVersion, TriggerType,
+};
 use influxdb3_plugin_sdk::{SdkError, scaffold};
 use semver as _;
 use std::fs;
@@ -83,11 +85,10 @@ fn index_scaffold_emits_current_index_schema_version() {
 
     let raw = fs::read_to_string(dir.join("index.json")).unwrap();
     let idx = Index::parse_json(&raw).expect("scaffolded index must parse");
-    assert_eq!(idx.index_schema_version.major(), 2, "schema major");
     assert_eq!(
-        idx.index_schema_version.minor(),
-        0,
-        "schema minor: current = 2.0"
+        idx.index_schema_version,
+        IndexSchemaVersion::CURRENT,
+        "scaffold must emit the current index schema version"
     );
 }
 

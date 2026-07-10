@@ -1,0 +1,8 @@
+---
+source: influxdb3-plugin-schemas/tests/parse_fixtures.rs
+expression: errors.to_string()
+---
+3 schema validation errors:
+  1. plugins[0].dependencies.plugins[0].index_url: index_url "s3://bucket/index.json" uses unsupported scheme "s3"; allowed: http, https, file
+  2. plugins[0].dependencies.plugins[0].name: plugin name "Bad Name" must match `[a-zA-Z][a-zA-Z0-9_-]*` (1-64 chars, ASCII alphanumerics / `-` / `_`, starting with a letter)
+  3. plugins[0].dependencies.plugins[0].version: plugin dependency version ">=bad" is not a valid SemVer range: unexpected character 'b' while parsing major version number

@@ -1,8 +1,76 @@
-//! Plugin identity: `PluginId` tuple and `PluginName` newtype.
+//! Plugin identity: `PluginId` tuple, `PluginName` and `IndexUrl` newtypes.
 
 use crate::SchemaError;
 use std::fmt;
 use std::str::FromStr;
+
+/// URL of a registry index: the first component of registry plugin identity,
+/// used both in [`PluginId::Registry`] and in `dependencies.plugins` entries
+/// ([`crate::PluginDependency`]), so references and identities compare under
+/// one normalization and validation rule.
+///
+/// Scheme is restricted to `https`, `http`, or `file` — the same set as
+/// [`crate::ArtifactsUrl`], via the same shared validator. The set may widen
+/// in a future minor version; widening is non-breaking.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct IndexUrl(url::Url);
+
+impl IndexUrl {
+    pub fn try_new(raw: &str) -> Result<Self, SchemaError> {
+        let url = parse_registry_scheme_url(raw, |url, scheme| {
+            SchemaError::UnsupportedIndexUrlScheme { url, scheme }
+        })?;
+        Ok(Self(url))
+    }
+
+    pub fn as_url(&self) -> &url::Url {
+        &self.0
+    }
+}
+
+impl fmt::Display for IndexUrl {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for IndexUrl {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let raw = String::deserialize(deserializer)?;
+        Self::try_new(&raw).map_err(serde::de::Error::custom)
+    }
+}
+
+impl serde::Serialize for IndexUrl {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.collect_str(&self.0)
+    }
+}
+
+/// Parses `raw` as an absolute URL restricted to the registry scheme set
+/// (`https`, `http`, `file`). Shared by [`IndexUrl`] and
+/// [`crate::ArtifactsUrl`] so the scheme rule is single-sourced;
+/// `scheme_error` builds the caller's field-specific error variant. Parse
+/// failures map to `SchemaError::InvalidUrl` for both callers.
+pub(crate) fn parse_registry_scheme_url(
+    raw: &str,
+    scheme_error: impl FnOnce(String, String) -> SchemaError,
+) -> Result<url::Url, SchemaError> {
+    let url = url::Url::parse(raw).map_err(|source| SchemaError::InvalidUrl {
+        url: raw.to_owned(),
+        source,
+    })?;
+    match url.scheme() {
+        "https" | "http" | "file" => Ok(url),
+        other => Err(scheme_error(raw.to_owned(), other.to_owned())),
+    }
+}
 
 /// Validated plugin name matching `[a-zA-Z][a-zA-Z0-9_-]*` (1-64 ASCII
 /// characters, starting with an ASCII letter). Case-preserving in storage.
@@ -128,7 +196,7 @@ impl serde::Serialize for PluginName {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum PluginId {
     Registry {
-        index_url: url::Url,
+        index_url: IndexUrl,
         name: PluginName,
         version: semver::Version,
     },
@@ -140,7 +208,7 @@ pub enum PluginId {
 }
 
 impl PluginId {
-    pub fn registry(index_url: url::Url, name: PluginName, version: semver::Version) -> Self {
+    pub fn registry(index_url: IndexUrl, name: PluginName, version: semver::Version) -> Self {
         Self::Registry {
             index_url,
             name,
@@ -310,17 +378,50 @@ mod tests {
 }
 
 #[cfg(test)]
+mod index_url_tests {
+    use super::*;
+    use assert_matches::assert_matches;
+    use rstest::rstest;
+
+    #[rstest]
+    #[case("https://plugins.example.com/index.json")]
+    #[case("http://localhost:8080/index.json")]
+    #[case("file:///srv/registry/index.json")]
+    fn valid_schemes_accepted(#[case] input: &str) {
+        assert!(IndexUrl::try_new(input).is_ok());
+    }
+
+    #[rstest]
+    #[case("s3://bucket/index.json")]
+    #[case("oci://registry.example")]
+    #[case("ftp://registry.example/index.json")]
+    fn invalid_schemes_rejected(#[case] input: &str) {
+        assert_matches!(
+            IndexUrl::try_new(input),
+            Err(SchemaError::UnsupportedIndexUrlScheme { .. })
+        );
+    }
+
+    #[test]
+    fn malformed_rejected() {
+        assert_matches!(
+            IndexUrl::try_new("not a url"),
+            Err(SchemaError::InvalidUrl { .. })
+        );
+    }
+}
+
+#[cfg(test)]
 mod plugin_id_tests {
     use super::*;
     use pretty_assertions::assert_eq;
     use semver::Version;
     use std::path::PathBuf;
-    use url::Url;
 
     #[test]
     fn registry_variant_constructs_from_parts() {
         let id = PluginId::registry(
-            Url::parse("https://plugins.example.com/index.json").unwrap(),
+            IndexUrl::try_new("https://plugins.example.com/index.json").unwrap(),
             PluginName::from_str("downsampler").unwrap(),
             Version::new(1, 2, 0),
         );
@@ -361,7 +462,7 @@ mod plugin_id_tests {
     #[test]
     fn display_shape_pinned() {
         let registry = PluginId::registry(
-            Url::parse("https://r.example/index.json").unwrap(),
+            IndexUrl::try_new("https://r.example/index.json").unwrap(),
             PluginName::from_str("downsampler").unwrap(),
             Version::new(1, 2, 0),
         );

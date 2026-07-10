@@ -54,7 +54,14 @@ fn rich_index() -> serde_json::Value {
                 "documentation": "https://docs.example.com/downsampler",
                 "dependencies": {
                     "database_version": ">=3.0.0",
-                    "python": ["requests>=2.31,<3"]
+                    "python": ["requests>=2.31,<3"],
+                    "plugins": [
+                        {
+                            "index_url": "https://plugins.example.com/index.json",
+                            "name": "geo-lookup",
+                            "version": ">=1.0.0, <2.0.0"
+                        }
+                    ]
                 },
                 "hash": HASH_2
             },
@@ -409,7 +416,14 @@ fn info_by_name_selects_latest_visible_version_json() {
         doc["result"]["plugin"]["dependencies"],
         serde_json::json!({
             "database_version": ">=3.0.0",
-            "python": ["requests>=2.31,<3"]
+            "python": ["requests>=2.31,<3"],
+            "plugins": [
+                {
+                    "index_url": "https://plugins.example.com/index.json",
+                    "name": "geo-lookup",
+                    "version": ">=1.0.0, <2.0.0"
+                }
+            ]
         })
     );
     assert_eq!(
@@ -688,6 +702,7 @@ fn info_human_found_and_not_found_write_stdout() {
         "triggers:",
         "database:",
         "python:",
+        "plugins: geo-lookup >=1.0.0, <2.0.0 (https://plugins.example.com/index.json)",
         "homepage:",
         "repository:",
         "documentation:",

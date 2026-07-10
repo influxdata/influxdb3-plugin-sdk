@@ -1,12 +1,11 @@
 ---
 source: influxdb3-plugin-schemas/tests/parse_fixtures.rs
-assertion_line: 63
 expression: index
 ---
 Index {
     index_schema_version: IndexSchemaVersion {
         major: 2,
-        minor: 0,
+        minor: 1,
     },
     artifacts_url: ArtifactsUrl(
         Url {
@@ -130,6 +129,56 @@ Index {
                     PythonRequirement(
                         "pydantic~=2.0",
                     ),
+                ],
+                plugins: [
+                    PluginDependency {
+                        index_url: IndexUrl(
+                            Url {
+                                scheme: "https",
+                                cannot_be_a_base: false,
+                                username: "",
+                                password: None,
+                                host: Some(
+                                    Domain(
+                                        "plugins.example.com",
+                                    ),
+                                ),
+                                port: None,
+                                path: "/index.json",
+                                query: None,
+                                fragment: None,
+                            },
+                        ),
+                        name: PluginName(
+                            "geo-lookup",
+                        ),
+                        version: VersionReq {
+                            comparators: [
+                                Comparator {
+                                    op: GreaterEq,
+                                    major: 1,
+                                    minor: Some(
+                                        0,
+                                    ),
+                                    patch: Some(
+                                        0,
+                                    ),
+                                    pre: Prerelease(""),
+                                },
+                                Comparator {
+                                    op: Less,
+                                    major: 2,
+                                    minor: Some(
+                                        0,
+                                    ),
+                                    patch: Some(
+                                        0,
+                                    ),
+                                    pre: Prerelease(""),
+                                },
+                            ],
+                        },
+                    },
                 ],
             },
             hash: ArtifactHash(

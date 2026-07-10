@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+- Inter-plugin dependencies: the manifest and index `dependencies` object gains an optional `plugins` field — an array of fully-resolved references `{index_url, name, version}` where `version` is a SemVer range. Manifest schema bumps to 1.3, index schema to 2.1 (both additive). See `docs/internal/plugin-dependencies-design.md`.
+- `influxdb3-plugin-schemas`: new `IndexUrl` and `PluginDependency` types, `Dependencies.plugins` field, and error variants `UnsupportedIndexUrlScheme`, `InvalidPluginDependencyVersion`, and `DuplicatePluginDependency`. Both parsers validate entries per-field with path-aware errors and reject duplicates by `(index_url, canonical name)`.
+- `influxdb3-plugin-cli`: `info` JSON output gains `dependencies.plugins`; human output gains a `plugins:` line.
+
+### Changed
+- `influxdb3-plugin-schemas`: `Index::to_canonical_json` now always stamps the current `index_schema_version` — legacy `2.0` indexes upgrade implicitly on write. Empty `dependencies.plugins` is omitted from serialized output, so pre-existing entries keep their serialized form unchanged.
+- `influxdb3-plugin-schemas` (breaking): `PluginId::Registry.index_url` and `PluginId::registry()` now use the `IndexUrl` newtype instead of raw `url::Url`, so plugin identities and `dependencies.plugins` references share one validation and normalization rule. The `IndexUrl` scheme set (`https`, `http`, `file`) can widen later without breaking.
+
 ## [0.5.1] - 2026-06-04
 
 ### Added

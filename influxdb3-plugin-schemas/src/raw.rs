@@ -33,6 +33,18 @@ pub(crate) struct RawDependencies {
     pub database_version: String,
     #[serde(default)]
     pub python: Vec<String>,
+    #[serde(default)]
+    pub plugins: Vec<RawPluginDependency>,
+}
+
+/// One `[[dependencies.plugins]]` entry. All keys are required: a missing key
+/// fails phase 1 as a root-level TOML/JSON parse error, consistent with other
+/// missing-required-field handling.
+#[derive(Debug, serde::Deserialize)]
+pub(crate) struct RawPluginDependency {
+    pub index_url: String,
+    pub name: String,
+    pub version: String,
 }
 
 #[derive(Debug, serde::Deserialize)]

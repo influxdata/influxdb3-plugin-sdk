@@ -50,5 +50,6 @@ Manifest {
             ],
         },
         python: [],
+        plugins: [],
     },
 }

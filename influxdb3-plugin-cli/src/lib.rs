@@ -41,8 +41,9 @@ pub use config::PluginConfig;
 // `Manifest::parse_toml` / `Index::parse_json`.
 pub use influxdb3_plugin_schemas::{
     ArtifactHash, ArtifactsUrl, Dependencies, Description, FieldPath, Index, IndexEntry,
-    IndexSchemaVersion, Manifest, ManifestSchemaVersion, PluginId, PluginMetadata, PluginName,
-    PythonRequirement, ReportedError, SchemaError, SchemaErrors, TriggerType,
+    IndexSchemaVersion, IndexUrl, Manifest, ManifestSchemaVersion, PluginDependency, PluginId,
+    PluginMetadata, PluginName, PythonRequirement, ReportedError, SchemaError, SchemaErrors,
+    TriggerType,
 };
 
 /// Crate-internal types exposed for the bin target (`main.rs`) only.
