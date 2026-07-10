@@ -9,7 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ## [0.6.0] - 2026-07-10
 
 ### Added
-- Inter-plugin dependencies: the manifest and index `dependencies` object gains an optional `plugins` field — an array of fully-resolved references `{index_url, name, version}` where `version` is a SemVer range. Manifest schema bumps to 1.3, index schema to 2.1 (both additive). See `docs/internal/plugin-dependencies-design.md`.
+- Inter-plugin dependencies: the manifest and index `dependencies` object gains an optional `plugins` field — an array of fully-resolved references `{index_url, name, version}` where `version` is a SemVer range. Manifest schema bumps to 1.3, index schema to 2.1 (both additive).
 - `influxdb3-plugin-schemas`: new `IndexUrl` and `PluginDependency` types, `Dependencies.plugins` field, and error variants `UnsupportedIndexUrlScheme`, `InvalidPluginDependencyVersion`, and `DuplicatePluginDependency`. Both parsers validate entries per-field with path-aware errors and reject duplicates by `(index_url, canonical name)`.
 - `influxdb3-plugin-cli`: `info` JSON output gains `dependencies.plugins`; human output gains a `plugins:` line.
 

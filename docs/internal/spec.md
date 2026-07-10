@@ -51,7 +51,7 @@ python = [                                # PEP 508 strings; pip/uv-compatible
 - `plugin.documentation` (optional)
 - `dependencies.database_version` (required) — SemVer range specifier. Drives compatibility filtering in Stage 3.
 - `dependencies.python` (optional) — Array of PEP 508 requirement strings. Empty or omitted means no Python dependencies.
-- `dependencies.plugins` (optional) — Array of inter-plugin dependency references `{index_url, name, version}`, where `version` is a SemVer range. Originally reserved and deferred from v1; introduced additively in manifest schema 1.3 / index schema 2.1. See `docs/internal/plugin-dependencies-design.md` for the design and decision record.
+- `dependencies.plugins` (optional) — Array of inter-plugin dependency references `{index_url, name, version}`, where `version` is a SemVer range. Originally reserved and deferred from v1; introduced additively in manifest schema 1.3 / index schema 2.1.
 
 ### Index Schema
 
