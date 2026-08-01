@@ -6,8 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-08-01
+
 ### Changed
 - `influxdb3-plugin-sdk` and `influxdb3-plugin-cli` (breaking): plugin scaffolding now writes a single `<name>.py` entry point instead of `__init__.py`. With `--force`, the intended `<name>.py` may be replaced, but any other top-level `.py` file must be removed or migrated first.
+
+### Fixed
+- `influxdb3-plugin-sdk`: generated `process_writes` handlers now read WAL batch rows and table names through dictionary keys, matching the representation shipped by InfluxDB 3 Enterprise and preventing an `AttributeError` on writes.
 
 ## [0.6.0] - 2026-07-10
 
