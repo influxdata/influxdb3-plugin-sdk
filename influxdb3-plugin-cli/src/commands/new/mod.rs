@@ -32,8 +32,8 @@ pub(crate) struct GlobalFlags {
     pub output: Option<OutputMode>,
 
     /// Overwrite files the template would write if they already exist.
-    /// Files in the target directory that the template does not write
-    /// are left alone regardless.
+    /// Non-Python files outside the template's write set are left alone;
+    /// other top-level Python entry points remain conflicts.
     #[arg(long)]
     pub force: bool,
 }
@@ -160,10 +160,10 @@ fn run_plugin_with_env(
         kind: SummaryKind::Plugin,
         template: metadata,
         target_dir,
-        name: Some(name),
+        name: Some(name.clone()),
         files_written: vec![
             PathBuf::from("manifest.toml"),
-            PathBuf::from("__init__.py"),
+            PathBuf::from(format!("{name}.py")),
             PathBuf::from("README.md"),
         ],
     };

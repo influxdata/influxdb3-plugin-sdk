@@ -24,7 +24,8 @@ auto-detected from stdout's TTY status and the `CI` env var per Spec
 
 Scaffold a new plugin or index from a built-in template. Plugin
 templates: `process_writes`, `process_scheduled_call`,
-`process_request`. Index template: `index`.
+`process_request`. Each plugin template writes a single `<name>.py`
+entry point alongside its manifest and README. Index template: `index`.
 
 ```bash
 influxdb3-plugin new process_writes ./my-plugin

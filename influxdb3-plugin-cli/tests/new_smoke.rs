@@ -46,7 +46,8 @@ fn new_process_writes_happy_path_human_mode() {
     spawn_new(&target, &["process_writes"]).success();
 
     assert!(target.join("manifest.toml").exists());
-    assert!(target.join("__init__.py").exists());
+    assert!(target.join("hp.py").exists());
+    assert!(!target.join("__init__.py").exists());
     assert!(target.join("README.md").exists());
 
     let manifest = std::fs::read_to_string(target.join("manifest.toml")).unwrap();
@@ -138,7 +139,7 @@ fn new_index_json_snapshot() {
 }
 
 #[test]
-fn new_each_plugin_template_writes_matching_init() {
+fn new_each_plugin_template_writes_matching_entry_point() {
     for template in [
         "process_writes",
         "process_scheduled_call",
@@ -149,10 +150,10 @@ fn new_each_plugin_template_writes_matching_init() {
 
         spawn_new(&target, &[template]).success();
 
-        let init = std::fs::read_to_string(target.join("__init__.py")).unwrap();
+        let source = std::fs::read_to_string(target.join("p.py")).unwrap();
         assert!(
-            init.contains(&format!("def {template}(")),
-            "expected `def {template}(` in {template} init, got:\n{init}"
+            source.contains(&format!("def {template}(")),
+            "expected `def {template}(` in {template} entry point, got:\n{source}"
         );
     }
 }
@@ -258,7 +259,7 @@ fn new_errors_on_pre_existing_file() {
         "pre-existing",
         "pre-existing file should be preserved"
     );
-    assert!(!target.join("__init__.py").exists());
+    assert!(!target.join("p.py").exists());
 }
 
 /// Invalid path basename -> exit 1 with error mentioning `--name`.
@@ -539,7 +540,7 @@ fn new_process_writes_with_force_overwrites_existing_write_set() {
     // Pre-write every file in the template's write set; --force must
     // replace all of them, matching the SDK-inline coverage.
     std::fs::write(target.join("manifest.toml"), "pre-existing").unwrap();
-    std::fs::write(target.join("__init__.py"), "pre-existing").unwrap();
+    std::fs::write(target.join("hp.py"), "pre-existing").unwrap();
     std::fs::write(target.join("README.md"), "pre-existing").unwrap();
     std::fs::write(target.join("notes.txt"), "keep me").unwrap();
 
@@ -547,8 +548,11 @@ fn new_process_writes_with_force_overwrites_existing_write_set() {
 
     let manifest = std::fs::read_to_string(target.join("manifest.toml")).unwrap();
     assert!(manifest.contains("name = \"hp\""), "manifest: {manifest}");
-    let init = std::fs::read_to_string(target.join("__init__.py")).unwrap();
-    assert!(init.contains("def process_writes("), "init: {init}");
+    let source = std::fs::read_to_string(target.join("hp.py")).unwrap();
+    assert!(
+        source.contains("def process_writes("),
+        "entry point: {source}"
+    );
     let readme = std::fs::read_to_string(target.join("README.md")).unwrap();
     assert!(!readme.contains("pre-existing"), "readme: {readme}");
     // Unrelated file untouched.
@@ -556,6 +560,30 @@ fn new_process_writes_with_force_overwrites_existing_write_set() {
         std::fs::read_to_string(target.join("notes.txt")).unwrap(),
         "keep me"
     );
+}
+
+#[test]
+fn new_process_writes_force_rejects_legacy_init_without_deleting_it() {
+    let td = tempfile::tempdir().unwrap();
+    let target = td.path().join("hp");
+    std::fs::create_dir_all(&target).unwrap();
+    std::fs::write(target.join("__init__.py"), "legacy entry point").unwrap();
+
+    let assert = spawn_new(&target, &["process_writes", "--force"])
+        .failure()
+        .code(1);
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout);
+    assert!(
+        stdout.contains("conflicting top-level Python entry point"),
+        "stdout: {stdout}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(target.join("__init__.py")).unwrap(),
+        "legacy entry point"
+    );
+    assert!(!target.join("manifest.toml").exists());
+    assert!(!target.join("hp.py").exists());
+    assert!(!target.join("README.md").exists());
 }
 
 #[test]
@@ -590,7 +618,7 @@ fn new_process_writes_without_force_fails_on_conflict() {
         std::fs::read_to_string(target.join("manifest.toml")).unwrap(),
         "pre-existing"
     );
-    assert!(!target.join("__init__.py").exists());
+    assert!(!target.join("hp.py").exists());
     assert!(!target.join("README.md").exists());
 }
 
@@ -624,6 +652,7 @@ fn new_accepts_underscore_name_via_flag() {
         manifest.contains("name = \"my_plugin\""),
         "manifest should contain exact name, got: {manifest}"
     );
+    assert!(td.path().join("my_plugin.py").exists());
 }
 
 #[test]
@@ -635,6 +664,7 @@ fn new_accepts_mixed_case_name_via_flag() {
         manifest.contains("name = \"MyPlugin\""),
         "manifest should preserve case, got: {manifest}"
     );
+    assert!(td.path().join("MyPlugin.py").exists());
 }
 
 #[test]
@@ -846,7 +876,10 @@ fn new_plugin_omitted_path_uses_cwd_basename() {
             manifest.contains("name = \"downsampler-plugin\""),
             "[{template}] manifest should derive name from cwd basename; got: {manifest}"
         );
-        assert!(working.join("__init__.py").exists(), "[{template}]");
+        assert!(
+            working.join("downsampler-plugin.py").exists(),
+            "[{template}]"
+        );
         assert!(working.join("README.md").exists(), "[{template}]");
     }
 }
@@ -936,7 +969,7 @@ fn new_plugin_rejects_invalid_database_version() {
         "output should surface the rejected value verbatim; got: {stdout}"
     );
     assert!(!target.join("manifest.toml").exists());
-    assert!(!target.join("__init__.py").exists());
+    assert!(!target.join("p.py").exists());
     assert!(!target.join("README.md").exists());
 }
 

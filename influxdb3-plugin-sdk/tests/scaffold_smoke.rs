@@ -26,7 +26,8 @@ fn plugin_scaffold_produces_parseable_manifest() {
     assert_eq!(manifest.plugin.name.as_str(), "downsampler");
     assert_eq!(manifest.plugin.triggers, vec![TriggerType::ProcessWrites]);
 
-    assert!(dir.join("__init__.py").exists());
+    assert!(dir.join("downsampler.py").exists());
+    assert!(!dir.join("__init__.py").exists());
     assert!(dir.join("README.md").exists());
 }
 

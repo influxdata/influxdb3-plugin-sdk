@@ -48,7 +48,7 @@ Scaffolded plugin (process_scheduled_call template) at src/hello-world
   name: hello-world
   files written:
     manifest.toml
-    __init__.py
+    hello-world.py
     README.md
 ```
 
@@ -70,7 +70,7 @@ database_version = ">=3.0.0"
 
 The [manifest](../reference/manifest.md) contains all of the metadata needed to package the plugin.
 
-Here's what's in `__init__.py`:
+Here's what's in `hello-world.py`:
 
 ```python
 """Plugin entry point for the `process_scheduled_call` trigger."""
