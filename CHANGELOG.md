@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+- `influxdb3-plugin-sdk` and `influxdb3-plugin-cli` (breaking): plugin scaffolding now writes a single `<name>.py` entry point instead of `__init__.py`. With `--force`, the intended `<name>.py` may be replaced, but any other top-level `.py` file must be removed or migrated first.
+
 ## [0.6.0] - 2026-07-10
 
 ### Added

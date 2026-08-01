@@ -7,7 +7,8 @@
 //! reject if any file they would write already exists (no partial
 //! scaffolds). When `overwrite` is true, conflicting files in the
 //! template's write set are replaced; unrelated files in `dir` are left
-//! alone.
+//! alone. Plugin scaffolds additionally reject other top-level Python entry
+//! points because they would change or invalidate entry-point detection.
 
 use influxdb3_plugin_schemas::{PluginName, TriggerType};
 use std::path::{Path, PathBuf};
@@ -34,20 +35,22 @@ pub const DEFAULT_DATABASE_VERSION: &str =
 
 /// Scaffolds a new plugin directory under `dir`.
 ///
-/// Writes `manifest.toml`, `__init__.py`, and `README.md`. `{{name}}` and
+/// Writes `manifest.toml`, `<name>.py`, and `README.md`. `{{name}}` and
 /// `{{database_version}}` placeholders in the manifest template are filled
 /// from `name` and `database_version` (defaulting to
-/// [`DEFAULT_DATABASE_VERSION`]). The init template carries a stub for the
-/// declared `trigger`.
+/// [`DEFAULT_DATABASE_VERSION`]). The Python template carries a stub for the
+/// declared `trigger`, and the README names the generated entry point.
 ///
 /// When `overwrite` is true, existing files in the template's write set are
-/// replaced; when false, the scaffold errors if any already exist.
+/// replaced; when false, the scaffold errors if any already exist. Other
+/// top-level `.py` files always conflict because they would make the generated
+/// single-file entry point ambiguous, or take priority if named `__init__.py`.
 ///
 /// # Errors
 ///
 /// `SdkError::Schema` if `name` fails the `PluginName` check. `SdkError::Io`
-/// if any target path already exists (only when `overwrite` is false) or on
-/// file-write failure.
+/// if any target path already exists (only when `overwrite` is false), another
+/// top-level Python entry point exists, or a filesystem operation fails.
 pub fn plugin(
     dir: &Path,
     name: &str,
@@ -56,7 +59,7 @@ pub fn plugin(
     overwrite: bool,
 ) -> Result<(), SdkError> {
     // Fail fast on bad name, before touching the filesystem.
-    let _validated: PluginName = name.parse()?;
+    let validated: PluginName = name.parse()?;
 
     // Fail fast on bad --database-version. Mirrors the check
     // `Manifest::parse_toml` would apply later; surfacing here means the
@@ -75,19 +78,20 @@ pub fn plugin(
         TriggerType::ProcessScheduledCall => PROCESS_SCHEDULED_CALL_MANIFEST,
         TriggerType::ProcessRequest => PROCESS_REQUEST_MANIFEST,
     };
-    let init_template = match trigger {
+    let python_template = match trigger {
         TriggerType::ProcessWrites => PROCESS_WRITES_INIT,
         TriggerType::ProcessScheduledCall => PROCESS_SCHEDULED_CALL_INIT,
         TriggerType::ProcessRequest => PROCESS_REQUEST_INIT,
     };
 
     let manifest_path = dir.join("manifest.toml");
-    let init_path = dir.join("__init__.py");
+    let entry_point_path = dir.join(format!("{}.py", validated.as_str()));
     let readme_path = dir.join("README.md");
 
     ensure_dir(dir)?;
+    check_no_other_python_entry_points(dir, &entry_point_path)?;
     if !overwrite {
-        check_no_existing(&[&manifest_path, &init_path, &readme_path])?;
+        check_no_existing(&[&manifest_path, &entry_point_path, &readme_path])?;
     }
 
     let db_ver = database_version.unwrap_or(DEFAULT_DATABASE_VERSION);
@@ -99,7 +103,7 @@ pub fn plugin(
         .replace("{{name}}", name)
         .replace("{{database_version}}", db_ver);
     write_file(&manifest_path, &manifest)?;
-    write_file(&init_path, init_template)?;
+    write_file(&entry_point_path, python_template)?;
     write_file(&readme_path, &README.replace("{{name}}", name))?;
     Ok(())
 }
@@ -192,6 +196,50 @@ fn check_no_existing(paths: &[&PathBuf]) -> Result<(), SdkError> {
     Ok(())
 }
 
+/// Rejects top-level Python files other than the entry point this scaffold
+/// owns. Without this guard, a legacy `__init__.py` would take priority over
+/// the newly generated single-file entry point, while any other `.py` file
+/// would make validation ambiguous. Symlinks and directories are ignored to
+/// match the entry-point classification contract.
+fn check_no_other_python_entry_points(dir: &Path, entry_point_path: &Path) -> Result<(), SdkError> {
+    let entries = std::fs::read_dir(dir).map_err(|source| SdkError::Io {
+        source,
+        path: Some(dir.to_path_buf()),
+    })?;
+
+    let mut conflicts = Vec::new();
+    for result in entries {
+        let entry = result.map_err(|source| SdkError::Io {
+            source,
+            path: Some(dir.to_path_buf()),
+        })?;
+        let path = entry.path();
+        let file_type = entry.file_type().map_err(|source| SdkError::Io {
+            source,
+            path: Some(path.clone()),
+        })?;
+        if file_type.is_file()
+            && path != entry_point_path
+            && entry.file_name().to_string_lossy().ends_with(".py")
+        {
+            conflicts.push(path);
+        }
+    }
+
+    conflicts.sort();
+    if let Some(path) = conflicts.into_iter().next() {
+        return Err(SdkError::Io {
+            source: std::io::Error::new(
+                std::io::ErrorKind::AlreadyExists,
+                "conflicting top-level Python entry point already exists; remove or migrate it before scaffolding",
+            ),
+            path: Some(path),
+        });
+    }
+
+    Ok(())
+}
+
 fn write_file(path: &Path, contents: &str) -> Result<(), SdkError> {
     std::fs::write(path, contents).map_err(|source| SdkError::Io {
         source,
@@ -212,7 +260,8 @@ mod tests {
         plugin(&dir, "my-plugin", TriggerType::ProcessWrites, None, false).unwrap();
 
         assert!(dir.join("manifest.toml").exists());
-        assert!(dir.join("__init__.py").exists());
+        assert!(dir.join("my-plugin.py").exists());
+        assert!(!dir.join("__init__.py").exists());
         assert!(dir.join("README.md").exists());
     }
 
@@ -296,7 +345,7 @@ mod tests {
     }
 
     #[test]
-    fn scaffold_each_trigger_kind_produces_matching_init() {
+    fn scaffold_each_trigger_kind_produces_matching_entry_point() {
         for trigger in [
             TriggerType::ProcessWrites,
             TriggerType::ProcessScheduledCall,
@@ -305,13 +354,33 @@ mod tests {
             let td = tempfile::tempdir().unwrap();
             let dir = td.path().join("p");
             plugin(&dir, "p", trigger, None, false).unwrap();
-            let init = fs::read_to_string(dir.join("__init__.py")).unwrap();
+            let source = fs::read_to_string(dir.join("p.py")).unwrap();
             let expected_def = format!("def {}(", trigger.as_str());
             assert!(
-                init.contains(&expected_def),
-                "expected `{expected_def}` in {trigger:?} init, got:\n{init}"
+                source.contains(&expected_def),
+                "expected `{expected_def}` in {trigger:?} entry point, got:\n{source}"
             );
         }
+    }
+
+    #[test]
+    fn scaffold_entry_point_and_readme_follow_explicit_name() {
+        let td = tempfile::tempdir().unwrap();
+        let dir = td.path().join("different-directory-name");
+
+        plugin(
+            &dir,
+            "manifest-name",
+            TriggerType::ProcessRequest,
+            None,
+            false,
+        )
+        .unwrap();
+
+        assert!(dir.join("manifest-name.py").exists());
+        assert!(!dir.join("different-directory-name.py").exists());
+        let readme = fs::read_to_string(dir.join("README.md")).unwrap();
+        assert!(readme.contains("`manifest-name.py`"), "readme: {readme}");
     }
 
     #[test]
@@ -421,7 +490,7 @@ mod tests {
         let dir = td.path().join("plugin");
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join("manifest.toml"), "pre-existing").unwrap();
-        fs::write(dir.join("__init__.py"), "pre-existing").unwrap();
+        fs::write(dir.join("plugin.py"), "pre-existing").unwrap();
         fs::write(dir.join("README.md"), "pre-existing").unwrap();
 
         plugin(&dir, "plugin", TriggerType::ProcessWrites, None, true).unwrap();
@@ -431,10 +500,10 @@ mod tests {
             manifest.contains("name = \"plugin\""),
             "manifest not replaced: {manifest}"
         );
-        let init = fs::read_to_string(dir.join("__init__.py")).unwrap();
+        let source = fs::read_to_string(dir.join("plugin.py")).unwrap();
         assert!(
-            init.contains("def process_writes("),
-            "init not replaced: {init}"
+            source.contains("def process_writes("),
+            "entry point not replaced: {source}"
         );
         let readme = fs::read_to_string(dir.join("README.md")).unwrap();
         assert!(
@@ -457,6 +526,72 @@ mod tests {
             "keep me"
         );
         assert!(dir.join("manifest.toml").exists());
+    }
+
+    #[test]
+    fn scaffold_rejects_legacy_init_even_with_overwrite() {
+        let td = tempfile::tempdir().unwrap();
+        let dir = td.path().join("plugin");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("__init__.py"), "legacy entry point").unwrap();
+
+        let err = plugin(&dir, "plugin", TriggerType::ProcessWrites, None, true).unwrap_err();
+
+        let SdkError::Io { source, .. } = err else {
+            panic!("expected I/O conflict error")
+        };
+        assert!(source.to_string().contains("conflicting top-level Python"));
+        assert_eq!(
+            fs::read_to_string(dir.join("__init__.py")).unwrap(),
+            "legacy entry point"
+        );
+        assert!(!dir.join("manifest.toml").exists());
+        assert!(!dir.join("plugin.py").exists());
+        assert!(!dir.join("README.md").exists());
+    }
+
+    #[test]
+    fn scaffold_rejects_another_top_level_python_file() {
+        let td = tempfile::tempdir().unwrap();
+        let dir = td.path().join("plugin");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("helper.py"), "def helper(): pass").unwrap();
+
+        let err = plugin(&dir, "plugin", TriggerType::ProcessWrites, None, false).unwrap_err();
+
+        let SdkError::Io { source, .. } = err else {
+            panic!("expected I/O conflict error")
+        };
+        assert!(source.to_string().contains("conflicting top-level Python"));
+        assert_eq!(
+            fs::read_to_string(dir.join("helper.py")).unwrap(),
+            "def helper(): pass"
+        );
+        assert!(!dir.join("manifest.toml").exists());
+        assert!(!dir.join("plugin.py").exists());
+        assert!(!dir.join("README.md").exists());
+    }
+
+    #[test]
+    fn scaffold_rejects_bare_dot_py_even_with_overwrite() {
+        let td = tempfile::tempdir().unwrap();
+        let dir = td.path().join("plugin");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join(".py"), "bare Python entry point").unwrap();
+
+        let err = plugin(&dir, "plugin", TriggerType::ProcessWrites, None, true).unwrap_err();
+
+        let SdkError::Io { source, .. } = err else {
+            panic!("expected I/O conflict error")
+        };
+        assert!(source.to_string().contains("conflicting top-level Python"));
+        assert_eq!(
+            fs::read_to_string(dir.join(".py")).unwrap(),
+            "bare Python entry point"
+        );
+        assert!(!dir.join("manifest.toml").exists());
+        assert!(!dir.join("plugin.py").exists());
+        assert!(!dir.join("README.md").exists());
     }
 
     #[test]
@@ -621,7 +756,7 @@ mod tests {
                 !dir.join("manifest.toml").exists(),
                 "no manifest written for {bad:?}"
             );
-            assert!(!dir.join("__init__.py").exists());
+            assert!(!dir.join("p.py").exists());
             assert!(!dir.join("README.md").exists());
         }
     }

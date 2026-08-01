@@ -148,6 +148,30 @@ fn scaffold_then_validate_then_package_round_trips() {
         package_plugin(&plugin_dir, empty_index()).expect("scaffolded plugin must package cleanly");
     assert_eq!(out.new_entry.name.as_str(), "scaffolded");
     assert_eq!(out.new_entry.version, semver::Version::new(0, 1, 0));
+
+    let tar_bytes = {
+        use flate2::read::GzDecoder;
+        let mut decoder = GzDecoder::new(out.archive_bytes.as_slice());
+        let mut buf = Vec::new();
+        std::io::copy(&mut decoder, &mut buf).unwrap();
+        buf
+    };
+    let mut archive = tar::Archive::new(std::io::Cursor::new(tar_bytes));
+    let paths: Vec<String> = archive
+        .entries_with_seek()
+        .unwrap()
+        .filter_map(|entry| {
+            entry.ok().and_then(|entry| {
+                entry
+                    .header()
+                    .path()
+                    .ok()
+                    .map(|path| path.display().to_string())
+            })
+        })
+        .collect();
+    assert!(paths.contains(&"scaffolded-0.1.0/scaffolded.py".to_owned()));
+    assert!(!paths.contains(&"scaffolded-0.1.0/__init__.py".to_owned()));
 }
 
 /// The pipeline must not mutate the source plugin directory. We verify this

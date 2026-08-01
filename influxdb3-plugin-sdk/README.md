@@ -7,9 +7,10 @@ wraps in user-facing subcommands.
 
 ## Public modules
 
-- **`scaffold`** — generate a plugin directory or index directory from a
-  built-in template (`process_writes`, `process_scheduled_call`,
-  `process_request`, `index`).
+- **`scaffold`** — generate a single-file plugin directory or index directory
+  from a built-in template (`process_writes`, `process_scheduled_call`,
+  `process_request`, `index`). Plugin templates write `<name>.py` as their
+  entry point.
 - **`validate`** — the filesystem + Python-parser mechanism for validating a
   plugin directory. `plugin_dir` walks the directory, reads the entry point,
   and feeds the results into the pure contract in

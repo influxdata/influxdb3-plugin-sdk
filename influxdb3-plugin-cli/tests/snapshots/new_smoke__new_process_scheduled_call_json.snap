@@ -6,7 +6,7 @@ expression: payload
   "result": {
     "files_written": [
       "manifest.toml",
-      "__init__.py",
+      "downsampler.py",
       "README.md"
     ],
     "kind": "plugin",

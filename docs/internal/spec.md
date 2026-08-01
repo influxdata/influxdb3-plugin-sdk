@@ -352,7 +352,7 @@ Default `dev` and `release` only, plus one addition: `[profile.dev.package.insta
 
 #### `influxdb3-plugin-sdk` crate specifics
 
-- **Python source analysis uses tree-sitter, not pyo3.** The Spec 2 [[#Validation]] code/manifest cross-reference (`__init__.py` parses as Python 3; top-level synchronous `def <trigger>()` exists; `async def` rejected) is performed via `tree-sitter` + `tree-sitter-python` (both MIT on crates.io). The database runtime uses pyo3 via `influxdb3_py_api` to *execute* plugin code; the SDK uses tree-sitter to *statically analyze* it at author-time. These are different operations on the same input:
+- **Python source analysis uses tree-sitter, not pyo3.** The Spec 2 [[#Validation]] code/manifest cross-reference (the detected entry point parses as Python 3; top-level synchronous `def <trigger>()` exists; `async def` rejected) is performed via `tree-sitter` + `tree-sitter-python` (both MIT on crates.io). The database runtime uses pyo3 via `influxdb3_py_api` to *execute* plugin code; the SDK uses tree-sitter to *statically analyze* it at author-time. These are different operations on the same input:
   - pyo3 at SDK-time would force libpython linking at build + runtime, complicating the cross-compile matrix (S2-19's 4 targets) and adding a runtime dep the author's machine may not satisfy uniformly.
   - Shelling out to `python3` at SDK-time would delegate to the system interpreter — good accuracy, bad DX (a Rust SDK binary that fails with "python3 not found" is a confusing setup error for a tool that reads source files).
   - tree-sitter ships its parser as C code linked into the SDK binary. Zero runtime deps, single static binary per target, standard Rust cross-compile.
@@ -442,12 +442,13 @@ Index template (`index`):
 - Descriptions are not included in `new list` output — they appear in `new <template> -h`. Filtering (by language, tag, author) and template-package details are explicitly deferred post-v1.
 
 **Outputs:**
-- Plugin templates write `manifest.toml`, `__init__.py`, and a `README.md` stub into the target directory. The scaffolded `manifest.toml` bakes in the current `manifest_schema_version`; `__init__.py` wires the entrypoint for the selected trigger type.
+- Plugin templates write `manifest.toml`, `<name>.py`, and a `README.md` stub into the target directory. The scaffolded `manifest.toml` bakes in the current `manifest_schema_version`; `<name>.py` wires the single-file entrypoint for the selected trigger type. The filename follows the resolved plugin name, including when `--name` differs from the target-directory basename.
 - Registry template writes `index.json` into the target directory, baking in the current `index_schema_version`.
 
 **Conflict behavior:**
 - Without `--force`: compute the exact set of files the selected template will write, then fail if any of those already exist. Files the template does not write are left alone.
 - With `--force`: the template's write set overwrites any conflicting files. Unrelated files in the target directory are still left alone.
+- Other top-level `.py` files are entry-point conflicts regardless of `--force`. The scaffold does not delete them: `__init__.py` would take priority over the generated single-file entry point, and any other `.py` file would make entry-point detection ambiguous. The author must explicitly remove or migrate the conflicting source.
 - All-or-nothing: partial writes are never persisted; the command either writes its full file set or nothing.
 
 #### `validate [plugin-dir]`
@@ -659,7 +660,7 @@ See [[#TODOs]].
 The `package` command takes a plugin directory plus an input index and produces a derived index containing the new entry alongside a versioned artifact. See [[#Commands]] for the command-line surface.
 
 **Inputs:**
-- An authored plugin directory containing `manifest.toml` and `__init__.py`.
+- An authored plugin directory containing `manifest.toml` and a valid single-file or multi-file Python entry point.
 - An input `index.json` passed via `--index`. Read-only; never modified (S2-11).
 
 **Outputs (both in `--out`):**
